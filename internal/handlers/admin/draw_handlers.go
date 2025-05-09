@@ -129,7 +129,7 @@ func ExecuteDraw(c *gin.Context) {
 		if prizeStructure.EffectiveEndDate != nil {
 			end = prizeStructure.EffectiveEndDate.Format("2006-01-02")
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Draw date %s is outside the prize structure"s validity period (%s to %s)", parsedDrawDate.Format("2006-01-02"), start, end)})
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Draw date %s is outside the prize structure's validity period (%s to %s)", parsedDrawDate.Format("2006-01-02"), start, end)})
         return
     }
 
@@ -397,10 +397,10 @@ func UpdateWinnerPaymentStatus(c *gin.Context) {
 
     // Validate payment status value
     if req.PaymentStatus != models.PaymentPendingExport && 
-       req.PaymentStatus != models.PaymentExported && 
-       req.PaymentStatus != models.PaymentPaid && 
+       req.PaymentStatus != models.PaymentExportedForPayment && 
+       req.PaymentStatus != models.PaymentConfirmed && 
        req.PaymentStatus != models.PaymentFailed && 
-       req.PaymentStatus != models.PaymentRequiresInvestigation {
+       req.PaymentStatus != models.PaymentRequiresVerification {
         c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payment status value"})
         return
     }
@@ -413,10 +413,10 @@ func UpdateWinnerPaymentStatus(c *gin.Context) {
 
     updates := map[string]interface{}{
         "payment_status": req.PaymentStatus,
-        "payment_status_updated_at": time.Now(),
+        "payment_status_updated_at": time.Now(), // Consider making this a specific field if needed for auditing
     }
     if req.Remarks != nil {
-        updates["payment_remarks"] = *req.Remarks
+        updates["payment_remarks"] = *req.Remarks // Ensure your Winner model has PaymentRemarks field
     }
 
     // TODO: Add Audit Log entry for payment status change
