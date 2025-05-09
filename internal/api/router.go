@@ -2,7 +2,9 @@ package api
 
 import (
 	"net/http"
+	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	myauth "github.com/ArowuTest/GP-Backend-Promo/internal/auth"
 	adminhandlers "github.com/ArowuTest/GP-Backend-Promo/internal/handlers/admin"
@@ -13,12 +15,25 @@ import (
 func SetupRouter() *gin.Engine {
 	router := gin.Default()
 
+	// CORS Middleware Configuration
+	// Replace "https://gp-admin-promo.vercel.app" with your actual frontend production URL
+	// For development, you might want to allow "http://localhost:xxxx" (your local frontend port)
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"https://gp-admin-promo.vercel.app"}, // Your Vercel frontend URL
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
 	// Health check - can be enhanced to check DB status etc.
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "Backend Healthy from Gin Router"})
 	})
 
 	// API v1 Group
+	// All routes under /api/v1 will now have the CORS policy applied
 	apiV1 := router.Group("/api/v1")
 	{
 		// Authentication routes
