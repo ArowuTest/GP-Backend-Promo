@@ -3,10 +3,10 @@ package api
 import (
 	"net/http"
 
-	"github.com/gin-gonic/gin"
-	mynumba_don_win_draw_system_backend_internal_auth "mynumba-don-win-draw-system/backend/internal/auth"
-	mynumba_don_win_draw_system_backend_internal_handlers_admin "mynumba-don-win-draw-system/backend/internal/handlers/admin"
-	mynumba_don_win_draw_system_backend_internal_models "mynumba-don-win-draw-system/backend/internal/models"
+   "github.com/gin-gonic/gin"
+   myauth "github.com/ArowuTest/GP-Backend-Promo/internal/auth"
+   adminhandlers "github.com/ArowuTest/GP-Backend-Promo/internal/handlers/admin"
+   models "github.com/ArowuTest/GP-Backend-Promo/internal/models"
 )
 
 // SetupRouter initializes and configures the Gin router
