@@ -397,10 +397,10 @@ func UpdateWinnerPaymentStatus(c *gin.Context) {
 
     // Validate payment status value
     if req.PaymentStatus != models.PaymentPendingExport && 
-       req.PaymentStatus != models.PaymentExported && 
-       req.PaymentStatus != models.PaymentPaid && 
+       req.PaymentStatus != models.PaymentExportedForPayment && 
+       req.PaymentStatus != models.PaymentConfirmed && 
        req.PaymentStatus != models.PaymentFailed && 
-       req.PaymentStatus != models.PaymentRequiresInvestigation {
+       req.PaymentStatus != models.PaymentRequiresVerification {
         c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payment status value"})
         return
     }
@@ -413,10 +413,10 @@ func UpdateWinnerPaymentStatus(c *gin.Context) {
 
     updates := map[string]interface{}{
         "payment_status": req.PaymentStatus,
-        "payment_status_updated_at": time.Now(),
+        "payment_status_updated_at": time.Now(), // Consider making this a specific field if needed for auditing
     }
     if req.Remarks != nil {
-        updates["payment_remarks"] = *req.Remarks
+        updates["payment_remarks"] = *req.Remarks // Ensure your Winner model has PaymentRemarks field
     }
 
     // TODO: Add Audit Log entry for payment status change
@@ -437,5 +437,4 @@ func ListAuditLogs(c *gin.Context) {
     // This would likely involve a separate AuditLog model and table.
     c.JSON(http.StatusNotImplemented, gin.H{"message": "List audit logs functionality is not yet implemented."})
 }
-
 
