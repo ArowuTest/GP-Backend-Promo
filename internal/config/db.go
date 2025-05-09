@@ -8,7 +8,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	mynumba_don_win_draw_system_backend_internal_models "mynumba-don-win-draw-system/backend/internal/models"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 )
 
 var DB *gorm.DB
@@ -48,12 +48,12 @@ func ConnectDB() {
 
 func autoMigrate() {
 	err := DB.AutoMigrate(
-		&mynumba_don_win_draw_system_backend_internal_models.AdminUser{},
-		&mynumba_don_win_draw_system_backend_internal_models.PrizeStructure{},
-		&mynumba_don_win_draw_system_backend_internal_models.PrizeTier{},
-		&mynumba_don_win_draw_system_backend_internal_models.Draw{},
-		&mynumba_don_win_draw_system_backend_internal_models.Winner{},
-		&mynumba_don_win_draw_system_backend_internal_models.AuditLog{},
+		&models.AdminUser{},
+		&models.PrizeStructure{},
+		&models.PrizeTier{},
+		&models.Draw{},
+		&models.Winner{},
+		&models.AuditLog{},
 	)
 	if err != nil {
 		panic("Failed to auto-migrate database schema: " + err.Error())

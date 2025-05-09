@@ -9,8 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	mynumba_don_win_draw_system_backend_internal_config "mynumba-don-win-draw-system/backend/internal/config"
-	mynumba_don_win_draw_system_backend_internal_models "mynumba-don-win-draw-system/backend/internal/models"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/config"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"gorm.io/gorm"
 )
 
@@ -19,10 +19,10 @@ type MockPostHogService struct{}
 
 // GetEligibleParticipantsForDraw simulates fetching MSISDNs and their points for a given draw date/window
 // In a real scenario, this would query PostHog segments.
-func (s *MockPostHogService) GetEligibleParticipantsForDraw(drawDate time.Time) ([]mynumba_don_win_draw_system_backend_internal_models.EligibleParticipant, error) {
+func (s *MockPostHogService) GetEligibleParticipantsForDraw(drawDate time.Time) ([]models.EligibleParticipant, error) {
 	// For now, using the sample CSV data logic. This needs to be replaced with actual PostHog API calls.
 	// This is a placeholder. We will need to read and parse the CSV file provided by the user.
-	// For simplicity, let's return a fixed list for now.
+	// For simplicity, let"s return a fixed list for now.
 	// The actual implementation will involve: 
 	// 1. Defining how to query PostHog (API client, specific segments based on drawDate)
 	// 2. Mapping PostHog response to []EligibleParticipant
@@ -30,7 +30,7 @@ func (s *MockPostHogService) GetEligibleParticipantsForDraw(drawDate time.Time) 
 	// Simulate a few participants with varying points
 	// In a real system, MSISDNs would be actual phone numbers.
 	// Points are derived from recharge amounts (e.g., N100 = 1 point)
-	participants := []mynumba_don_win_draw_system_backend_internal_models.EligibleParticipant{
+	participants := []models.EligibleParticipant{
 		{MSISDN: "2348030000001", Points: 5},
 		{MSISDN: "2348030000002", Points: 10},
 		{MSISDN: "2348030000003", Points: 1},
@@ -56,7 +56,7 @@ func (s *MockPostHogService) GetEligibleParticipantsForDraw(drawDate time.Time) 
 
     // Simulate enough participants for a large draw
     for i := 21; i <= 200; i++ {
-        participants = append(participants, mynumba_don_win_draw_system_backend_internal_models.EligibleParticipant{
+        participants = append(participants, models.EligibleParticipant{
             MSISDN: fmt.Sprintf("2348030000%03d", i),
             Points: rand.Intn(20) + 1, // Random points between 1 and 20
         })
@@ -106,8 +106,8 @@ func ExecuteDraw(c *gin.Context) {
 	}
 
 	// 1. Fetch the active Prize Structure
-	var prizeStructure mynumba_don_win_draw_system_backend_internal_models.PrizeStructure
-	if err := mynumba_don_win_draw_system_backend_internal_config.DB.Preload("PrizeTiers", func(db *gorm.DB) *gorm.DB {
+	var prizeStructure models.PrizeStructure
+	if err := config.DB.Preload("PrizeTiers", func(db *gorm.DB) *gorm.DB {
         return db.Order("prize_tiers.sort_order ASC") // Ensure tiers are ordered correctly by sort_order
     }).Where("id = ? AND is_active = ?", parsedPrizeStructureID, true).First(&prizeStructure).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -117,7 +117,7 @@ func ExecuteDraw(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve prize structure: " + err.Error()})
 		return
 	}
-    // Validate if the drawDate falls within the prize structure's validity period
+    // Validate if the drawDate falls within the prize structure"s validity period
     if (prizeStructure.EffectiveStartDate != nil && parsedDrawDate.Before(*prizeStructure.EffectiveStartDate)) || 
        (prizeStructure.EffectiveEndDate != nil && parsedDrawDate.After(*prizeStructure.EffectiveEndDate)) {
         
@@ -129,7 +129,7 @@ func ExecuteDraw(c *gin.Context) {
 		if prizeStructure.EffectiveEndDate != nil {
 			end = prizeStructure.EffectiveEndDate.Format("2006-01-02")
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Draw date %s is outside the prize structure's validity period (%s to %s)", parsedDrawDate.Format("2006-01-02"), start, end)})
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Draw date %s is outside the prize structure"s validity period (%s to %s)", parsedDrawDate.Format("2006-01-02"), start, end)})
         return
     }
 
@@ -144,7 +144,7 @@ func ExecuteDraw(c *gin.Context) {
 
 	// 3. Filter out blacklisted participants (mocked MTN Blacklist API)
 	blacklistService := MockMTNBlacklistService{}
-	finalEligibleParticipants := []mynumba_don_win_draw_system_backend_internal_models.EligibleParticipant{}
+	finalEligibleParticipants := []models.EligibleParticipant{}
 	for _, p := range rawParticipants {
 		isBlacklisted, err := blacklistService.IsBlacklisted(p.MSISDN)
 		if err != nil {
@@ -165,13 +165,13 @@ func ExecuteDraw(c *gin.Context) {
 	adminIDClaim, _ := c.Get("userID") // Assuming userID is string from JWT, convert to UUID
     adminID, _ := uuid.Parse(adminIDClaim.(string))
 
-	draw := mynumba_don_win_draw_system_backend_internal_models.Draw{
+	draw := models.Draw{
 		DrawDate:                parsedDrawDate,
 		PrizeStructureID:      prizeStructure.ID,
-		Status:                  mynumba_don_win_draw_system_backend_internal_models.DrawStatusPending, // Will update to Completed or Failed
+		Status:                  models.DrawStatusPending, // Will update to Completed or Failed
 		TotalEligibleMSISDNs:  func(i int) *int { return &i }(len(finalEligibleParticipants)),
 		ExecutedByAdminID:     &adminID,
-		ExecutionType:         mynumba_don_win_draw_system_backend_internal_models.ExecutionManual, // Assuming manual for now
+		ExecutionType:         models.ExecutionManual, // Assuming manual for now
 	}
 	totalTickets := 0
 	for _, p := range finalEligibleParticipants {
@@ -180,7 +180,7 @@ func ExecuteDraw(c *gin.Context) {
 	draw.TotalTickets = &totalTickets
 
 	// 5. Perform the draw - Select winners
-	var winners []mynumba_don_win_draw_system_backend_internal_models.Winner
+	var winners []models.Winner
 	entriesPool := []string{} // Each MSISDN is added Points times
 	for _, p := range finalEligibleParticipants {
 		for i := 0; i < p.Points; i++ {
@@ -197,7 +197,7 @@ func ExecuteDraw(c *gin.Context) {
 		for i := 0; i < tier.WinnerCount; i++ {
 			if len(entriesPool) == 0 {
 				// Not enough unique participants for all prize slots
-				break // Break from this tier's winner selection
+				break // Break from this tier"s winner selection
 			}
 
 			// Try to pick a unique winner
@@ -215,7 +215,7 @@ func ExecuteDraw(c *gin.Context) {
 					selectedWinnerMSISDN = potentialWinnerMSISDN
 					hasWon[selectedWinnerMSISDN] = true
 					pickedUnique = true
-					// Remove all entries of this winner from the pool to ensure they don't win again
+					// Remove all entries of this winner from the pool to ensure they don"t win again
 					newEntriesPool := []string{}
 					for _, entryMSISDN := range entriesPool {
 						if entryMSISDN != selectedWinnerMSISDN {
@@ -232,36 +232,36 @@ func ExecuteDraw(c *gin.Context) {
 
 			if !pickedUnique {
 				// Could not find a unique winner for this slot (e.g., all remaining participants already won)
-				break // Break from this tier's winner selection
+				break // Break from this tier"s winner selection
 			}
 			selectionOrder := i + 1
-			winners = append(winners, mynumba_don_win_draw_system_backend_internal_models.Winner{
+			winners = append(winners, models.Winner{
 				MSISDN:      selectedWinnerMSISDN,
 				PrizeTierID: tier.ID,
 				PrizeAmountWon: tier.PrizeAmount,
 				SelectionOrderInTier: &selectionOrder,
-				NotificationStatus: mynumba_don_win_draw_system_backend_internal_models.NotificationPending, // Initial status
-				PaymentStatus: mynumba_don_win_draw_system_backend_internal_models.PaymentPendingExport, // Initial status
+				NotificationStatus: models.NotificationPending, // Initial status
+				PaymentStatus: models.PaymentPendingExport, // Initial status
 			})
 		}
-		// Corrected: The undefined 'i' error was likely a misinterpretation by the compiler or a subtle issue.
-		// The original logic for 'i' in the loop and the break condition seems correct for its scope.
-		// If the pool is empty and we haven't selected all winners for *this tier* (i < tier.WinnerCount-1),
+		// Corrected: The undefined "i" error was likely a misinterpretation by the compiler or a subtle issue.
+		// The original logic for "i" in the loop and the break condition seems correct for its scope.
+		// If the pool is empty and we haven"t selected all winners for *this tier* (i < tier.WinnerCount-1),
 		// then we should break the outer loop over tiers.
 		// However, the condition `i < tier.WinnerCount-1` might be problematic if `i` is the loop counter for winners in the current tier.
-		// Let's re-evaluate the break condition. We should break the outer loop if `entriesPool` is empty
+		// Let"s re-evaluate the break condition. We should break the outer loop if `entriesPool` is empty
 		// and we still have tiers to process or winners to pick in the current tier.
-		// A simpler break: if entriesPool is empty after trying to pick winners for a tier, we can't pick more for subsequent tiers.
+		// A simpler break: if entriesPool is empty after trying to pick winners for a tier, we can"t pick more for subsequent tiers.
 		if len(entriesPool) == 0 {
             break // Break outer loop (over tiers) if no more participants to pick from
         }
 	}
 
 	// 6. Save Draw and Winners in a transaction
-	txErr := mynumba_don_win_draw_system_backend_internal_config.DB.Transaction(func(tx *gorm.DB) error {
-		draw.Status = mynumba_don_win_draw_system_backend_internal_models.DrawStatusCompleted
+	txErr := config.DB.Transaction(func(tx *gorm.DB) error {
+		draw.Status = models.DrawStatusCompleted
 		if err := tx.Create(&draw).Error; err != nil {
-			draw.Status = mynumba_don_win_draw_system_backend_internal_models.DrawStatusFailed
+			draw.Status = models.DrawStatusFailed
 			// Attempt to save failed draw status, but prioritize original error
 			tx.Save(&draw) // Save the draw even if it failed, with status Failed
 			return err
@@ -272,7 +272,7 @@ func ExecuteDraw(c *gin.Context) {
 		}
 		if len(winners) > 0 {
 		    if err := tx.Create(&winners).Error; err != nil {
-		        draw.Status = mynumba_don_win_draw_system_backend_internal_models.DrawStatusFailed // Mark draw as failed if winners can't be saved
+		        draw.Status = models.DrawStatusFailed // Mark draw as failed if winners can"t be saved
 		        tx.Save(&draw)
 		        return err
 		    }
@@ -287,8 +287,8 @@ func ExecuteDraw(c *gin.Context) {
 
 	// 7. Prepare and return response
 	// Fetch the draw again with its winners and their prize tier details for a comprehensive response
-    var finalDrawResponse mynumba_don_win_draw_system_backend_internal_models.Draw
-    mynumba_don_win_draw_system_backend_internal_config.DB.Preload("PrizeStructure.PrizeTiers").Preload("Winners.PrizeTier").First(&finalDrawResponse, draw.ID)
+    var finalDrawResponse models.Draw
+    config.DB.Preload("PrizeStructure.PrizeTiers").Preload("Winners.PrizeTier").First(&finalDrawResponse, draw.ID)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Draw executed successfully!",
@@ -298,9 +298,9 @@ func ExecuteDraw(c *gin.Context) {
 
 // ListDraws handles listing all draws
 func ListDraws(c *gin.Context) {
-	var draws []mynumba_don_win_draw_system_backend_internal_models.Draw
+	var draws []models.Draw
 	// Add pagination, filtering by date range, status etc. later
-	result := mynumba_don_win_draw_system_backend_internal_config.DB.Preload("PrizeStructure").Preload("ExecutedByAdminID", func(db *gorm.DB) *gorm.DB {
+	result := config.DB.Preload("PrizeStructure").Preload("ExecutedByAdminID", func(db *gorm.DB) *gorm.DB {
         return db.Select("id, email, first_name, last_name") // Select only necessary fields
     }).Order("draw_date desc").Find(&draws)
 	if result.Error != nil {
@@ -319,8 +319,8 @@ func GetDrawDetails(c *gin.Context) {
 		return
 	}
 
-	var draw mynumba_don_win_draw_system_backend_internal_models.Draw
-	result := mynumba_don_win_draw_system_backend_internal_config.DB.Preload("PrizeStructure.PrizeTiers").Preload("Winners.PrizeTier").Preload("ExecutedByAdminID", func(db *gorm.DB) *gorm.DB {
+	var draw models.Draw
+	result := config.DB.Preload("PrizeStructure.PrizeTiers").Preload("Winners.PrizeTier").Preload("ExecutedByAdminID", func(db *gorm.DB) *gorm.DB {
         return db.Select("id, email, first_name, last_name")
     }).Where("id = ?", parsedDrawID).First(&draw)
 
@@ -352,8 +352,8 @@ func RerunDraw(c *gin.Context) {
 func ListWinners(c *gin.Context) {
     // TODO: Implement filtering (by draw date, prize tier, MSISDN, payment status)
     // TODO: Implement pagination
-    var winners []mynumba_don_win_draw_system_backend_internal_models.Winner
-    result := mynumba_don_win_draw_system_backend_internal_config.DB.Preload("Draw.PrizeStructure").Preload("PrizeTier").Order("created_at DESC").Find(&winners)
+    var winners []models.Winner
+    result := config.DB.Preload("Draw.PrizeStructure").Preload("PrizeTier").Order("created_at DESC").Find(&winners)
     if result.Error != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve winners: " + result.Error.Error()})
         return
@@ -366,13 +366,21 @@ func ExportWinnersForMoMo(c *gin.Context) {
     // TODO: 
     // 1. Fetch winners (potentially filtered by draw ID or date range passed in query params)
     // 2. Format data according to: Winner MSISDN, Prize Amount, Date of Draw, and Draw Prize Position.
-    // 3. Generate CSV file content
-    // 4. Set appropriate headers for CSV download
-    // 5. Update winner payment status to PaymentExportedForPayment
+    /*
+    Example CSV structure:
+    MSISDN,PrizeAmount,DateOfDraw,PrizePosition
+    2348030000001,10000,2024-01-15,1
+    2348030000002,5000,2024-01-15,2
+    */
     c.JSON(http.StatusNotImplemented, gin.H{"message": "Export winners for MoMo functionality is not yet implemented."})
 }
 
 // UpdateWinnerPaymentStatus handles updating the payment status of a winner
+type UpdateWinnerPaymentStatusRequest struct {
+    PaymentStatus models.PaymentStatus `json:"paymentStatus" binding:"required"`
+    Remarks       *string              `json:"remarks,omitempty"`
+}
+
 func UpdateWinnerPaymentStatus(c *gin.Context) {
     winnerID := c.Param("id")
     parsedWinnerID, err := uuid.Parse(winnerID)
@@ -381,38 +389,52 @@ func UpdateWinnerPaymentStatus(c *gin.Context) {
         return
     }
 
-    var req struct {
-        Status mynumba_don_win_draw_system_backend_internal_models.PaymentStatus `json:"status" binding:"required"`
-    }
-
+    var req UpdateWinnerPaymentStatusRequest
     if err := c.ShouldBindJSON(&req); err != nil {
         c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
         return
     }
 
-    // Validate status value (add more specific validation if needed)
-    if req.Status != mynumba_don_win_draw_system_backend_internal_models.PaymentConfirmed && 
-       req.Status != mynumba_don_win_draw_system_backend_internal_models.PaymentFailed && 
-       req.Status != mynumba_don_win_draw_system_backend_internal_models.PaymentPendingExport && 
-       req.Status != mynumba_don_win_draw_system_backend_internal_models.PaymentExportedForPayment &&
-       req.Status != mynumba_don_win_draw_system_backend_internal_models.PaymentRequiresVerification {
+    // Validate payment status value
+    if req.PaymentStatus != models.PaymentPendingExport && 
+       req.PaymentStatus != models.PaymentExported && 
+       req.PaymentStatus != models.PaymentPaid && 
+       req.PaymentStatus != models.PaymentFailed && 
+       req.PaymentStatus != models.PaymentRequiresInvestigation {
         c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payment status value"})
         return
     }
 
-    var winner mynumba_don_win_draw_system_backend_internal_models.Winner
-    if mynumba_don_win_draw_system_backend_internal_config.DB.Where("id = ?", parsedWinnerID).First(&winner).Error != nil {
+    var winner models.Winner
+    if config.DB.Where("id = ?", parsedWinnerID).First(&winner).Error != nil {
         c.JSON(http.StatusNotFound, gin.H{"error": "Winner not found"})
         return
     }
 
-    result := mynumba_don_win_draw_system_backend_internal_config.DB.Model(&winner).Update("payment_status", req.Status)
+    updates := map[string]interface{}{
+        "payment_status": req.PaymentStatus,
+        "payment_status_updated_at": time.Now(),
+    }
+    if req.Remarks != nil {
+        updates["payment_remarks"] = *req.Remarks
+    }
+
+    // TODO: Add Audit Log entry for payment status change
+
+    result := config.DB.Model(&winner).Updates(updates)
     if result.Error != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update winner payment status: " + result.Error.Error()})
         return
     }
 
-    mynumba_don_win_draw_system_backend_internal_config.DB.Preload("Draw.PrizeStructure").Preload("PrizeTier").First(&winner, "id = ?", parsedWinnerID)
+    config.DB.Preload("Draw.PrizeStructure").Preload("PrizeTier").First(&winner, "id = ?", parsedWinnerID)
     c.JSON(http.StatusOK, winner)
+}
+
+// ListAuditLogs - Placeholder for now
+func ListAuditLogs(c *gin.Context) {
+    // TODO: Implement fetching and filtering of audit logs
+    // This would likely involve a separate AuditLog model and table.
+    c.JSON(http.StatusNotImplemented, gin.H{"message": "List audit logs functionality is not yet implemented."})
 }
 

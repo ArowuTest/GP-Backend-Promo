@@ -16,9 +16,9 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	"mynumba-don-win-draw-system/backend/internal/auth"
-	"mynumba-don-win-draw-system/backend/internal/config"
-	"mynumba-don-win-draw-system/backend/internal/models"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/auth"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/config"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 )
 
 // Helper function to setup GORM with sqlmock

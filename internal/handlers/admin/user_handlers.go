@@ -5,18 +5,18 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	mynumba_don_win_draw_system_backend_internal_auth "mynumba-don-win-draw-system/backend/internal/auth"
-	mynumba_don_win_draw_system_backend_internal_config "mynumba-don-win-draw-system/backend/internal/config"
-	mynumba_don_win_draw_system_backend_internal_models "mynumba-don-win-draw-system/backend/internal/models"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/auth"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/config"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 )
 
 // CreateAdminUserRequest struct for creating a new admin user
 type CreateAdminUserRequest struct {
-	Email     string                                                                `json:"email" binding:"required,email"`
-	Password  string                                                                `json:"password" binding:"required,min=8"` // Add more password complexity rules if needed
-	FirstName string                                                                `json:"firstName" binding:"required"`
-	LastName  string                                                                `json:"lastName" binding:"required"`
-	Role      mynumba_don_win_draw_system_backend_internal_models.AdminUserRole `json:"role" binding:"required"`
+	Email     string           `json:"email" binding:"required,email"`
+	Password  string           `json:"password" binding:"required,min=8"` // Add more password complexity rules if needed
+	FirstName string           `json:"firstName" binding:"required"`
+	LastName  string           `json:"lastName" binding:"required"`
+	Role      models.AdminUserRole `json:"role" binding:"required"`
 }
 
 // CreateAdminUser handles the creation of a new admin user (SuperAdmin only)
@@ -28,29 +28,29 @@ func CreateAdminUser(c *gin.Context) {
 	}
 
 	// Check if email already exists
-	var existingUser mynumba_don_win_draw_system_backend_internal_models.AdminUser
-	if mynumba_don_win_draw_system_backend_internal_config.DB.Where("email = ?", req.Email).First(&existingUser).Error == nil {
+	var existingUser models.AdminUser
+	if config.DB.Where("email = ?", req.Email).First(&existingUser).Error == nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "Email already exists"})
 		return
 	}
 
-	hashedPassword, salt, err := mynumba_don_win_draw_system_backend_internal_auth.HashPassword(req.Password)
+	hashedPassword, saltValue, err := auth.HashPassword(req.Password)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
 		return
 	}
 
-	newUser := mynumba_don_win_draw_system_backend_internal_models.AdminUser{
+	newUser := models.AdminUser{
 		Email:        req.Email,
 		PasswordHash: hashedPassword,
-		Salt:         salt,
+		Salt:         saltValue,
 		FirstName:    req.FirstName,
 		LastName:     req.LastName,
 		Role:         req.Role,
-		Status:       mynumba_don_win_draw_system_backend_internal_models.StatusActive, // Default to active, or require activation step
+		Status:       models.StatusActive, // Default to active, or require activation step
 	}
 
-	result := mynumba_don_win_draw_system_backend_internal_config.DB.Create(&newUser)
+	result := config.DB.Create(&newUser)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create admin user: " + result.Error.Error()})
 		return
@@ -73,9 +73,9 @@ func CreateAdminUser(c *gin.Context) {
 
 // ListAdminUsers handles listing all admin users (SuperAdmin only)
 func ListAdminUsers(c *gin.Context) {
-	var users []mynumba_don_win_draw_system_backend_internal_models.AdminUser
+	var users []models.AdminUser
 	// Add pagination later if needed
-	result := mynumba_don_win_draw_system_backend_internal_config.DB.Select("id, email, first_name, last_name, role, status, created_at, updated_at, last_login_at").Find(&users)
+	result := config.DB.Select("id, email, first_name, last_name, role, status, created_at, updated_at, last_login_at").Find(&users)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve admin users: " + result.Error.Error()})
 		return
@@ -92,8 +92,8 @@ func GetAdminUser(c *gin.Context) {
 		return
 	}
 
-	var user mynumba_don_win_draw_system_backend_internal_models.AdminUser
-	result := mynumba_don_win_draw_system_backend_internal_config.DB.Select("id, email, first_name, last_name, role, status, created_at, updated_at, last_login_at").Where("id = ?", parsedUserID).First(&user)
+	var user models.AdminUser
+	result := config.DB.Select("id, email, first_name, last_name, role, status, created_at, updated_at, last_login_at").Where("id = ?", parsedUserID).First(&user)
 	if result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Admin user not found"})
 		return
@@ -103,9 +103,9 @@ func GetAdminUser(c *gin.Context) {
 
 // UpdateAdminUserRequest struct for updating an admin user
 type UpdateAdminUserRequest struct {
-	FirstName *string                                                               `json:"firstName,omitempty"`
-	LastName  *string                                                               `json:"lastName,omitempty"`
-	Role      *mynumba_don_win_draw_system_backend_internal_models.AdminUserRole `json:"role,omitempty"`
+	FirstName *string               `json:"firstName,omitempty"`
+	LastName  *string               `json:"lastName,omitempty"`
+	Role      *models.AdminUserRole `json:"role,omitempty"`
 	// Password updates should be handled separately via a dedicated endpoint for security
 }
 
@@ -124,8 +124,8 @@ func UpdateAdminUser(c *gin.Context) {
 		return
 	}
 
-	var user mynumba_don_win_draw_system_backend_internal_models.AdminUser
-	if mynumba_don_win_draw_system_backend_internal_config.DB.Where("id = ?", parsedUserID).First(&user).Error != nil {
+	var user models.AdminUser
+	if config.DB.Where("id = ?", parsedUserID).First(&user).Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Admin user not found"})
 		return
 	}
@@ -146,20 +146,20 @@ func UpdateAdminUser(c *gin.Context) {
 		return
 	}
 
-	result := mynumba_don_win_draw_system_backend_internal_config.DB.Model(&user).Updates(updates)
+	result := config.DB.Model(&user).Updates(updates)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update admin user: " + result.Error.Error()})
 		return
 	}
 
 	// Refetch to get updated data, excluding sensitive fields
-	mynumba_don_win_draw_system_backend_internal_config.DB.Select("id, email, first_name, last_name, role, status, created_at, updated_at, last_login_at").First(&user, "id = ?", parsedUserID)
+	config.DB.Select("id, email, first_name, last_name, role, status, created_at, updated_at, last_login_at").First(&user, "id = ?", parsedUserID)
 	c.JSON(http.StatusOK, user)
 }
 
 // UpdateAdminUserStatusRequest struct for updating user status
 type UpdateAdminUserStatusRequest struct {
-	Status mynumba_don_win_draw_system_backend_internal_models.UserStatus `json:"status" binding:"required"` // Corrected type
+	Status models.UserStatus `json:"status" binding:"required"` // Corrected type
 }
 
 // UpdateAdminUserStatus handles updating an admin user's status (SuperAdmin only)
@@ -178,29 +178,29 @@ func UpdateAdminUserStatus(c *gin.Context) {
 	}
 
 	// Validate status value
-	if req.Status != mynumba_don_win_draw_system_backend_internal_models.StatusActive && 
-	   req.Status != mynumba_don_win_draw_system_backend_internal_models.StatusInactive && 
-	   req.Status != mynumba_don_win_draw_system_backend_internal_models.StatusLocked { // Corrected to StatusLocked
+	if req.Status != models.StatusActive && 
+	   req.Status != models.StatusInactive && 
+	   req.Status != models.StatusLocked { // Corrected to StatusLocked
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status value"})
 		return
 	}
 
-	var user mynumba_don_win_draw_system_backend_internal_models.AdminUser
-	if mynumba_don_win_draw_system_backend_internal_config.DB.Where("id = ?", parsedUserID).First(&user).Error != nil {
+	var user models.AdminUser
+	if config.DB.Where("id = ?", parsedUserID).First(&user).Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Admin user not found"})
 		return
 	}
 
 	// Prevent SuperAdmin from deactivating their own account if they are the only SuperAdmin (add this logic if needed)
 
-	result := mynumba_don_win_draw_system_backend_internal_config.DB.Model(&user).Update("status", req.Status)
+	result := config.DB.Model(&user).Update("status", req.Status)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update admin user status: " + result.Error.Error()})
 		return
 	}
 
 	// Refetch to get updated data, excluding sensitive fields
-	mynumba_don_win_draw_system_backend_internal_config.DB.Select("id, email, first_name, last_name, role, status, created_at, updated_at, last_login_at").First(&user, "id = ?", parsedUserID)
+	config.DB.Select("id, email, first_name, last_name, role, status, created_at, updated_at, last_login_at").First(&user, "id = ?", parsedUserID)
 	c.JSON(http.StatusOK, user)
 }
 
@@ -218,7 +218,7 @@ func DeleteAdminUser(c *gin.Context) {
 	// currentUserID := c.GetString("userID") // From JWTMiddleware
 	// if currentUserID == userID { ... }
 
-	result := mynumba_don_win_draw_system_backend_internal_config.DB.Delete(&mynumba_don_win_draw_system_backend_internal_models.AdminUser{}, "id = ?", parsedUserID)
+	result := config.DB.Delete(&models.AdminUser{}, "id = ?", parsedUserID)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete admin user: " + result.Error.Error()})
 		return

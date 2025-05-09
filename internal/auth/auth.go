@@ -9,8 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	mynumba_don_win_draw_system_backend_internal_config "mynumba-don-win-draw-system/backend/internal/config"
-	mynumba_don_win_draw_system_backend_internal_models "mynumba-don-win-draw-system/backend/internal/models"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/config"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -29,14 +29,14 @@ func init() {
 
 // Claims struct for JWT
 type Claims struct {
-	UserID string                            `json:"user_id"`
-	Email  string                            `json:"email"`
-	Role   mynumba_don_win_draw_system_backend_internal_models.AdminUserRole `json:"role"`
+	UserID string           `json:"user_id"`
+	Email  string           `json:"email"`
+	Role   models.AdminUserRole `json:"role"`
 	jwt.RegisteredClaims
 }
 
 // GenerateJWT generates a new JWT token for a given user
-func GenerateJWT(user *mynumba_don_win_draw_system_backend_internal_models.AdminUser) (string, error) {
+func GenerateJWT(user *models.AdminUser) (string, error) {
 	expirationTime := time.Now().Add(24 * time.Hour) // Token valid for 24 hours
 	claims := &Claims{
 		UserID: user.ID.String(),
@@ -148,14 +148,14 @@ func LoginAdminUser(c *gin.Context) {
 		return
 	}
 
-	var adminUser mynumba_don_win_draw_system_backend_internal_models.AdminUser
-	result := mynumba_don_win_draw_system_backend_internal_config.DB.Where("email = ?", req.Email).First(&adminUser)
+	var adminUser models.AdminUser
+	result := config.DB.Where("email = ?", req.Email).First(&adminUser)
 	if result.Error != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
 		return
 	}
 
-	if adminUser.Status != mynumba_don_win_draw_system_backend_internal_models.StatusActive {
+	if adminUser.Status != models.StatusActive {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Account is not active"})
 		return
 	}
@@ -176,7 +176,7 @@ func LoginAdminUser(c *gin.Context) {
 	now := time.Now()
 	adminUser.LastLoginAt = &now
 	adminUser.FailedLoginAttempts = 0 // Reset on successful login
-	mynumba_don_win_draw_system_backend_internal_config.DB.Save(&adminUser)
+	config.DB.Save(&adminUser)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Login successful",
@@ -198,7 +198,7 @@ func LoginAdminUser(c *gin.Context) {
 
 
 // RoleAuthMiddleware checks if the authenticated user has one of the required roles
-func RoleAuthMiddleware(requiredRoles ...mynumba_don_win_draw_system_backend_internal_models.AdminUserRole) gin.HandlerFunc {
+func RoleAuthMiddleware(requiredRoles ...models.AdminUserRole) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userRoleContext, exists := c.Get("userRole")
 		if !exists {
@@ -207,7 +207,7 @@ func RoleAuthMiddleware(requiredRoles ...mynumba_don_win_draw_system_backend_int
 			return
 		}
 
-		currentRole, ok := userRoleContext.(mynumba_don_win_draw_system_backend_internal_models.AdminUserRole)
+		currentRole, ok := userRoleContext.(models.AdminUserRole)
 		if !ok {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "User role in context is of an unexpected type"})
 			c.Abort()

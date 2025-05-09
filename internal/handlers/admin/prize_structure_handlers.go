@@ -7,19 +7,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	mynumba_don_win_draw_system_backend_internal_config "mynumba-don-win-draw-system/backend/internal/config"
-	mynumba_don_win_draw_system_backend_internal_models "mynumba-don-win-draw-system/backend/internal/models"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/config"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"gorm.io/gorm"
 )
 
 // CreatePrizeStructureRequest defines the structure for creating a prize structure
 type CreatePrizeStructureRequest struct {
-	Name               string                                                                    `json:"name" binding:"required"`
-	DayType            mynumba_don_win_draw_system_backend_internal_models.DayType               `json:"day_type" binding:"required"`
-	IsActive           bool                                                                      `json:"isActive"` // Default to false, activate explicitly
-	EffectiveStartDate *time.Time                                                                `json:"effective_start_date,omitempty"`
-	EffectiveEndDate   *time.Time                                                                `json:"effective_end_date,omitempty"`
-	PrizeTiers         []mynumba_don_win_draw_system_backend_internal_models.CreatePrizeTierRequest `json:"prize_tiers" binding:"required,dive"`
+	Name               string                             `json:"name" binding:"required"`
+	DayType            models.DayType                     `json:"day_type" binding:"required"`
+	IsActive           bool                               `json:"isActive"` // Default to false, activate explicitly
+	EffectiveStartDate *time.Time                         `json:"effective_start_date,omitempty"`
+	EffectiveEndDate   *time.Time                         `json:"effective_end_date,omitempty"`
+	PrizeTiers         []models.CreatePrizeTierRequest `json:"prize_tiers" binding:"required,dive"`
 }
 
 // CreatePrizeStructure handles the creation of a new prize structure
@@ -37,8 +37,8 @@ func CreatePrizeStructure(c *gin.Context) {
 	}
 
 	// Create PrizeStructure and its Tiers within a transaction
-	txErr := mynumba_don_win_draw_system_backend_internal_config.DB.Transaction(func(tx *gorm.DB) error {
-		prizeStructure := mynumba_don_win_draw_system_backend_internal_models.PrizeStructure{
+	txErr := config.DB.Transaction(func(tx *gorm.DB) error {
+		prizeStructure := models.PrizeStructure{
 			Name:               req.Name,
 			DayType:            req.DayType,
 			IsActive:           req.IsActive, 
@@ -68,7 +68,7 @@ func CreatePrizeStructure(c *gin.Context) {
 		}
 
 		for _, tierReq := range req.PrizeTiers {
-			tier := mynumba_don_win_draw_system_backend_internal_models.PrizeTier{
+			tier := models.PrizeTier{
 				PrizeStructureID: prizeStructure.ID,
 				TierName:         tierReq.TierName, // Corrected from Name
 				TierDescription:  tierReq.TierDescription, // Corrected from PrizeType
@@ -99,9 +99,9 @@ func CreatePrizeStructure(c *gin.Context) {
 
 // ListPrizeStructures handles listing all prize structures
 func ListPrizeStructures(c *gin.Context) {
-	var prizeStructures []mynumba_don_win_draw_system_backend_internal_models.PrizeStructure
+	var prizeStructures []models.PrizeStructure
 	// Add pagination, filtering by active status, date range etc. later
-	result := mynumba_don_win_draw_system_backend_internal_config.DB.Preload("PrizeTiers").Order("created_at desc").Find(&prizeStructures)
+	result := config.DB.Preload("PrizeTiers").Order("created_at desc").Find(&prizeStructures)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve prize structures: " + result.Error.Error()})
 		return
@@ -118,8 +118,8 @@ func GetPrizeStructure(c *gin.Context) {
 		return
 	}
 
-	var prizeStructure mynumba_don_win_draw_system_backend_internal_models.PrizeStructure
-	result := mynumba_don_win_draw_system_backend_internal_config.DB.Preload("PrizeTiers").Where("id = ?", parsedStructureID).First(&prizeStructure)
+	var prizeStructure models.PrizeStructure
+	result := config.DB.Preload("PrizeTiers").Where("id = ?", parsedStructureID).First(&prizeStructure)
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Prize structure not found"})
@@ -133,11 +133,11 @@ func GetPrizeStructure(c *gin.Context) {
 
 
 type UpdatePrizeStructureRequest struct {
-	Name               *string                                                                   `json:"name,omitempty"`
-	DayType            *mynumba_don_win_draw_system_backend_internal_models.DayType              `json:"day_type,omitempty"`
-	IsActive           *bool                                                                     `json:"isActive,omitempty"`
-	EffectiveStartDate *time.Time                                                                `json:"effective_start_date,omitempty"`
-	EffectiveEndDate   *time.Time                                                                `json:"effective_end_date,omitempty"`
+	Name               *string          `json:"name,omitempty"`
+	DayType            *models.DayType  `json:"day_type,omitempty"`
+	IsActive           *bool            `json:"isActive,omitempty"`
+	EffectiveStartDate *time.Time       `json:"effective_start_date,omitempty"`
+	EffectiveEndDate   *time.Time       `json:"effective_end_date,omitempty"`
 	// prizeTiers: For now, not handling direct update of tiers via this endpoint to keep it simpler.
 }
 
@@ -156,8 +156,8 @@ func UpdatePrizeStructure(c *gin.Context) {
 		return
 	}
 
-	var prizeStructure mynumba_don_win_draw_system_backend_internal_models.PrizeStructure
-	if mynumba_don_win_draw_system_backend_internal_config.DB.Where("id = ?", parsedStructureID).First(&prizeStructure).Error != nil {
+	var prizeStructure models.PrizeStructure
+	if config.DB.Where("id = ?", parsedStructureID).First(&prizeStructure).Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Prize structure not found"})
 		return
 	}
@@ -198,14 +198,14 @@ func UpdatePrizeStructure(c *gin.Context) {
         return
     }
 
-	result := mynumba_don_win_draw_system_backend_internal_config.DB.Model(&prizeStructure).Updates(updates)
+	result := config.DB.Model(&prizeStructure).Updates(updates)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update prize structure: " + result.Error.Error()})
 		return
 	}
 
 	// Refetch to get updated data with tiers
-	mynumba_don_win_draw_system_backend_internal_config.DB.Preload("PrizeTiers").First(&prizeStructure, "id = ?", parsedStructureID)
+	config.DB.Preload("PrizeTiers").First(&prizeStructure, "id = ?", parsedStructureID)
 	c.JSON(http.StatusOK, prizeStructure)
 }
 
@@ -220,7 +220,7 @@ func DeletePrizeStructure(c *gin.Context) {
 
 	// Check if the prize structure is associated with any draws. If so, prevent deletion or handle accordingly.
 	var drawCount int64
-    mynumba_don_win_draw_system_backend_internal_config.DB.Model(&mynumba_don_win_draw_system_backend_internal_models.Draw{}).Where("prize_structure_id = ?", parsedStructureID).Count(&drawCount)
+    config.DB.Model(&models.Draw{}).Where("prize_structure_id = ?", parsedStructureID).Count(&drawCount)
     if drawCount > 0 {
         c.JSON(http.StatusConflict, gin.H{"error": "Cannot delete prize structure: It is associated with existing draws."})
         return
@@ -228,11 +228,11 @@ func DeletePrizeStructure(c *gin.Context) {
 
 	// Soft delete would be: DB.Model(&models.PrizeStructure{}).Where("id = ?", parsedStructureID).Update("deleted_at", time.Now())
 	// For hard delete with cascading tier deletion:
-	txErr := mynumba_don_win_draw_system_backend_internal_config.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("prize_structure_id = ?", parsedStructureID).Delete(&mynumba_don_win_draw_system_backend_internal_models.PrizeTier{}).Error; err != nil {
+	txErr := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("prize_structure_id = ?", parsedStructureID).Delete(&models.PrizeTier{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Delete(&mynumba_don_win_draw_system_backend_internal_models.PrizeStructure{}, "id = ?", parsedStructureID).Error; err != nil {
+		if err := tx.Delete(&models.PrizeStructure{}, "id = ?", parsedStructureID).Error; err != nil {
 			return err
 		}
 		return nil
@@ -265,19 +265,19 @@ func ActivatePrizeStructure(c *gin.Context) {
         return
     }
 
-    var prizeStructure mynumba_don_win_draw_system_backend_internal_models.PrizeStructure
-    if mynumba_don_win_draw_system_backend_internal_config.DB.Where("id = ?", parsedStructureID).First(&prizeStructure).Error != nil {
+    var prizeStructure models.PrizeStructure
+    if config.DB.Where("id = ?", parsedStructureID).First(&prizeStructure).Error != nil {
         c.JSON(http.StatusNotFound, gin.H{"error": "Prize structure not found"})
         return
     }
 
-    result := mynumba_don_win_draw_system_backend_internal_config.DB.Model(&prizeStructure).Update("is_active", req.IsActive)
+    result := config.DB.Model(&prizeStructure).Update("is_active", req.IsActive)
     if result.Error != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update prize structure status: " + result.Error.Error()})
         return
     }
 
-    mynumba_don_win_draw_system_backend_internal_config.DB.Preload("PrizeTiers").First(&prizeStructure, "id = ?", parsedStructureID)
+    config.DB.Preload("PrizeTiers").First(&prizeStructure, "id = ?", parsedStructureID)
     c.JSON(http.StatusOK, prizeStructure)
 }
 
