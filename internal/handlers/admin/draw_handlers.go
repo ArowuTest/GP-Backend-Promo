@@ -129,7 +129,7 @@ func ExecuteDraw(c *gin.Context) {
 		if prizeStructure.EffectiveEndDate != nil {
 			end = prizeStructure.EffectiveEndDate.Format("2006-01-02")
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Draw date %s is outside the prize structure"s validity period (%s to %s)", parsedDrawDate.Format("2006-01-02"), start, end)})
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Draw date %s is outside the prize structure's validity period (%s to %s)", parsedDrawDate.Format("2006-01-02"), start, end)})
         return
     }
 
@@ -437,4 +437,5 @@ func ListAuditLogs(c *gin.Context) {
     // This would likely involve a separate AuditLog model and table.
     c.JSON(http.StatusNotImplemented, gin.H{"message": "List audit logs functionality is not yet implemented."})
 }
+
 
