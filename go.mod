@@ -1,4 +1,4 @@
-module mynumba-don-win-draw-system/backend
+module github.com/ArowuTest/GP-Backend-Promo
 
 go 1.21.0
 
