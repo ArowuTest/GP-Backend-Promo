@@ -4,51 +4,51 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-contrib/cors"
-	"github.com/gin-gonic/gin"
-	myauth "github.com/ArowuTest/GP-Backend-Promo/internal/auth"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/auth"
 	adminhandlers "github.com/ArowuTest/GP-Backend-Promo/internal/handlers/admin"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
-)
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
+) 
 
 // SetupRouter initializes and configures the Gin router
 func SetupRouter() *gin.Engine {
 	router := gin.Default()
 
 	// CORS Middleware Configuration
-	// Replace "https://gp-admin-promo.vercel.app" with your actual frontend production URL
-	// For development, you might want to allow "http://localhost:xxxx" (your local frontend port)
-	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"https://gp-admin-promo.vercel.app"}, // Your Vercel frontend URL
-		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
-		MaxAge:           12 * time.Hour,
-	}))
+	config := cors.DefaultConfig()
+	// Allow specific origins, methods, and headers
+	config.AllowOrigins = []string{"https://gp-admin-promo.vercel.app", "http://localhost:3000"} // Add your Vercel frontend and local dev URL
+	config.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"}
+	config.AllowHeaders = []string{"Origin", "Content-Type", "Accept", "Authorization"}
+	config.AllowCredentials = true
+	config.MaxAge = 12 * time.Hour
+	router.Use(cors.New(config) )
 
-	// Health check - can be enhanced to check DB status etc.
+	// Simple health check route (optional, but good for Render health checks)
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "Backend Healthy from Gin Router"})
+		c.JSON(http.StatusOK, gin.H{"status": "Backend Healthy"}) 
 	})
 
 	// API v1 Group
-	// All routes under /api/v1 will now have the CORS policy applied
 	apiV1 := router.Group("/api/v1")
 	{
 		// Authentication routes
 		authRoutes := apiV1.Group("/auth")
 		{
-			authRoutes.POST("/login", myauth.LoginAdminUser)
+			authRoutes.POST("/login", adminhandlers.LoginAdminUser) // Assuming LoginAdminUser handles the logic
+			// If you have a separate registration for admin, add it here
+			// authRoutes.POST("/register", adminhandlers.RegisterAdminUser)
 		}
 
 		// Admin routes - protected by auth middleware
-		adminRoutes := apiV1.Group("/admin")
-		adminRoutes.Use(myauth.JWTMiddleware()) // Apply JWT middleware
+		// We will add the JWT middleware here once it's ready
+		adminProtectedRoutes := apiV1.Group("/admin")
+		adminProtectedRoutes.Use(auth.JWTMiddleware()) // Apply JWT middleware
 		{
 			// User Management (SuperAdmin only)
-			userManagementRoutes := adminRoutes.Group("/users")
-			userManagementRoutes.Use(myauth.RoleAuthMiddleware(models.SuperAdminRole))
+			userManagementRoutes := adminProtectedRoutes.Group("/users")
+			userManagementRoutes.Use(auth.RoleAuthMiddleware(models.SuperAdminRole))
 			{
 				userManagementRoutes.POST("/", adminhandlers.CreateAdminUser)
 				userManagementRoutes.GET("/", adminhandlers.ListAdminUsers)
@@ -59,8 +59,8 @@ func SetupRouter() *gin.Engine {
 			}
 
 			// Prize Structure Management (SuperAdmin or DrawAdmin)
-			prizeRoutes := adminRoutes.Group("/prize-structures")
-			prizeRoutes.Use(myauth.RoleAuthMiddleware(models.SuperAdminRole, models.DrawAdminRole))
+			prizeRoutes := adminProtectedRoutes.Group("/prize-structures")
+			prizeRoutes.Use(auth.RoleAuthMiddleware(models.SuperAdminRole, models.DrawAdminRole))
 			{
 				prizeRoutes.POST("/", adminhandlers.CreatePrizeStructure)
 				prizeRoutes.GET("/", adminhandlers.ListPrizeStructures)
@@ -70,9 +70,9 @@ func SetupRouter() *gin.Engine {
 				prizeRoutes.PUT("/:id/activate", adminhandlers.ActivatePrizeStructure)
 			}
 
-			// Draw Management (DrawAdmin)
-			drawRoutes := adminRoutes.Group("/draws")
-			drawRoutes.Use(myauth.RoleAuthMiddleware(models.DrawAdminRole, models.SuperAdminRole)) // Allow SuperAdmin too
+			// Draw Management (DrawAdmin or SuperAdmin)
+			drawRoutes := adminProtectedRoutes.Group("/draws")
+			drawRoutes.Use(auth.RoleAuthMiddleware(models.DrawAdminRole, models.SuperAdminRole))
 			{
 				drawRoutes.POST("/execute", adminhandlers.ExecuteDraw)
 				drawRoutes.GET("/", adminhandlers.ListDraws)
@@ -80,9 +80,9 @@ func SetupRouter() *gin.Engine {
 				drawRoutes.POST("/:id/rerun", adminhandlers.RerunDraw) // Placeholder
 			}
 
-			// Winner Management & Reporting
-			winnerRoutes := adminRoutes.Group("/winners")
-			winnerRoutes.Use(myauth.RoleAuthMiddleware(models.SuperAdminRole, models.DrawAdminRole, models.ViewOnlyAdminRole))
+			// Winner Management & Reporting (SuperAdmin, DrawAdmin, ViewOnlyAdmin)
+			winnerRoutes := adminProtectedRoutes.Group("/winners")
+			winnerRoutes.Use(auth.RoleAuthMiddleware(models.SuperAdminRole, models.DrawAdminRole, models.ViewOnlyAdminRole))
 			{
 				winnerRoutes.GET("/", adminhandlers.ListWinners)
 				winnerRoutes.GET("/export/momo", adminhandlers.ExportWinnersForMoMo) // Placeholder
@@ -90,8 +90,8 @@ func SetupRouter() *gin.Engine {
 			}
 
 			// Audit Logs (SuperAdmin)
-			auditRoutes := adminRoutes.Group("/audit-logs")
-			auditRoutes.Use(myauth.RoleAuthMiddleware(models.SuperAdminRole))
+			auditRoutes := adminProtectedRoutes.Group("/audit-logs")
+			auditRoutes.Use(auth.RoleAuthMiddleware(models.SuperAdminRole))
 			{
 				auditRoutes.GET("/", adminhandlers.ListAuditLogs) // Placeholder
 			}
@@ -100,5 +100,4 @@ func SetupRouter() *gin.Engine {
 
 	return router
 }
-
 
