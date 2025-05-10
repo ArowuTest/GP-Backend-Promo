@@ -29,7 +29,11 @@ github.com/goccy/go-json v0.10.2/go.mod h1:9+qgOL2iiyvN3d7sJqXG7Z0TxR72aA5qpzF22
 github.com/golang-jwt/jwt/v5 v5.2.1 h1:7y/97Q0G2chV6rK5P1p0pPCr6XhL1bqL02x6jJqO82w=
 github.com/golang-jwt/jwt/v5 v5.2.1/go.mod h1:J2KffXW2FjG1L5yGj0e85L8bY72h2kCg0+Jvj9X9D4A=
 github.com/google/uuid v1.6.0 h1:t6K25TfAWishT0vLz7ckYn27V36SML6l21Tr2YI+x4k=
+<<<<<<< HEAD
 github.com/google/uuid v1.6.0/go.mod h1:TI+pgr125iq2VAFJ3X2sXQ69sV2OlXQJb6cWJgjsPqU=
+=======
+github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
+>>>>>>> 2e5fe1b300c75d772f239946d26551fbea592a56
 github.com/jackc/pgpassfile v1.0.0 h1:qjH2l3FvNih80Jv6FhZ2EDw0RXxJ2nBfJzIzs0I023U=
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:sOKbQ5qRz0V2gPZzN9k3XvGv78kC8x2K8O+8sXgWjHY=
 github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a h1:tDRjZzSnlU0w26HlPst0M2QzQoQvP767QomgQ+sQhIY=
