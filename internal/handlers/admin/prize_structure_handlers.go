@@ -1,24 +1,24 @@
 package admin
 
 import (
-	"errors" // Added for gorm.ErrRecordNotFound
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
-	"github.com/ArowuTest/GP-Backend-Promo/internal/auth"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/config"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause" // Correct import for GORM clauses
 )
 
 // CreatePrizeStructureRequest defines the structure for creating a prize structure
 type CreatePrizeStructureRequest struct {
 	Name        string                      `json:"name" binding:"required"`
 	Description string                      `json:"description,omitempty"`
-	IsActive    bool                        `json:"is_active"` // Defaults to true in model, can be overridden
+	IsActive    bool                        `json:"is_active"` // Default is true in model
 	ValidFrom   *time.Time                  `json:"valid_from,omitempty"`
 	ValidTo     *time.Time                  `json:"valid_to,omitempty"`
 	Prizes      []models.CreatePrizeRequest `json:"prizes" binding:"required,dive"`
@@ -37,20 +37,19 @@ func CreatePrizeStructure(c *gin.Context) {
 		return
 	}
 
-	// Get AdminID from context (set by JWTMiddleware)
-	adminIDInterface, exists := c.Get("userID")
+	adminIDClaim, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Admin ID not found in context"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Admin user ID not found in token"})
 		return
 	}
-	adminIDStr, ok := adminIDInterface.(string)
+	adminIDStr, ok := adminIDClaim.(string)
 	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Admin ID in context is not a string"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Admin user ID in token is not a string"})
 		return
 	}
 	parsedAdminID, err := uuid.Parse(adminIDStr)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse admin ID from context: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid admin user ID format in token"})
 		return
 	}
 
@@ -60,18 +59,11 @@ func CreatePrizeStructure(c *gin.Context) {
 		prizeStructure := models.PrizeStructure{
 			Name:             req.Name,
 			Description:      req.Description,
-			IsActive:         req.IsActive,
+			IsActive:         req.IsActive, // Model has default true, this will override if false
 			ValidFrom:        req.ValidFrom,
 			ValidTo:          req.ValidTo,
 			CreatedByAdminID: parsedAdminID,
 		}
-		// Default IsActive to true if not provided in request, matching model default
-		if !c.GetBool("is_active_provided") { // Check if isActive was in the request
-		    // This check is a bit tricky with ShouldBindJSON. A better way is to check if the field was present.
-		    // For simplicity, if IsActive is a field in the request, its value is used. Otherwise, model default (true) applies.
-		    // If req.IsActive is explicitly false, it will be false.
-		}
-
 
 		if err := tx.Create(&prizeStructure).Error; err != nil {
 			return fmt.Errorf("failed to create prize structure: %w", err)
@@ -91,11 +83,10 @@ func CreatePrizeStructure(c *gin.Context) {
 			}
 		}
 
-		// Load the created prize structure with its prizes for the response
 		if err := tx.Preload("Prizes").First(&prizeStructure, prizeStructure.ID).Error; err != nil {
 			return fmt.Errorf("failed to reload prize structure with prizes: %w", err)
 		}
-		createdPrizeStructure = prizeStructure // Assign to outer scope variable
+		createdPrizeStructure = prizeStructure
 		return nil
 	})
 
@@ -146,8 +137,8 @@ type UpdatePrizeStructureRequest struct {
 	Description *string                     `json:"description,omitempty"`
 	IsActive    *bool                       `json:"is_active,omitempty"`
 	ValidFrom   *time.Time                  `json:"valid_from,omitempty"`
-	ValidTo     **time.Time                 `json:"valid_to,omitempty"` // Pointer to pointer to handle explicit null
-	Prizes      *[]models.CreatePrizeRequest `json:"prizes,omitempty"` // Allow updating prizes
+	ValidTo     **time.Time                 `json:"valid_to,omitempty"` // Pointer to pointer for explicit null
+	Prizes      *[]models.CreatePrizeRequest `json:"prizes,omitempty"`
 }
 
 // UpdatePrizeStructure handles updating an existing prize structure
@@ -176,7 +167,6 @@ func UpdatePrizeStructure(c *gin.Context) {
 			return fmt.Errorf("failed to find prize structure: %w", err)
 		}
 
-		// Prepare map for updates
 		updates := make(map[string]interface{})
 		if req.Name != nil {
 			updates["name"] = *req.Name
@@ -190,32 +180,25 @@ func UpdatePrizeStructure(c *gin.Context) {
 		if req.ValidFrom != nil {
 			updates["valid_from"] = *req.ValidFrom
 		}
-		if req.ValidTo != nil { // Pointer to pointer check for explicit null
+		if req.ValidTo != nil {
 			if *req.ValidTo == nil {
-				updates["valid_to"] = gorm.Expr("NULL")
+				updates["valid_to"] = clause.Expr{SQL: "NULL"} // Correct way to set NULL with GORM
 			} else {
 				updates["valid_to"] = **req.ValidTo
 			}
 		}
 
-		// Date validation
 		currentValidFrom := prizeStructure.ValidFrom
-		if val, ok := updates["valid_from"].(*time.Time); ok {
-			currentValidFrom = val
-		} else if val, ok := updates["valid_from"].(time.Time); ok {
-		    currentValidFrom = &val
+		if val, ok := updates["valid_from"].(time.Time); ok {
+			currentValidFrom = &val
 		}
 
-		var currentValidTo *time.Time
-        if prizeStructure.ValidTo != nil {
-            currentValidTo = prizeStructure.ValidTo
-        }
-        if val, ok := updates["valid_to"].(**time.Time); ok && *val != nil { // if valid_to is being updated to a non-null value
-            currentValidTo = *val
-        } else if _, ok := updates["valid_to"].(gorm.Expr); ok { // if valid_to is being set to NULL
-            currentValidTo = nil
-        }
-
+		var currentValidTo *time.Time = prizeStructure.ValidTo
+		if val, ok := updates["valid_to"].(time.Time); ok {
+			currentValidTo = &val
+		} else if _, ok := updates["valid_to"].(clause.Expr); ok {
+			currentValidTo = nil // Being set to NULL
+		}
 
 		if currentValidFrom != nil && currentValidTo != nil && currentValidTo.Before(*currentValidFrom) {
 			return errors.New("ValidTo cannot be before ValidFrom")
@@ -223,11 +206,10 @@ func UpdatePrizeStructure(c *gin.Context) {
 
 		if len(updates) > 0 {
 			if err := tx.Model(&prizeStructure).Updates(updates).Error; err != nil {
-				return fmt.Errorf("failed to update prize structure: %w", err)
+				return fmt.Errorf("failed to update prize structure details: %w", err)
 			}
 		}
 
-		// Handle prize updates: Delete existing and recreate if provided
 		if req.Prizes != nil {
 			if err := tx.Where("prize_structure_id = ?", prizeStructure.ID).Delete(&models.Prize{}).Error; err != nil {
 				return fmt.Errorf("failed to delete existing prizes: %w", err)
@@ -247,19 +229,17 @@ func UpdatePrizeStructure(c *gin.Context) {
 			}
 		}
 
-		// Refetch to get updated data with prizes
-		if err := tx.Preload("Prizes").First(&prizeStructure, "id = ?", structureID).Error; err != nil {
-		    return fmt.Errorf("failed to reload updated prize structure: %w", err)
+		if err := tx.Preload("Prizes").First(&updatedPrizeStructure, "id = ?", structureID).Error; err != nil {
+			return fmt.Errorf("failed to reload updated prize structure: %w", err)
 		}
-		updatedPrizeStructure = prizeStructure
 		return nil
 	})
 
 	if txErr != nil {
-		if txErr.Error() == "prize structure not found" {
-		    c.JSON(http.StatusNotFound, gin.H{"error": txErr.Error()})
+		if errors.Is(txErr, gorm.ErrRecordNotFound) || txErr.Error() == "prize structure not found" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Prize structure not found"})
 		} else {
-		    c.JSON(http.StatusInternalServerError, gin.H{"error": txErr.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": txErr.Error()})
 		}
 		return
 	}
@@ -276,15 +256,13 @@ func DeletePrizeStructure(c *gin.Context) {
 		return
 	}
 
-	// Check if the prize structure is associated with any non-deleted draws.
 	var drawCount int64
-	config.DB.Model(&models.Draw{}).Where("prize_structure_id = ? AND deleted_at IS NULL", structureID).Count(&drawCount)
+	config.DB.Model(&models.Draw{}).Where("prize_structure_id = ?", structureID).Count(&drawCount)
 	if drawCount > 0 {
 		c.JSON(http.StatusConflict, gin.H{"error": "Cannot delete prize structure: It is associated with existing draws."})
 		return
 	}
 
-	// Soft delete the prize structure and its prizes within a transaction
 	txErr := config.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("prize_structure_id = ?", structureID).Delete(&models.Prize{}).Error; err != nil {
 			return fmt.Errorf("failed to soft delete prizes: %w", err)
@@ -302,8 +280,4 @@ func DeletePrizeStructure(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Prize structure and its prizes deleted successfully"})
 }
-
-// Note: The ActivatePrizeStructure handler was removed as IsActive is handled by UpdatePrizeStructure.
-// If a dedicated activation/deactivation endpoint is strictly needed, it can be added back,
-// but generally, updating the IsActive field via the main update endpoint is RESTful.
 

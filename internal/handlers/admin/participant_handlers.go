@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause" // Correct import for GORM clauses
 )
 
 // HandleParticipantUpload processes the uploaded CSV file for participants.
@@ -27,7 +28,12 @@ func HandleParticipantUpload(c *gin.Context) {
 	defer file.Close()
 
 	adminIDClaim, _ := c.Get("userID") // Assuming userID is set by auth middleware
-	adminID, err := uuid.Parse(adminIDClaim.(string))
+	adminIDStr, ok := adminIDClaim.(string)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Admin user ID in token is not a string"})
+		return
+	}
+	adminID, err := uuid.Parse(adminIDStr)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid admin user ID in token"})
 		return
@@ -63,7 +69,6 @@ func HandleParticipantUpload(c *gin.Context) {
 	}
 	rowCount++ // Account for header row in processed rows
 
-	// Validate header row based on the provided template: MSISDN,amount,optInStatus,Points,timestamp
 	expectedHeaders := []string{"msisdn", "amount", "optinstatus", "points", "timestamp"}
 	if len(headerRow) < len(expectedHeaders) {
 		auditEntry.Status = "Failed"
@@ -101,8 +106,6 @@ func HandleParticipantUpload(c *gin.Context) {
 		}
 
 		msisdn := strings.TrimSpace(row[0])
-		// amountStr := strings.TrimSpace(row[1]) // Not storing amount for now, awaiting clarification
-		// optInStatusStr := strings.TrimSpace(row[2]) // Not storing optInStatus for now, awaiting clarification
 		pointsStr := strings.TrimSpace(row[3])
 		timestampStr := strings.TrimSpace(row[4])
 
@@ -113,22 +116,20 @@ func HandleParticipantUpload(c *gin.Context) {
 
 		points, err := strconv.Atoi(pointsStr)
 		if err != nil {
-			errorMessages = append(errorMessages, fmt.Sprintf("Row %d (MSISDN %s): Invalid Points value ", rowCount, msisdn) + fmt.Sprintf("\"%s\"", pointsStr))
+			errorMessages = append(errorMessages, fmt.Sprintf("Row %d (MSISDN %s): Invalid Points value \"%s\"", rowCount, msisdn, pointsStr))
 			continue
 		}
 
 		var optInDate *time.Time
 		if timestampStr != "" {
-			// Attempt to parse DD/MM/YYYY HH:MM
-			parsedDate, err := time.Parse("02/01/2006 15:04", timestampStr) // Corrected format string
+			parsedDate, err := time.Parse("02/01/2006 15:04", timestampStr)
 			if err != nil {
-				// Attempt to parse DD/MM/YYYY if HH:MM is missing or causes error (e.g. if time is 00:00)
-                parsedDateOnly, errOnly := time.Parse("02/01/2006", timestampStr)
-                if errOnly != nil {
-                    errorMessages = append(errorMessages, fmt.Sprintf("Row %d (MSISDN %s): Invalid timestamp format ", rowCount, msisdn) + fmt.Sprintf("\"%s\". Expected DD/MM/YYYY HH:MM or DD/MM/YYYY", timestampStr))
-                } else {
-                    optInDate = &parsedDateOnly
-                }
+				parsedDateOnly, errOnly := time.Parse("02/01/2006", timestampStr)
+				if errOnly != nil {
+					errorMessages = append(errorMessages, fmt.Sprintf("Row %d (MSISDN %s): Invalid timestamp format \"%s\". Expected DD/MM/YYYY HH:MM or DD/MM/YYYY", rowCount, msisdn, timestampStr))
+				} else {
+					optInDate = &parsedDateOnly
+				}
 			} else {
 				optInDate = &parsedDate
 			}
@@ -142,12 +143,12 @@ func HandleParticipantUpload(c *gin.Context) {
 		successfulRowCount++
 	}
 
-	auditEntry.RecordCount = rowCount -1 // Subtract header row for actual data row count
+	auditEntry.RecordCount = rowCount - 1 // Subtract header row for actual data row count
 
 	if len(participantsToCreate) > 0 {
-		tx := config.DB.Clauses(gorm.Clause.OnConflict{
-			Columns:   []gorm.Column{{Name: "msisdn"}},
-			DoUpdates: gorm.AssignmentColumns([]string{"points", "opt_in_date", "updated_at"}),
+		tx := config.DB.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "msisdn"}},
+			DoUpdates: clause.AssignmentColumns([]string{"points", "opt_in_date", "updated_at"}),
 		}).Create(&participantsToCreate)
 
 		if tx.Error != nil {
@@ -163,17 +164,17 @@ func HandleParticipantUpload(c *gin.Context) {
 	} else if auditEntry.RecordCount > 0 && len(errorMessages) == auditEntry.RecordCount {
 		auditEntry.Status = "Failed"
 	} else if auditEntry.RecordCount == 0 {
-        auditEntry.Status = "Failed"
-        if len(errorMessages) == 0 { // Only add this if no other errors were present
-            errorMessages = append(errorMessages, "No data rows found in the CSV file after the header.")
-        }
-    } else { // No new participants to create, but previous rows might have had errors
-        if len(errorMessages) > 0 {
-            auditEntry.Status = "Partial Success"
-        } else {
-            auditEntry.Status = "Success" // No data to import, but file was valid and empty (or all duplicates)
-        }
-    }
+		auditEntry.Status = "Failed"
+		if len(errorMessages) == 0 {
+			errorMessages = append(errorMessages, "No data rows found in the CSV file after the header.")
+		}
+	} else {
+		if len(errorMessages) > 0 {
+			auditEntry.Status = "Partial Success"
+		} else {
+			auditEntry.Status = "Success"
+		}
+	}
 
 	auditEntry.Notes = strings.Join(errorMessages, "; ")
 	if err := config.DB.Save(&auditEntry).Error; err != nil {
@@ -181,16 +182,16 @@ func HandleParticipantUpload(c *gin.Context) {
 	}
 
 	if auditEntry.Status == "Failed" && auditEntry.RecordCount == 0 && len(participantsToCreate) == 0 {
-        c.JSON(http.StatusBadRequest, gin.H{
-            "message": "File processed. No valid participant data found to upload.",
-            "audit_id": auditEntry.ID,
-            "status": auditEntry.Status,
-            "total_data_rows_processed": auditEntry.RecordCount,
-            "successful_rows_imported": successfulRowCount,
-            "errors": errorMessages,
-        })
-        return
-    }
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "File processed. No valid participant data found to upload.",
+			"audit_id": auditEntry.ID,
+			"status": auditEntry.Status,
+			"total_data_rows_processed": auditEntry.RecordCount,
+			"successful_rows_imported": successfulRowCount,
+			"errors": errorMessages,
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "File processed.",
