@@ -40,7 +40,7 @@ type AdminUser struct {
 	FirstName           string         `json:"first_name,omitempty"`
 	LastName            string         `json:"last_name,omitempty"`
 	Role                AdminUserRole  `json:"role" gorm:"type:admin_user_role;not null"`
-	Status              UserStatus     `json:"status" gorm:"type:user_status;default:'Active'"`
+	Status              UserStatus     `json:"status" gorm:"type:user_status"` // Temporarily remove default for migration
 	LastLoginAt         *time.Time     `json:"last_login_at,omitempty"`
 	FailedLoginAttempts int            `json:"failed_login_attempts,omitempty" gorm:"default:0"`
 }
