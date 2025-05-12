@@ -25,13 +25,13 @@ func init() {
 
 // Claims struct for JWT
 type Claims struct {
-	Username string           `json:"username"`
-	Role     models.UserRole  `json:"role"` // Use UserRole from models package
+	Username string                 `json:"username"`
+	Role     models.AdminUserRole   `json:"role"` // Corrected to AdminUserRole
 	jwt.RegisteredClaims
 }
 
 // GenerateJWT generates a new JWT token for a given username and role
-func GenerateJWT(username string, role models.UserRole) (string, error) {
+func GenerateJWT(username string, role models.AdminUserRole) (string, error) { // Corrected to AdminUserRole
 	expirationTime := time.Now().Add(24 * time.Hour) // Token valid for 24 hours
 	claims := &Claims{
 		Username: username,
@@ -106,7 +106,7 @@ func JWTMiddleware() gin.HandlerFunc {
 }
 
 // RoleAuthMiddleware checks if the authenticated user has one of the required roles
-func RoleAuthMiddleware(requiredRoles ...models.UserRole) gin.HandlerFunc {
+func RoleAuthMiddleware(requiredRoles ...models.AdminUserRole) gin.HandlerFunc { // Corrected to AdminUserRole
 	return func(c *gin.Context) {
 		userRoleContext, exists := c.Get("userRole")
 		if !exists {
@@ -115,12 +115,12 @@ func RoleAuthMiddleware(requiredRoles ...models.UserRole) gin.HandlerFunc {
 			return
 		}
 
-		currentRole, ok := userRoleContext.(models.UserRole)
+		currentRole, ok := userRoleContext.(models.AdminUserRole) // Corrected to AdminUserRole
 		if !ok {
 			// Attempt to convert if it's a string (e.g., from admin_user_handler Login)
 			currentRoleStr, okStr := userRoleContext.(string)
 			if okStr {
-				currentRole = models.UserRole(currentRoleStr)
+				currentRole = models.AdminUserRole(currentRoleStr) // Corrected to AdminUserRole
 			} else {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "User role in context is of an unexpected type"})
 				c.Abort()
