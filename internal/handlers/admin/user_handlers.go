@@ -10,7 +10,7 @@ import (
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
+	// "golang.org/x/crypto/bcrypt" // Removed as bcrypt operations are in auth package
 	"gorm.io/gorm"
 )
 
@@ -237,11 +237,6 @@ func UpdateAdminUser(c *gin.Context) {
 	        c.JSON(http.StatusBadRequest, gin.H{"error": "New password must be at least 8 characters long"})
 	        return
 	    }
-	    // Salt should be regenerated or fetched if we are only storing hash. For simplicity, using existing salt.
-	    // If salt is unique per user and stored, it should be used. If salt is global, it can be fetched.
-	    // The current model has a Salt field, implying it is per-user.
-	    // If we want to update password, we should ideally re-salt or ensure the existing salt is used correctly.
-        // For this implementation, we will use the existing salt.
 		hashedPassword, err := auth.HashPassword(*req.Password, existingUser.Salt)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash new password: " + err.Error()})
@@ -278,8 +273,6 @@ func DeleteAdminUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID format"})
 		return
 	}
-
-	// Prevent deletion of the primary superadmin or self-deletion if needed (add logic here)
 
 	result := config.DB.Delete(&models.AdminUser{}, "id = ?", userID)
 	if result.Error != nil {
@@ -361,9 +354,8 @@ func Login(c *gin.Context) {
 	}
 
 	if !auth.CheckPasswordHash(creds.Password, user.Salt, user.PasswordHash) {
-	    // Log failed attempt
 	    user.FailedLoginAttempts++
-	    if user.FailedLoginAttempts >= 5 { // Example: Lock after 5 attempts
+	    if user.FailedLoginAttempts >= 5 { 
 	        user.Status = models.StatusLocked
 	    }
 	    config.DB.Save(&user)
@@ -371,13 +363,13 @@ func Login(c *gin.Context) {
 		return
 	}
 
-    // Reset failed attempts and update last login on successful login
     user.FailedLoginAttempts = 0
     now := time.Now()
     user.LastLoginAt = &now
     config.DB.Save(&user)
 
-	token, err := auth.GenerateJWT(user.ID.String(), user.Username, string(user.Role))
+	// Corrected: Pass user.Role directly, not string(user.Role)
+	token, err := auth.GenerateJWT(user.ID.String(), user.Username, user.Role) 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token: " + err.Error()})
 		return

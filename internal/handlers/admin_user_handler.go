@@ -9,7 +9,7 @@ import (
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/crypto/bcrypt" // Keep bcrypt as it's used for CompareHashAndPassword and GenerateFromPassword
 	"gorm.io/gorm"
 )
 
@@ -285,8 +285,8 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	// Corrected call to auth.GenerateJWT
-	token, err := auth.GenerateJWT(user.Username, user.Role) 
+	// Corrected call to auth.GenerateJWT to include userID
+	token, err := auth.GenerateJWT(user.ID.String(), user.Username, user.Role) 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token: " + err.Error()})
 		return

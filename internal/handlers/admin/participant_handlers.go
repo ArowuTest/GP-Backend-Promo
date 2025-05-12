@@ -14,8 +14,8 @@ import (
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause" // Correct import for GORM clauses
+	// "gorm.io/gorm" // This import was flagged as unused in the last log, and its direct types are not used.
+	"gorm.io/gorm/clause"
 )
 
 // HandleParticipantUpload processes the uploaded CSV file for participants.
