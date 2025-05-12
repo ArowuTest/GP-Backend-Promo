@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"time"
 
-	admin_handlers "github.com/ArowuTest/GP-Backend-Promo/internal/handlers/admin" // Alias for admin handlers
 	"github.com/ArowuTest/GP-Backend-Promo/internal/auth"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/handlers"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/handlers" // General handlers
+	admin_handlers "github.com/ArowuTest/GP-Backend-Promo/internal/handlers/admin" // Alias for admin sub-package handlers
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -37,7 +37,8 @@ func SetupRouter() *gin.Engine {
 		// Authentication routes (public)
 		authRoutes := apiV1.Group("/auth")
 		{
-			authRoutes.POST("/login", handlers.Login)
+			// Use Login from admin_handlers for consistency with other admin user functions
+			authRoutes.POST("/login", admin_handlers.Login) 
 		}
 
 		// Admin routes - protected by JWT middleware
@@ -48,11 +49,11 @@ func SetupRouter() *gin.Engine {
 			userManagement := adminProtectedRoutes.Group("/users")
 			userManagement.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin))
 			{
-				userManagement.POST("/", admin_handlers.CreateUser)
-				userManagement.GET("/", admin_handlers.ListUsers)
-				userManagement.GET("/:id", admin_handlers.GetUser)
-				userManagement.PUT("/:id", admin_handlers.UpdateUser)
-				userManagement.DELETE("/:id", admin_handlers.DeleteUser)
+				userManagement.POST("/", admin_handlers.CreateAdminUser) // Corrected name
+				userManagement.GET("/", admin_handlers.ListAdminUsers)    // Corrected name
+				userManagement.GET("/:id", admin_handlers.GetAdminUser)     // Corrected name
+				userManagement.PUT("/:id", admin_handlers.UpdateAdminUser)   // Corrected name
+				userManagement.DELETE("/:id", admin_handlers.DeleteAdminUser) // Corrected name
 			}
 
 			// Prize Structure Management (SuperAdmin, Admin)
@@ -79,33 +80,26 @@ func SetupRouter() *gin.Engine {
 			participantManagement.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin))
 			{
 				participantManagement.POST("/upload", admin_handlers.HandleParticipantUpload)
-				// Potentially add GET routes here to list/view participants if needed directly from DB
 			}
 
 			// Reporting
 			reports := adminProtectedRoutes.Group("/reports")
 			{
 				// Winner Reporting (All roles that need winner reports)
-				winnerReports := reports.Group("/winners")
-				winnerReports.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser, models.RoleWinnerReportsUser, models.RoleAllReportUser))
-				{
-					// winnerReports.GET("/", admin_handlers.ListWinners) // Assuming ListWinners is in admin_handlers
-				}
+				// winnerReports := reports.Group("/winners")
+				// winnerReports.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser, models.RoleWinnerReportsUser, models.RoleAllReportUser))
+				// {
+				// 	// winnerReports.GET("/", admin_handlers.ListWinners) // Assuming ListWinners is in admin_handlers
+				// }
 
 				// Data Upload Audit Reporting (SuperAdmin, Admin, AllReportUser)
 				dataUploadAudits := reports.Group("/data-uploads")
 				dataUploadAudits.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleAllReportUser))
 				{
-					dataUploadAudits.GET("/", admin_handlers.ListDataUploadAuditEntries)
+					// ListDataUploadAuditEntries is in package handlers, not admin_handlers
+					dataUploadAudits.GET("/", handlers.ListDataUploadAuditEntries) 
 				}
 			}
-
-			// Notification Management (Conceptual - SuperAdmin, Admin, AllReportUser)
-			// notificationMgmt := adminProtectedRoutes.Group("/notifications")
-			// notificationMgmt.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleAllReportUser))
-			// {
-			// 	// Endpoints for sending notifications or viewing logs
-			// }
 		}
 	}
 
