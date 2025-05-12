@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 )
 
 var DB *gorm.DB
@@ -27,13 +27,14 @@ func ConnectDB() {
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
+		// Fallback DSN for local development if DATABASE_URL is not set
 		dsn = "host=localhost user=postgres password=postgres dbname=mynumba_dev port=5432 sslmode=disable TimeZone=UTC"
 		fmt.Println("DATABASE_URL not set, using default local DSN")
 	}
 
 	var err error
 	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info), // Or logger.Silent in production
+		Logger: logger.Default.LogMode(logger.Info), // Use logger.Info for dev, logger.Silent for prod
 	})
 
 	if err != nil {
@@ -47,22 +48,26 @@ func ConnectDB() {
 }
 
 func autoMigrate() {
+	// Enable UUID extension if not enabled. This should ideally be done by a superuser once.
+	if err := DB.Exec("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"").Error; err != nil {
+		fmt.Println("Warning: Failed to create uuid-ossp extension, it might already exist or require superuser privileges: ", err)
+	}
+
+	// Auto-migrate all models
 	err := DB.AutoMigrate(
 		&models.AdminUser{},
 		&models.PrizeStructure{},
-		&models.PrizeTier{},
+		&models.Prize{},
 		&models.Draw{},
-		&models.Winner{},
-		&models.AuditLog{},
+		&models.DrawWinner{},
+		&models.Participant{}, // Added Participant model
+		&models.DataUploadAudit{}, // Added DataUploadAudit model
+		// Add any other models here that need to be migrated
 	)
+
 	if err != nil {
 		panic("Failed to auto-migrate database schema: " + err.Error())
 	}
 	fmt.Println("Database migration completed successfully")
-
-	// Enable UUID extension if not enabled
-	if err := DB.Exec("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"").Error; err != nil {
-        fmt.Println("Failed to create uuid-ossp extension, it might already exist or require superuser privileges: ", err)
-    }
 }
 

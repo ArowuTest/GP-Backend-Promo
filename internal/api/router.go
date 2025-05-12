@@ -4,11 +4,12 @@ import (
 	"net/http"
 	"time"
 
+	admin_handlers "github.com/ArowuTest/GP-Backend-Promo/internal/handlers/admin" // Alias for admin handlers
+	"github.com/ArowuTest/GP-Backend-Promo/internal/auth"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/handlers"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	myauth "github.com/ArowuTest/GP-Backend-Promo/internal/auth"
-	adminhandlers "github.com/ArowuTest/GP-Backend-Promo/internal/handlers/admin"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 )
 
 // SetupRouter initializes and configures the Gin router
@@ -16,87 +17,98 @@ func SetupRouter() *gin.Engine {
 	router := gin.Default()
 
 	// CORS Middleware Configuration
-	config := cors.DefaultConfig()
-	config.AllowOrigins = []string{"https://gp-admin-promo.vercel.app"} // Your Vercel frontend URL
-    config.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
-    config.AllowHeaders = []string{"Origin", "Content-Type", "Accept", "Authorization"}
-	config.AllowCredentials = true
-	config.MaxAge = 12 * time.Hour
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:3000", "https://gp-admin-promo.vercel.app"}, // Allow localhost for dev and Vercel for prod
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
 
-	router.Use(cors.New(config))
-
-	// Health check - can be enhanced to check DB status etc.
+	// Health check
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "Backend Healthy from Gin Router"})
+		c.JSON(http.StatusOK, gin.H{"status": "Backend Healthy"})
 	})
 
 	// API v1 Group
-	// All routes under /api/v1 will now have the CORS policy applied
 	apiV1 := router.Group("/api/v1")
 	{
-		// Authentication routes
+		// Authentication routes (public)
 		authRoutes := apiV1.Group("/auth")
 		{
-			authRoutes.POST("/login", myauth.LoginAdminUser)
+			authRoutes.POST("/login", handlers.Login)
 		}
 
-		// Admin routes - protected by auth middleware
-		adminRoutes := apiV1.Group("/admin")
-		adminRoutes.Use(myauth.JWTMiddleware()) // Apply JWT middleware
+		// Admin routes - protected by JWT middleware
+		adminProtectedRoutes := apiV1.Group("/admin")
+		adminProtectedRoutes.Use(auth.JWTMiddleware())
 		{
 			// User Management (SuperAdmin only)
-			userManagementRoutes := adminRoutes.Group("/users")
-			userManagementRoutes.Use(myauth.RoleAuthMiddleware(models.SuperAdminRole))
+			userManagement := adminProtectedRoutes.Group("/users")
+			userManagement.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin))
 			{
-				userManagementRoutes.POST("/", adminhandlers.CreateAdminUser)
-				userManagementRoutes.GET("/", adminhandlers.ListAdminUsers)
-				userManagementRoutes.GET("/:id", adminhandlers.GetAdminUser)
-				userManagementRoutes.PUT("/:id", adminhandlers.UpdateAdminUser)
-				userManagementRoutes.DELETE("/:id", adminhandlers.DeleteAdminUser)
-				userManagementRoutes.PUT("/:id/status", adminhandlers.UpdateAdminUserStatus)
+				userManagement.POST("/", admin_handlers.CreateUser)
+				userManagement.GET("/", admin_handlers.ListUsers)
+				userManagement.GET("/:id", admin_handlers.GetUser)
+				userManagement.PUT("/:id", admin_handlers.UpdateUser)
+				userManagement.DELETE("/:id", admin_handlers.DeleteUser)
 			}
 
-			// Prize Structure Management (SuperAdmin or DrawAdmin)
-			prizeRoutes := adminRoutes.Group("/prize-structures")
-			prizeRoutes.Use(myauth.RoleAuthMiddleware(models.SuperAdminRole, models.DrawAdminRole))
+			// Prize Structure Management (SuperAdmin, Admin)
+			prizeManagement := adminProtectedRoutes.Group("/prize-structures")
+			prizeManagement.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin))
 			{
-				prizeRoutes.POST("/", adminhandlers.CreatePrizeStructure)
-				prizeRoutes.GET("/", adminhandlers.ListPrizeStructures)
-				prizeRoutes.GET("/:id", adminhandlers.GetPrizeStructure)
-				prizeRoutes.PUT("/:id", adminhandlers.UpdatePrizeStructure)
-				prizeRoutes.DELETE("/:id", adminhandlers.DeletePrizeStructure)
-				prizeRoutes.PUT("/:id/activate", adminhandlers.ActivatePrizeStructure)
+				prizeManagement.POST("/", admin_handlers.CreatePrizeStructure)
+				prizeManagement.GET("/", admin_handlers.ListPrizeStructures)
+				prizeManagement.GET("/:id", admin_handlers.GetPrizeStructure)
+				prizeManagement.PUT("/:id", admin_handlers.UpdatePrizeStructure)
+				prizeManagement.DELETE("/:id", admin_handlers.DeletePrizeStructure)
 			}
 
-			// Draw Management (DrawAdmin)
-			drawRoutes := adminRoutes.Group("/draws")
-			drawRoutes.Use(myauth.RoleAuthMiddleware(models.DrawAdminRole, models.SuperAdminRole)) // Allow SuperAdmin too
+			// Draw Management
+			drawManagement := adminProtectedRoutes.Group("/draws")
 			{
-				drawRoutes.POST("/execute", adminhandlers.ExecuteDraw)
-				drawRoutes.GET("/", adminhandlers.ListDraws)
-				drawRoutes.GET("/:id", adminhandlers.GetDrawDetails)
-				drawRoutes.POST("/:id/rerun", adminhandlers.RerunDraw) // Placeholder
+				drawManagement.POST("/execute", auth.RoleAuthMiddleware(models.RoleSuperAdmin), admin_handlers.ExecuteDraw)
+				drawManagement.GET("/", auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser), admin_handlers.ListDraws)
+				drawManagement.GET("/:id", auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser), admin_handlers.GetDrawDetails)
 			}
 
-			// Winner Management & Reporting
-			winnerRoutes := adminRoutes.Group("/winners")
-			winnerRoutes.Use(myauth.RoleAuthMiddleware(models.SuperAdminRole, models.DrawAdminRole, models.ViewOnlyAdminRole))
+			// Participant Data Management (SuperAdmin, Admin)
+			participantManagement := adminProtectedRoutes.Group("/participants")
+			participantManagement.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin))
 			{
-				winnerRoutes.GET("/", adminhandlers.ListWinners)
-				winnerRoutes.GET("/export/momo", adminhandlers.ExportWinnersForMoMo) // Placeholder
-				winnerRoutes.PUT("/:id/payment-status", adminhandlers.UpdateWinnerPaymentStatus)
+				participantManagement.POST("/upload", admin_handlers.HandleParticipantUpload)
+				// Potentially add GET routes here to list/view participants if needed directly from DB
 			}
 
-			// Audit Logs (SuperAdmin)
-			auditRoutes := adminRoutes.Group("/audit-logs")
-			auditRoutes.Use(myauth.RoleAuthMiddleware(models.SuperAdminRole))
+			// Reporting
+			reports := adminProtectedRoutes.Group("/reports")
 			{
-				auditRoutes.GET("/", adminhandlers.ListAuditLogs) // Placeholder
+				// Winner Reporting (All roles that need winner reports)
+				winnerReports := reports.Group("/winners")
+				winnerReports.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser, models.RoleWinnerReportsUser, models.RoleAllReportUser))
+				{
+					// winnerReports.GET("/", admin_handlers.ListWinners) // Assuming ListWinners is in admin_handlers
+				}
+
+				// Data Upload Audit Reporting (SuperAdmin, Admin, AllReportUser)
+				dataUploadAudits := reports.Group("/data-uploads")
+				dataUploadAudits.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleAllReportUser))
+				{
+					dataUploadAudits.GET("/", admin_handlers.ListDataUploadAuditEntries)
+				}
 			}
+
+			// Notification Management (Conceptual - SuperAdmin, Admin, AllReportUser)
+			// notificationMgmt := adminProtectedRoutes.Group("/notifications")
+			// notificationMgmt.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleAllReportUser))
+			// {
+			// 	// Endpoints for sending notifications or viewing logs
+			// }
 		}
 	}
 
 	return router
 }
-
 

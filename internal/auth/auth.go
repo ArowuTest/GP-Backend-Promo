@@ -7,45 +7,39 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ArowuTest/GP-Backend-Promo/internal/models" // Use the central models package
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/config"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
-	"golang.org/x/crypto/bcrypt"
 )
 
 var jwtKey []byte
 
 func init() {
-	// In a real application, get this from environment variables
-	// For now, using a placeholder. This MUST be changed for production.
 	secret := os.Getenv("JWT_SECRET_KEY")
 	if secret == "" {
 		fmt.Println("Warning: JWT_SECRET_KEY not set, using default insecure key. SET THIS FOR PRODUCTION!")
-		secret = "your-very-secret-and-long-key-that-is-at-least-32-bytes"
+		secret = "a-very-secure-secret-key-for-jwt-must-be-long-enough"
 	}
 	jwtKey = []byte(secret)
 }
 
 // Claims struct for JWT
 type Claims struct {
-	UserID string           `json:"user_id"`
-	Email  string           `json:"email"`
-	Role   models.AdminUserRole `json:"role"`
+	Username string           `json:"username"`
+	Role     models.UserRole  `json:"role"` // Use UserRole from models package
 	jwt.RegisteredClaims
 }
 
-// GenerateJWT generates a new JWT token for a given user
-func GenerateJWT(user *models.AdminUser) (string, error) {
+// GenerateJWT generates a new JWT token for a given username and role
+func GenerateJWT(username string, role models.UserRole) (string, error) {
 	expirationTime := time.Now().Add(24 * time.Hour) // Token valid for 24 hours
 	claims := &Claims{
-		UserID: user.ID.String(),
-		Email:  user.Email,
-		Role:   user.Role,
+		Username: username,
+		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			Subject:   user.ID.String(),
+			Subject:   username,
 		},
 	}
 
@@ -104,101 +98,15 @@ func JWTMiddleware() gin.HandlerFunc {
 		}
 
 		// Set user context for downstream handlers
-		c.Set("userID", claims.UserID)
-		c.Set("userEmail", claims.Email)
-		c.Set("userRole", claims.Role)
+		c.Set("username", claims.Username) // Set username from claims
+		c.Set("userRole", claims.Role)     // Set role from claims
 
 		c.Next()
 	}
 }
 
-// HashPassword hashes a given password using bcrypt
-func HashPassword(password string) (string, string, error) {
-	// Generate a salt with default cost
-	saltBytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost) // Using password as salt source for simplicity here, usually a separate random salt
-    if err != nil {
-        return "", "", err
-    }
-    salt := string(saltBytes[:16]) // Example: take first 16 bytes as salt string, can be more robust
-
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(salt+password), bcrypt.DefaultCost)
-	if err != nil {
-		return "", "", err
-	}
-	return string(hashedPassword), salt, nil
-}
-
-// CheckPasswordHash checks if the provided password matches the stored hash and salt
-func CheckPasswordHash(password, salt, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(salt+password))
-	return err == nil
-}
-
-// LoginRequest struct for login payload
-type LoginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
-}
-
-// LoginAdminUser handles admin user login
-func LoginAdminUser(c *gin.Context) {
-	var req LoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
-		return
-	}
-
-	var adminUser models.AdminUser
-	result := config.DB.Where("email = ?", req.Email).First(&adminUser)
-	if result.Error != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
-		return
-	}
-
-	if adminUser.Status != models.StatusActive {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Account is not active"})
-		return
-	}
-
-	if !CheckPasswordHash(req.Password, adminUser.Salt, adminUser.PasswordHash) {
-		// Implement failed login attempt tracking here if needed
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
-		return
-	}
-
-	token, err := GenerateJWT(&adminUser)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
-		return
-	}
-
-	// Update LastLoginAt
-	now := time.Now()
-	adminUser.LastLoginAt = &now
-	adminUser.FailedLoginAttempts = 0 // Reset on successful login
-	config.DB.Save(&adminUser)
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Login successful",
-		"token":   token,
-		"user": gin.H{
-			"id":        adminUser.ID,
-			"email":     adminUser.Email,
-			"role":      adminUser.Role,
-			"firstName": adminUser.FirstName,
-			"lastName":  adminUser.LastName,
-		},
-	})
-}
-
-// Placeholder for RegisterAdminUser - to be implemented if self-registration is allowed or for seeding
-// func RegisterAdminUser(c *gin.Context) { ... }
-
-
-
-
 // RoleAuthMiddleware checks if the authenticated user has one of the required roles
-func RoleAuthMiddleware(requiredRoles ...models.AdminUserRole) gin.HandlerFunc {
+func RoleAuthMiddleware(requiredRoles ...models.UserRole) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userRoleContext, exists := c.Get("userRole")
 		if !exists {
@@ -207,11 +115,17 @@ func RoleAuthMiddleware(requiredRoles ...models.AdminUserRole) gin.HandlerFunc {
 			return
 		}
 
-		currentRole, ok := userRoleContext.(models.AdminUserRole)
+		currentRole, ok := userRoleContext.(models.UserRole)
 		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "User role in context is of an unexpected type"})
-			c.Abort()
-			return
+			// Attempt to convert if it's a string (e.g., from admin_user_handler Login)
+			currentRoleStr, okStr := userRoleContext.(string)
+			if okStr {
+				currentRole = models.UserRole(currentRoleStr)
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "User role in context is of an unexpected type"})
+				c.Abort()
+				return
+			}
 		}
 
 		allowed := false

@@ -4,226 +4,195 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
-// AdminUserRole defines the roles an admin user can have
+// AdminUserRole defines the possible roles for an admin user
 type AdminUserRole string
 
 const (
-	SuperAdminRole    AdminUserRole = "SUPER_ADMIN"
-	DrawAdminRole     AdminUserRole = "DRAW_ADMIN"
-	ViewOnlyAdminRole AdminUserRole = "VIEW_ONLY_ADMIN"
+	RoleSuperAdmin        AdminUserRole = "SUPER_ADMIN"
+	RoleAdmin             AdminUserRole = "ADMIN"
+	RoleSeniorUser        AdminUserRole = "SENIOR_USER"
+	RoleWinnerReportsUser AdminUserRole = "WINNER_REPORTS_USER"
+	RoleAllReportUser     AdminUserRole = "ALL_REPORT_USER"
 )
 
-// UserStatus defines the status of a user account
+// UserStatus defines the possible statuses for an admin user
 type UserStatus string
 
 const (
-	StatusActive  UserStatus = "ACTIVE"
-	StatusInactive UserStatus = "INACTIVE"
-	StatusLocked   UserStatus = "LOCKED"
+	StatusActive   UserStatus = "Active"
+	StatusInactive UserStatus = "Inactive"
+	StatusLocked   UserStatus = "Locked"
 )
 
-// AdminUser represents an administrator in the system (FR-BE-DM-001)
+// AdminUser represents the structure for an admin user
 type AdminUser struct {
-	ID                  uuid.UUID     `json:"id" gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
-	Email               string        `json:"email" gorm:"uniqueIndex;not null"`
-	PasswordHash        string        `json:"-" gorm:"not null"` // Not exposed in JSON
-	Salt                string        `json:"-" gorm:"not null"` // Not exposed in JSON
-	Role                AdminUserRole `json:"role" gorm:"type:varchar(50);not null"`
-	FirstName           string        `json:"first_name"`
-	LastName            string        `json:"last_name"`
-	Status              UserStatus    `json:"status" gorm:"type:varchar(50);default:'ACTIVE'"`
-	LastLoginAt         *time.Time    `json:"last_login_at"`
-	FailedLoginAttempts int           `json:"failed_login_attempts" gorm:"default:0"`
-	TwoFactorSecret     *string       `json:"-"` // Not exposed in JSON
-	TwoFactorEnabled    bool          `json:"two_factor_enabled" gorm:"default:false"`
-	CreatedAt           time.Time     `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt           time.Time     `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                  uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
+	CreatedAt           time.Time      `json:"created_at"`
+	UpdatedAt           time.Time      `json:"updated_at"`
+	DeletedAt           gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	Username            string         `json:"username" gorm:"uniqueIndex;not null"`
+	Email               string         `json:"email" gorm:"uniqueIndex;not null"`
+	PasswordHash        string         `json:"-" gorm:"not null"`
+	Salt                string         `json:"-" gorm:"not null"`
+	FirstName           string         `json:"first_name,omitempty"`
+	LastName            string         `json:"last_name,omitempty"`
+	Role                AdminUserRole  `json:"role" gorm:"type:admin_user_role;not null"`
+	Status              UserStatus     `json:"status" gorm:"type:user_status;default:'Active'"`
+	LastLoginAt         *time.Time     `json:"last_login_at,omitempty"`
+	FailedLoginAttempts int            `json:"failed_login_attempts,omitempty" gorm:"default:0"`
 }
 
-// DayType defines the type of day for a prize structure (FR-BE-DM-002)
-type DayType string
+// BeforeCreate will set a UUID for AdminUser
+func (u *AdminUser) BeforeCreate(tx *gorm.DB) (err error) {
+	if u.ID == uuid.Nil {
+		u.ID = uuid.New()
+	}
+	return
+}
 
-const (
-	DailyMonFri DayType = "DAILY_MON_FRI"
-	WeeklySat   DayType = "WEEKLY_SAT"
-)
+// CreatePrizeRequest defines the structure for creating a prize tier within a prize structure request
+type CreatePrizeRequest struct {
+	Name      string `json:"name" binding:"required"`
+	Value     string `json:"value,omitempty"`
+	PrizeType string `json:"prize_type,omitempty"`
+	Quantity  int    `json:"quantity" binding:"required,min=1"`
+	Order     int    `json:"order,omitempty"`
+}
 
-// PrizeStructure represents the prize configuration for draws (FR-BE-DM-002)
+// PrizeStructure represents the structure of prizes for a draw or period
 type PrizeStructure struct {
-	ID                 uuid.UUID  `json:"id" gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
-	Name               string     `json:"name" gorm:"not null"`
-	DayType            DayType    `json:"day_type" gorm:"type:varchar(50);not null"`
-	IsActive           bool       `json:"is_active" gorm:"default:false"`
-	EffectiveStartDate *time.Time `json:"effective_start_date"`
-	EffectiveEndDate   *time.Time `json:"effective_end_date"`
-	Version            int        `json:"version" gorm:"default:1"`
-	CreatedByAdminID   uuid.UUID  `json:"created_by_admin_id" gorm:"type:uuid"`
-	CreatedAt          time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt          time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
-	PrizeTiers         []PrizeTier `json:"prize_tiers" gorm:"foreignKey:PrizeStructureID"` // Has Many relationship
+	ID                uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+	DeletedAt         gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	Name              string         `json:"name" gorm:"uniqueIndex;not null"`
+	Description       string         `json:"description,omitempty"`
+	IsActive          bool           `json:"is_active" gorm:"default:true"`
+	ValidFrom         *time.Time     `json:"valid_from,omitempty"`
+	ValidTo           *time.Time     `json:"valid_to,omitempty"`
+	CreatedByAdminID  uuid.UUID      `json:"created_by_admin_id,omitempty" gorm:"type:uuid"`
+	Prizes            []Prize        `json:"prizes" gorm:"foreignKey:PrizeStructureID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 }
 
-// PrizeTier represents a specific prize tier within a structure (FR-BE-DM-003)
-type PrizeTier struct {
-	ID               uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
-	PrizeStructureID uuid.UUID `json:"prize_structure_id" gorm:"type:uuid;index;not null"`
-	TierName         string    `json:"tier_name" gorm:"not null"`
-	TierDescription  *string   `json:"tier_description"`
-	PrizeAmount      float64   `json:"prize_amount" gorm:"type:decimal(15,2);not null"`
-	WinnerCount      int       `json:"winner_count" gorm:"not null"`
-	SortOrder        int       `json:"sort_order" gorm:"not null"` // For display and processing order
-	CreatedAt        time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt        time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+// BeforeCreate will set a UUID for PrizeStructure
+func (ps *PrizeStructure) BeforeCreate(tx *gorm.DB) (err error) {
+	if ps.ID == uuid.Nil {
+		ps.ID = uuid.New()
+	}
+	return
 }
 
-// DrawStatus defines the status of a draw (FR-BE-DM-004)
-type DrawStatus string
+// Prize represents a single prize within a prize structure
+type Prize struct {
+	ID                uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
+	PrizeStructureID  uuid.UUID      `json:"prize_structure_id" gorm:"type:uuid;not null"`
+	Name              string         `json:"name" gorm:"not null"`
+	Value             string         `json:"value"`
+	PrizeType         string         `json:"prize_type,omitempty"`
+	Quantity          int            `json:"quantity" gorm:"not null;default:1"`
+	Order             int            `json:"order,omitempty"`
+	DeletedAt         gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+}
 
-const (
-	DrawStatusPending            DrawStatus = "PENDING"
-	DrawStatusInProgress         DrawStatus = "IN_PROGRESS"
-	DrawStatusCompleted          DrawStatus = "COMPLETED"
-	DrawStatusFailed             DrawStatus = "FAILED"
-	DrawStatusRedrawnInvalid     DrawStatus = "REDRAWN_INVALID"
-	DrawStatusRedrawCompleted    DrawStatus = "REDRAW_COMPLETED"
-)
+// BeforeCreate will set a UUID for Prize
+func (p *Prize) BeforeCreate(tx *gorm.DB) (err error) {
+	if p.ID == uuid.Nil {
+		p.ID = uuid.New()
+	}
+	return
+}
 
-// ExecutionType defines how a draw was executed (FR-BE-DM-004)
-type ExecutionType string
-
-const (
-	ExecutionManual   ExecutionType = "MANUAL"
-	ExecutionAutomated ExecutionType = "AUTOMATED"
-)
-
-// Draw represents a draw event (FR-BE-DM-004)
+// Draw represents a draw event
 type Draw struct {
-	ID                         uuid.UUID     `json:"id" gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
-	DrawDate                   time.Time     `json:"draw_date" gorm:"type:date;index;not null"`
-	PrizeStructureID           uuid.UUID     `json:"prize_structure_id" gorm:"type:uuid;not null"`
-	Status                     DrawStatus    `json:"status" gorm:"type:varchar(50);not null"`
-	EligibilityStartTimeUTC    time.Time     `json:"eligibility_start_time_utc"`
-	EligibilityEndTimeUTC      time.Time     `json:"eligibility_end_time_utc"`
-	ExecutedAtUTC              *time.Time    `json:"executed_at_utc"`
-	ExecutedByAdminID          *uuid.UUID    `json:"executed_by_admin_id" gorm:"type:uuid"`
-	ExecutionType              ExecutionType `json:"execution_type" gorm:"type:varchar(50)"`
-	TotalOptedInMSISDNs        *int          `json:"total_opted_in_msisdns"`
-	TotalEligibleMSISDNs       *int          `json:"total_eligible_msisdns"`
-	TotalTickets               *int          `json:"total_tickets"`
-	FailureReason              *string       `json:"failure_reason"`
-	OriginalDrawIDForRedraw    *uuid.UUID    `json:"original_draw_id_for_redraw" gorm:"type:uuid"`
-	CreatedAt                  time.Time     `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt                  time.Time     `json:"updated_at" gorm:"autoUpdateTime"`
-	Winners                    []Winner      `json:"winners,omitempty" gorm:"foreignKey:DrawID"`
-	PrizeStructure             PrizeStructure `json:"prize_structure,omitempty" gorm:"foreignKey:PrizeStructureID"`
+	ID                        uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
+	CreatedAt                 time.Time      `json:"created_at"`
+	UpdatedAt                 time.Time      `json:"updated_at"`
+	DeletedAt                 gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	DrawDate                  time.Time      `json:"draw_date" gorm:"not null"`
+	PrizeStructureID          uuid.UUID      `json:"prize_structure_id" gorm:"type:uuid"`
+	ExecutedByUserID          uuid.UUID      `json:"executed_by_user_id" gorm:"type:uuid"`
+	Status                    string         `json:"status,omitempty"`
+	EligibleParticipantsCount int            `json:"eligible_participants_count,omitempty"`
+	TotalPointsInDraw         int            `json:"total_points_in_draw,omitempty"`
+	Winners                   []DrawWinner   `json:"winners,omitempty" gorm:"foreignKey:DrawID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 }
 
-// NotificationStatus defines the status of a winner notification (FR-BE-DM-005)
-type NotificationStatus string
-
-const (
-	NotificationPending      NotificationStatus = "PENDING"
-	NotificationSent         NotificationStatus = "SENT"
-	NotificationFailed       NotificationStatus = "FAILED"
-	NotificationDeliveredAck NotificationStatus = "DELIVERED_ACK"
-	NotificationViewed       NotificationStatus = "VIEWED" // If richer status available
-)
-
-// PaymentStatus defines the payment status for a winner (FR-BE-DM-005)
-type PaymentStatus string
-
-const (
-	PaymentPendingExport       PaymentStatus = "PENDING_EXPORT"
-	PaymentExportedForPayment  PaymentStatus = "EXPORTED_FOR_PAYMENT"
-	PaymentConfirmed           PaymentStatus = "PAYMENT_CONFIRMED"
-	PaymentFailed              PaymentStatus = "PAYMENT_FAILED"
-	PaymentRequiresVerification PaymentStatus = "REQUIRES_VERIFICATION"
-)
-
-// Winner represents a winner of a draw (FR-BE-DM-005)
-type Winner struct {
-	ID                      uuid.UUID          `json:"id" gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
-	DrawID                  uuid.UUID          `json:"draw_id" gorm:"type:uuid;index;not null"`
-	MSISDN                  string             `json:"msisdn" gorm:"index;not null"` // Store full, mask at presentation
-	PrizeTierID             uuid.UUID          `json:"prize_tier_id" gorm:"type:uuid;not null"`
-	PrizeAmountWon          float64            `json:"prize_amount_won" gorm:"type:decimal(15,2);not null"`
-	SelectionOrderInTier    *int               `json:"selection_order_in_tier"`
-	NotificationStatus      NotificationStatus `json:"notification_status" gorm:"type:varchar(50);default:'PENDING'"`
-	NotificationSentAt      *time.Time         `json:"notification_sent_at"`
-	PaymentStatus           PaymentStatus      `json:"payment_status" gorm:"type:varchar(50);default:'PENDING_EXPORT'"`
-	PaymentProcessedAt      *time.Time         `json:"payment_processed_at"`
-	CreatedAt               time.Time          `json:"created_at" gorm:"autoCreateTime"`
-	PrizeTier               PrizeTier          `json:"prize_tier,omitempty" gorm:"foreignKey:PrizeTierID"`
+// BeforeCreate will set a UUID for Draw
+func (d *Draw) BeforeCreate(tx *gorm.DB) (err error) {
+	if d.ID == uuid.Nil {
+		d.ID = uuid.New()
+	}
+	return
 }
 
-// AuditLogOutcome defines the outcome of an audited action (FR-BE-DM-009)
-type AuditLogOutcome string
-
-const (
-	OutcomeSuccess AuditLogOutcome = "SUCCESS"
-	OutcomeFailure AuditLogOutcome = "FAILURE"
-)
-
-// AuditLog represents an audit trail entry (FR-BE-DM-009)
-type AuditLog struct {
-	ID                      uuid.UUID       `json:"id" gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
-	AdminUserID             *uuid.UUID      `json:"admin_user_id" gorm:"type:uuid;index"`
-	ImpersonatedByAdminID   *uuid.UUID      `json:"impersonated_by_admin_id" gorm:"type:uuid"`
-	ActionType              string          `json:"action_type" gorm:"index;not null"` // e.g., "USER_LOGIN", "DRAW_EXECUTION"
-	EntityType              *string         `json:"entity_type"`                     // e.g., "Draw", "User"
-	EntityID                *string         `json:"entity_id" gorm:"index"`
-	TimestampUTC            time.Time       `json:"timestamp_utc" gorm:"index;not null"`
-	SourceIPAddress         *string         `json:"source_ip_address"`
-	UserAgent               *string         `json:"user_agent"`
-	DetailsBefore           *string         `json:"details_before" gorm:"type:text"` // JSONB or Text
-	DetailsAfter            *string         `json:"details_after" gorm:"type:text"`  // JSONB or Text
-	Outcome                 AuditLogOutcome `json:"outcome" gorm:"type:varchar(50);not null"`
-	FailureReasonShort      *string         `json:"failure_reason_short"`
-	Comments                *string         `json:"comments" gorm:"type:text"`
+// DrawWinner represents a winner for a specific prize in a draw
+type DrawWinner struct {
+	ID            uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
+	DrawID        uuid.UUID      `json:"draw_id" gorm:"type:uuid;not null"`
+	PrizeID       uuid.UUID      `json:"prize_id" gorm:"type:uuid;not null"`
+	MSISDN        string         `json:"msisdn"`
+	IsRunnerUp    bool           `json:"is_runner_up" gorm:"default:false"`
+	RunnerUpRank  int            `json:"runner_up_rank,omitempty"`
+	PointsAtWin   int            `json:"points_at_win,omitempty"`
+	NotificationStatus string    `json:"notification_status,omitempty"`
+	ClaimStatus   string         `json:"claim_status" gorm:"default:'Pending'"`
+	NotifiedAt    *time.Time     `json:"notified_at,omitempty"`
+	ClaimedAt     *time.Time     `json:"claimed_at,omitempty"`
+	ForfeitedAt   *time.Time     `json:"forfeited_at,omitempty"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+	DeletedAt     gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 }
 
-// Mock external data structures (conceptual, data comes from MTN/PostHog)
-
-// RechargeData represents a recharge transaction (FR-BE-DM-006)
-type RechargeData struct {
-	MSISDN             string    `json:"msisdn"`
-	RechargeAmount     float64   `json:"recharge_amount"`
-	RechargeTimestampUTC time.Time `json:"recharge_timestamp_utc"`
-	TransactionID      string    `json:"transaction_id"`
+// BeforeCreate will set a UUID for DrawWinner
+func (dw *DrawWinner) BeforeCreate(tx *gorm.DB) (err error) {
+	if dw.ID == uuid.Nil {
+		dw.ID = uuid.New()
+	}
+	return
 }
 
-// OptInData represents an opt-in record (FR-BE-DM-007)
-type OptInData struct {
-	MSISDN           string    `json:"msisdn"`
-	OptInTimestampUTC time.Time `json:"opt_in_timestamp_utc"`
-	OptInStatus      string    `json:"opt_in_status"` // e.g., "ACTIVE", "INACTIVE"
+// Participant represents an individual who can participate in draws
+type Participant struct {
+	ID        uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	MSISDN    string         `json:"msisdn" gorm:"uniqueIndex;not null"`
+	Points    int            `json:"points" gorm:"default:0"`
+	OptInDate *time.Time     `json:"opt_in_date,omitempty"` // Date the participant opted in or became eligible
 }
 
-// BlacklistEntry represents a blacklisted MSISDN (FR-BE-DM-008)
-type BlacklistEntry struct {
-	MSISDN             string    `json:"msisdn"`
-	Reason             *string   `json:"reason"`
-	BlacklistedSinceUTC time.Time `json:"blacklisted_since_utc"`
+// BeforeCreate will set a UUID for Participant
+func (pt *Participant) BeforeCreate(tx *gorm.DB) (err error) {
+	if pt.ID == uuid.Nil {
+		pt.ID = uuid.New()
+	}
+	return
 }
 
-
-
-
-// EligibleParticipant represents an MSISDN eligible for a draw with their points
-type EligibleParticipant struct {
-	MSISDN string `json:"msisdn"`
-	Points int    `json:"points"`
+// DataUploadAudit represents an audit trail for data uploads
+type DataUploadAudit struct {
+	ID                uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
+	UploadedByUserID  uuid.UUID      `json:"uploaded_by_user_id" gorm:"type:uuid"`
+	UploadTimestamp   time.Time      `json:"upload_timestamp" gorm:"not null"`
+	FileName          string         `json:"file_name,omitempty"`
+	RecordCount       int            `json:"record_count,omitempty"`
+	Status            string         `json:"status,omitempty"` // e.g., "Success", "Failed", "Partial Success"
+	Notes             string         `json:"notes,omitempty"`      // For error messages or other details
+	OperationType     string         `json:"operation_type,omitempty"` // e.g., "ParticipantUpload", "BlacklistUpload"
+	CreatedAt         time.Time      `json:"created_at"`
+	DeletedAt         gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 }
 
-// CreatePrizeTierRequest defines the payload for creating a prize tier
-// This is often part of a CreatePrizeStructureRequest
-type CreatePrizeTierRequest struct {
-	TierName        string  `json:"tier_name" binding:"required"`
-	TierDescription *string `json:"tier_description"`
-	PrizeAmount     float64 `json:"prize_amount" binding:"required,gt=0"`
-	WinnerCount     int     `json:"winner_count" binding:"required,gt=0"`
-	SortOrder       int     `json:"sort_order" binding:"required,gte=0"`
+// BeforeCreate will set a UUID for DataUploadAudit
+func (dua *DataUploadAudit) BeforeCreate(tx *gorm.DB) (err error) {
+	if dua.ID == uuid.Nil {
+		dua.ID = uuid.New()
+	}
+	return
 }
 
