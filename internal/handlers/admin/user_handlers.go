@@ -8,81 +8,82 @@ import (
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
+	"golang.org/x/crypto/bcrypt"
 )
 
-// CreateAdminUserRequest struct for creating a new admin user
-type CreateAdminUserRequest struct {
-	Username  string                `json:"username" binding:"required"`
-	Email     string                `json:"email" binding:"required,email"`
-	Password  string                `json:"password" binding:"required,min=8"`
-	FirstName string                `json:"first_name,omitempty"`
-	LastName  string                `json:"last_name,omitempty"`
-	Role      models.AdminUserRole  `json:"role" binding:"required"`
-	Status    models.UserStatus     `json:"status,omitempty"` // Default to Active in model
-}
-
-// CreateAdminUser handles the creation of a new admin user (SuperAdmin only)
+// CreateAdminUser godoc
+// @Summary Create a new admin user
+// @Description Create a new admin user with username, password, email, first/last name, and role.
+// @Tags AdminUsers
+// @Accept json
+// @Produce json
+// @Param user body models.AdminUser true "AdminUser object to be created. ID, CreatedAt, UpdatedAt, DeletedAt are ignored."
+// @Success 201 {object} models.AdminUserResponse
+// @Failure 400 {object} gin.H{"error": string}
+// @Failure 500 {object} gin.H{"error": string}
+// @Router /admin/users [post]
 func CreateAdminUser(c *gin.Context) {
-	var req CreateAdminUserRequest
+	var req models.CreateAdminUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
 		return
 	}
 
-	// Check if username or email already exists
-	var existingUserByUsername models.AdminUser
-	if !errors.Is(config.DB.Where("username = ?", req.Username).First(&existingUserByUsername).Error, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusConflict, gin.H{"error": "Username already exists"})
-		return
-	}
-	var existingUserByEmail models.AdminUser
-	if !errors.Is(config.DB.Where("email = ?", req.Email).First(&existingUserByEmail).Error, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusConflict, gin.H{"error": "Email already exists"})
+	// Validate role
+	switch req.Role {
+	case models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser, models.RoleWinnerReportsUser, models.RoleAllReportUser:
+		// Valid role
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user role specified"})
 		return
 	}
 
-	hashedPassword, saltValue, err := auth.HashPassword(req.Password)
+	// Hash the password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password: " + err.Error()})
 		return
 	}
 
 	newUser := models.AdminUser{
-		Username:     req.Username,
-		Email:        req.Email,
-		PasswordHash: hashedPassword,
-		Salt:         saltValue,
-		FirstName:    req.FirstName,
-		LastName:     req.LastName,
-		Role:         req.Role,
-		Status:       models.StatusActive, // Default to active
-	}
-	if req.Status != "" {
-		newUser.Status = req.Status
+		Username:  req.Username,
+		Password:  string(hashedPassword),
+		Email:     req.Email,
+		FirstName: req.FirstName,
+		LastName:  req.LastName,
+		Role:      req.Role,
+		IsActive:  req.IsActive, // Default to true or based on request
 	}
 
-	result := config.DB.Create(&newUser)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create admin user: " + result.Error.Error()})
+	if err := config.DB.Create(&newUser).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusCreated, newUser)
-}
-
-// ListAdminUsers handles listing all admin users (SuperAdmin only)
-func ListAdminUsers(c *gin.Context) {
-	var users []models.AdminUser
-	result := config.DB.Find(&users)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve admin users: " + result.Error.Error()})
-		return
+	responseUser := models.AdminUserResponse{
+		ID:        newUser.ID,
+		Username:  newUser.Username,
+		Email:     newUser.Email,
+		FirstName: newUser.FirstName,
+		LastName:  newUser.LastName,
+		Role:      newUser.Role,
+		IsActive:  newUser.IsActive,
+		CreatedAt: newUser.CreatedAt,
+		UpdatedAt: newUser.UpdatedAt,
 	}
-	c.JSON(http.StatusOK, users)
+	c.JSON(http.StatusCreated, responseUser)
 }
 
-// GetAdminUser handles retrieving a single admin user by ID (SuperAdmin only)
+// GetAdminUser godoc
+// @Summary Get an admin user by ID
+// @Description Get details of a specific admin user by their ID.
+// @Tags AdminUsers
+// @Produce json
+// @Param id path string true "User ID (UUID)"
+// @Success 200 {object} models.AdminUserResponse
+// @Failure 400 {object} gin.H{"error": string}
+// @Failure 404 {object} gin.H{"error": string}
+// @Router /admin/users/{id} [get]
 func GetAdminUser(c *gin.Context) {
 	userIDStr := c.Param("id")
 	userID, err := uuid.Parse(userIDStr)
@@ -92,28 +93,38 @@ func GetAdminUser(c *gin.Context) {
 	}
 
 	var user models.AdminUser
-	result := config.DB.First(&user, "id = ?", userID)
-	if result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Admin user not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve admin user: " + result.Error.Error()})
+	if err := config.DB.First(&user, "id = ?", userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
-	c.JSON(http.StatusOK, user)
+
+	responseUser := models.AdminUserResponse{
+		ID:        user.ID,
+		Username:  user.Username,
+		Email:     user.Email,
+		FirstName: user.FirstName,
+		LastName:  user.LastName,
+		Role:      user.Role,
+		IsActive:  user.IsActive,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+	}
+	c.JSON(http.StatusOK, responseUser)
 }
 
-// UpdateAdminUserRequest struct for updating an admin user
-type UpdateAdminUserRequest struct {
-	FirstName *string               `json:"first_name,omitempty"`
-	LastName  *string               `json:"last_name,omitempty"`
-	Role      *models.AdminUserRole `json:"role,omitempty"`
-	Status    *models.UserStatus    `json:"status,omitempty"`
-	Password  *string               `json:"password,omitempty"` // Allow password update
-}
-
-// UpdateAdminUser handles updating an admin user (SuperAdmin only)
+// UpdateAdminUser godoc
+// @Summary Update an existing admin user
+// @Description Update details of an existing admin user.
+// @Tags AdminUsers
+// @Accept json
+// @Produce json
+// @Param id path string true "User ID (UUID)"
+// @Param user body models.UpdateAdminUserRequest true "AdminUser object with updated fields"
+// @Success 200 {object} models.AdminUserResponse
+// @Failure 400 {object} gin.H{"error": string}
+// @Failure 404 {object} gin.H{"error": string}
+// @Failure 500 {object} gin.H{"error": string}
+// @Router /admin/users/{id} [put]
 func UpdateAdminUser(c *gin.Context) {
 	userIDStr := c.Param("id")
 	userID, err := uuid.Parse(userIDStr)
@@ -122,65 +133,84 @@ func UpdateAdminUser(c *gin.Context) {
 		return
 	}
 
-	var req UpdateAdminUserRequest
+	var existingUser models.AdminUser
+	if err := config.DB.First(&existingUser, "id = ?", userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	var req models.UpdateAdminUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
 		return
 	}
 
-	var user models.AdminUser
-	if config.DB.First(&user, "id = ?", userID).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Admin user not found"})
-		return
+	// Update fields if provided in the request
+	if req.Username != nil {
+		existingUser.Username = *req.Username
 	}
-
-	// Prepare map for updates to handle partial updates and avoid zero values overwriting existing data unintentionally
-	updates := make(map[string]interface{})
+	if req.Email != nil {
+		existingUser.Email = *req.Email
+	}
 	if req.FirstName != nil {
-		updates["first_name"] = *req.FirstName
+		existingUser.FirstName = *req.FirstName
 	}
 	if req.LastName != nil {
-		updates["last_name"] = *req.LastName
+		existingUser.LastName = *req.LastName
 	}
 	if req.Role != nil {
-		updates["role"] = *req.Role
-	}
-	if req.Status != nil {
-		// Validate status value
-		if *req.Status != models.StatusActive && *req.Status != models.StatusInactive && *req.Status != models.StatusLocked {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status value"})
+		switch *req.Role {
+		case models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser, models.RoleWinnerReportsUser, models.RoleAllReportUser:
+			existingUser.Role = *req.Role
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user role specified"})
 			return
 		}
-		updates["status"] = *req.Status
+	}
+	if req.IsActive != nil {
+		existingUser.IsActive = *req.IsActive
 	}
 
+	// Handle password update if provided
 	if req.Password != nil && *req.Password != "" {
-		hashedPassword, saltValue, err := auth.HashPassword(*req.Password)
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(*req.Password), bcrypt.DefaultCost)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash new password"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash new password: " + err.Error()})
 			return
 		}
-		updates["password_hash"] = hashedPassword
-		updates["salt"] = saltValue
+		existingUser.Password = string(hashedPassword)
 	}
 
-	if len(updates) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No update fields provided"})
+	if err := config.DB.Save(&existingUser).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user: " + err.Error()})
 		return
 	}
 
-	result := config.DB.Model(&user).Updates(updates)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update admin user: " + result.Error.Error()})
-		return
+	responseUser := models.AdminUserResponse{
+		ID:        existingUser.ID,
+		Username:  existingUser.Username,
+		Email:     existingUser.Email,
+		FirstName: existingUser.FirstName,
+		LastName:  existingUser.LastName,
+		Role:      existingUser.Role,
+		IsActive:  existingUser.IsActive,
+		CreatedAt: existingUser.CreatedAt,
+		UpdatedAt: existingUser.UpdatedAt,
 	}
-
-	// Refetch to get updated data
-	config.DB.First(&user, "id = ?", userID)
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, responseUser)
 }
 
-// DeleteAdminUser handles deleting an admin user (SuperAdmin only) - Soft delete is used
+// DeleteAdminUser godoc
+// @Summary Delete an admin user by ID (Soft Delete)
+// @Description Soft delete an admin user by their ID.
+// @Tags AdminUsers
+// @Produce json
+// @Param id path string true "User ID (UUID)"
+// @Success 200 {object} gin.H{"message": string}
+// @Failure 400 {object} gin.H{"error": string}
+// @Failure 404 {object} gin.H{"error": string}
+// @Failure 500 {object} gin.H{"error": string}
+// @Router /admin/users/{id} [delete]
 func DeleteAdminUser(c *gin.Context) {
 	userIDStr := c.Param("id")
 	userID, err := uuid.Parse(userIDStr)
@@ -189,33 +219,84 @@ func DeleteAdminUser(c *gin.Context) {
 		return
 	}
 
-	// Prevent SuperAdmin from deleting their own account (especially if only one)
-	// This logic should be more robust, e.g., check if it's the last SuperAdmin
-	loggedInUserIDStr, exists := c.Get("userID")
-	if exists && loggedInUserIDStr.(string) == userIDStr {
-		// Further check if this is the only SuperAdmin or the primary one
-		var user models.AdminUser
-		config.DB.First(&user, "id = ?", userID)
-		if user.Role == models.RoleSuperAdmin {
-			var count int64
-			config.DB.Model(&models.AdminUser{}).Where("role = ? AND deleted_at IS NULL", models.RoleSuperAdmin).Count(&count)
-			if count <= 1 {
-				c.JSON(http.StatusForbidden, gin.H{"error": "Cannot delete the only SuperAdmin account"})
-				return
-			}
+	// Soft delete
+	if err := config.DB.Delete(&models.AdminUser{}, "id = ?", userID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
+}
+
+// ListAdminUsers godoc
+// @Summary List all admin users
+// @Description Get a list of all admin users.
+// @Tags AdminUsers
+// @Produce json
+// @Success 200 {array} models.AdminUserResponse
+// @Failure 500 {object} gin.H{"error": string}
+// @Router /admin/users [get]
+func ListAdminUsers(c *gin.Context) {
+	var users []models.AdminUser
+	if err := config.DB.Find(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve users: " + err.Error()})
+		return
+	}
+
+	responseUsers := make([]models.AdminUserResponse, len(users))
+	for i, user := range users {
+		responseUsers[i] = models.AdminUserResponse{
+			ID:        user.ID,
+			Username:  user.Username,
+			Email:     user.Email,
+			FirstName: user.FirstName,
+			LastName:  user.LastName,
+			Role:      user.Role,
+			IsActive:  user.IsActive,
+			CreatedAt: user.CreatedAt,
+			UpdatedAt: user.UpdatedAt,
 		}
 	}
+	c.JSON(http.StatusOK, responseUsers)
+}
 
-	result := config.DB.Delete(&models.AdminUser{}, "id = ?", userID)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete admin user: " + result.Error.Error()})
+// Login godoc
+// @Summary Admin user login
+// @Description Authenticate an admin user and return a JWT token.
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param credentials body models.LoginRequest true "Login credentials"
+// @Success 200 {object} models.LoginResponse
+// @Failure 400 {object} gin.H{"error": string}
+// @Failure 401 {object} gin.H{"error": string}
+// @Failure 500 {object} gin.H{"error": string}
+// @Router /admin/login [post]
+func Login(c *gin.Context) {
+	var creds models.LoginRequest
+
+	if err := c.ShouldBindJSON(&creds); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
 		return
 	}
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Admin user not found or already deleted"})
+
+	var user models.AdminUser
+	if err := config.DB.Where("username = ? AND is_active = ?", creds.Username, true).First(&user).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username, password, or user is inactive"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Admin user deleted successfully"})
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(creds.Password)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
+		return
+	}
+
+	token, err := auth.GenerateJWT(user.ID.String(), user.Username, string(user.Role))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.LoginResponse{Token: token, UserID: user.ID, Username: user.Username, Role: user.Role})
 }
 

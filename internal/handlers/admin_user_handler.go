@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors" // Added for errors.Is
 	"net/http"
 
 	"github.com/ArowuTest/GP-Backend-Promo/internal/auth"
@@ -25,13 +26,12 @@ import (
 // @Router /admin/users [post]
 func CreateUser(c *gin.Context) {
 	var newUser models.AdminUser
-	// Bind only specific fields for creation to avoid unexpected inputs
 	var input struct {
 		Username string             `json:"username" binding:"required"`
 		Email    string             `json:"email" binding:"required,email"`
 		Password string             `json:"password" binding:"required,min=6"`
 		Role     models.AdminUserRole `json:"role" binding:"required"`
-		IsActive bool               `json:"isActive"` // Default will be handled by model or DB
+		Status   models.UserStatus  `json:"status,omitempty"` // Allow status to be set, default to Active if not provided
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -39,16 +39,13 @@ func CreateUser(c *gin.Context) {
 		return
 	}
 
-	// Validate role
 	switch input.Role {
 	case models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser, models.RoleWinnerReportsUser, models.RoleAllReportUser:
-		// Valid role
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user role specified"})
 		return
 	}
 
-	// Hash the password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password: " + err.Error()})
@@ -59,21 +56,22 @@ func CreateUser(c *gin.Context) {
 	newUser.Email = input.Email
 	newUser.PasswordHash = string(hashedPassword)
 	newUser.Role = input.Role
-	// newUser.Status will default to 'Active' as per model; Salt is not explicitly set as bcrypt includes it in the hash
-	// newUser.IsActive from input can be mapped to newUser.Status if needed, e.g.
-	if input.IsActive {
-	    newUser.Status = models.StatusActive
-	} else {
-	    newUser.Status = models.StatusInactive // Or some other default for new users if not active
-	}
-
+    if input.Status != "" {
+        switch input.Status {
+        case models.StatusActive, models.StatusInactive, models.StatusLocked:
+            newUser.Status = input.Status
+        default:
+            c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user status specified"})
+            return
+        }
+    } else {
+        newUser.Status = models.StatusActive // Default to Active
+    }
 
 	if err := config.DB.Create(&newUser).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user: " + err.Error()})
 		return
 	}
-
-	// PasswordHash and Salt are excluded from JSON response due to `json:"-"` tags in the model
 	c.JSON(http.StatusCreated, newUser)
 }
 
@@ -97,25 +95,24 @@ func GetUser(c *gin.Context) {
 
 	var user models.AdminUser
 	if err := config.DB.First(&user, userID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) { // Use errors.Is
 		    c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		} else {
 		    c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user: " + err.Error()})
 		}
 		return
 	}
-
 	c.JSON(http.StatusOK, user)
 }
 
 // UpdateUser godoc
 // @Summary Update an existing user
-// @Description Update details of an existing admin user (username, email, role, status). Password update should be a separate endpoint.
+// @Description Update details of an existing admin user (username, email, role, status). Password update can also be done.
 // @Tags AdminUsers
 // @Accept json
 // @Produce json
 // @Param id path string true "User ID (UUID)"
-// @Param user body models.AdminUser true "AdminUser object with updated fields (username, email, role, status)"
+// @Param user body object{username=string,email=string,role=models.AdminUserRole,status=models.UserStatus,password=string} true "AdminUser object with updated fields"
 // @Success 200 {object} models.AdminUser "User updated successfully (PasswordHash and Salt excluded)"
 // @Failure 400 {object} gin.H{"error": string}
 // @Failure 404 {object} gin.H{"error": string}
@@ -131,7 +128,7 @@ func UpdateUser(c *gin.Context) {
 
 	var existingUser models.AdminUser
 	if err := config.DB.First(&existingUser, userID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) { // Use errors.Is
 		    c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		} else {
 		    c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user for update: " + err.Error()})
@@ -140,11 +137,11 @@ func UpdateUser(c *gin.Context) {
 	}
 
 	var updatedInfo struct {
-		Username  string             `json:"username"`
-		Email     string             `json:"email"`
-		Role      models.AdminUserRole `json:"role"`
-		Status    models.UserStatus  `json:"status"`
-        Password  string             `json:"password,omitempty"` // For password change
+		Username  string             `json:"username,omitempty"`
+		Email     string             `json:"email,omitempty"`
+		Role      models.AdminUserRole `json:"role,omitempty"`
+		Status    models.UserStatus  `json:"status,omitempty"`
+        Password  string             `json:"password,omitempty"`
 	}
 
 	if err := c.ShouldBindJSON(&updatedInfo); err != nil {
@@ -152,7 +149,6 @@ func UpdateUser(c *gin.Context) {
 		return
 	}
 
-	// Update fields if provided
 	if updatedInfo.Username != "" {
 		existingUser.Username = updatedInfo.Username
 	}
@@ -195,7 +191,6 @@ func UpdateUser(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user: " + err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, existingUser)
 }
 
@@ -218,10 +213,9 @@ func DeleteUser(c *gin.Context) {
 		return
 	}
 
-    // Check if user exists before attempting delete to provide a 404 if not found
     var user models.AdminUser
     if err := config.DB.First(&user, userID).Error; err != nil {
-        if errors.Is(err, gorm.ErrRecordNotFound) {
+        if errors.Is(err, gorm.ErrRecordNotFound) { // Use errors.Is
             c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
         } else {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Error checking user existence: " + err.Error()})
@@ -229,13 +223,10 @@ func DeleteUser(c *gin.Context) {
         return
     }
 
-	// GORM's Delete with a struct pointer will use primary key for deletion.
-	// For soft delete, ensure DeletedAt field is in your model and GORM is configured for it.
 	if err := config.DB.Delete(&models.AdminUser{}, userID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user: " + err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
 }
 
@@ -263,7 +254,7 @@ func ListUsers(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param credentials body struct{Username string `json:"username" binding:"required"`; Password string `json:"password" binding:"required"`} true "Login credentials"
-// @Success 200 {object} gin.H{"token": string, "user_id": string, "role": string}
+// @Success 200 {object} gin.H{"token": string, "user_id": string, "username": string, "role": string}
 // @Failure 400 {object} gin.H{"error": string}
 // @Failure 401 {object} gin.H{"error": string}
 // @Failure 500 {object} gin.H{"error": string}
@@ -281,7 +272,7 @@ func Login(c *gin.Context) {
 
 	var user models.AdminUser
 	if err := config.DB.Where("username = ?", creds.Username).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, gorm.ErrRecordNotFound) { // Use errors.Is
 		    c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
 		} else {
 		    c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error during login: " + err.Error()})
@@ -294,12 +285,13 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	token, err := auth.GenerateJWT(user.ID.String(), user.Username, string(user.Role))
+	// Corrected call to auth.GenerateJWT
+	token, err := auth.GenerateJWT(user.Username, user.Role) 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"token": token, "user_id": user.ID.String(), "role": user.Role})
+	c.JSON(http.StatusOK, gin.H{"token": token, "user_id": user.ID.String(), "username": user.Username, "role": user.Role})
 }
 

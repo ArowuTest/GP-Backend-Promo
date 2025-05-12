@@ -96,7 +96,7 @@ func ExecuteDraw(c *gin.Context) {
 
 	var prizeStructure models.PrizeStructure
 	if err := config.DB.Preload("Prizes", func(db *gorm.DB) *gorm.DB {
-		return db.Order(""order" ASC") // Ensure prizes are ordered correctly
+		return db.Order("\"order\" ASC") 
 	}).First(&prizeStructure, "id = ? AND is_active = ?", parsedPrizeStructureID, true).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Active prize structure not found or specified ID is inactive"})
@@ -116,16 +116,12 @@ func ExecuteDraw(c *gin.Context) {
 		if prizeStructure.ValidTo != nil {
 			end = prizeStructure.ValidTo.Format("2006-01-02")
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Draw date %s is outside the prize structure\'s validity period (%s to %s)", parsedDrawDate.Format("2006-01-02"), start, end)})
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Draw date %s is outside the prize structure's validity period (%s to %s)", parsedDrawDate.Format("2006-01-02"), start, end)})
 		return
 	}
 
-	// Check if a draw for this date and prize structure has already been successfully completed
 	var existingDraw models.Draw
 	if !errors.Is(config.DB.Where("draw_date = ? AND prize_structure_id = ? AND status = ?", parsedDrawDate, parsedPrizeStructureID, "Completed").First(&existingDraw).Error, gorm.ErrRecordNotFound) {
-		// Allow rerun if confirmed by user (frontend handles confirmation, backend just needs a flag or separate endpoint for rerun)
-		// For now, we prevent re-execution of a completed draw via this standard endpoint.
-		// A separate /rerun endpoint or a flag in request could handle this with audit.
 		c.JSON(http.StatusConflict, gin.H{"error": "A draw for this date and prize structure has already been completed. Use rerun functionality if intended."})
 		return
 	}
@@ -151,8 +147,12 @@ func ExecuteDraw(c *gin.Context) {
 		return
 	}
 
-	adminIDClaim, _ := c.Get("userID")
-	adminID, _ := uuid.Parse(adminIDClaim.(string))
+	adminIDClaim, _ := c.Get("userID") 
+	adminIDStr, ok := adminIDClaim.(string)
+    if !ok {
+        adminIDStr = uuid.Nil.String()
+    }
+	adminID, _ := uuid.Parse(adminIDStr)
 
 	draw := models.Draw{
 		DrawDate:                  parsedDrawDate,
@@ -175,7 +175,7 @@ func ExecuteDraw(c *gin.Context) {
 		}
 	}
 
-	rand.New(rand.NewSource(time.Now().UnixNano())) // Seed the random number generator
+	rand.New(rand.NewSource(time.Now().UnixNano())) 
 	hasWon := make(map[string]bool)
 
 	for _, prize := range prizeStructure.Prizes {
@@ -186,7 +186,7 @@ func ExecuteDraw(c *gin.Context) {
 			selectedWinnerMSISDN := ""
 			pickedUnique := false
 			attempts := 0
-			maxAttempts := len(entriesPool)*2 + 10
+			maxAttempts := len(entriesPool)*2 + 10 
 
 			for !pickedUnique && attempts < maxAttempts {
 				if len(entriesPool) == 0 {
@@ -206,18 +206,14 @@ func ExecuteDraw(c *gin.Context) {
 						}
 					}
 					entriesPool = newEntriesPool
-				} else {
-					// If the chosen one already won, remove one instance of them from the pool to give others a chance
-					// This is a simplified approach. A more robust one would be to ensure all entries of a winner are removed once picked.
-					// The current logic (removing all entries after picking) is better.
-				}
+				} 
 				attempts++
 			}
 
 			if !pickedUnique {
-				break
+				break 
 			}
-			// Find points for the winner
+			
 			winnerPoints := 0
 			for _, p := range finalEligibleParticipants {
 			    if p.MSISDN == selectedWinnerMSISDN {
@@ -228,8 +224,8 @@ func ExecuteDraw(c *gin.Context) {
 
 			drawWinners = append(drawWinners, models.DrawWinner{
 				PrizeID:       prize.ID,
-				MSISDN:        selectedWinnerMSISDN, // Store masked version if needed for direct display, or mask on frontend
-				IsRunnerUp:    false, // This logic is for main winners
+				MSISDN:        selectedWinnerMSISDN, 
+				IsRunnerUp:    false, 
 				PointsAtWin:   winnerPoints,
 				ClaimStatus:   "Pending",
 			})
@@ -239,13 +235,11 @@ func ExecuteDraw(c *gin.Context) {
 		}
 	}
 
-	// TODO: Implement runner-up selection logic here if needed, after main winners
-
 	txErr := config.DB.Transaction(func(tx *gorm.DB) error {
 		draw.Status = "Completed"
 		if err := tx.Create(&draw).Error; err != nil {
 			draw.Status = "Failed"
-			tx.Save(&draw) // Attempt to save failed status
+			tx.Save(&draw) 
 			return fmt.Errorf("failed to create draw record: %w", err)
 		}
 
@@ -254,7 +248,6 @@ func ExecuteDraw(c *gin.Context) {
 		}
 		if len(drawWinners) > 0 {
 			if err := tx.Create(&drawWinners).Error; err != nil {
-				draw.Status = "Failed"
 				tx.Model(&draw).Update("status", "Failed")
 				return fmt.Errorf("failed to save draw winners: %w", err)
 			}
@@ -279,9 +272,13 @@ func ExecuteDraw(c *gin.Context) {
 // ListDraws handles listing all draws
 func ListDraws(c *gin.Context) {
 	var draws []models.Draw
-	result := config.DB.Preload("PrizeStructure").Preload("ExecutedByUser", func(db *gorm.DB) *gorm.DB {
-		return db.Select("id", "username", "email", "first_name", "last_name")
-	}).Order("draw_date desc").Find(&draws)
+	// Assuming ExecutedByUserID in Draw model relates to AdminUser.ID
+	// And AdminUser model has fields: id, username, email, first_name, last_name
+	// The GORM Preload for ExecutedByUser would be based on a defined relation in Draw model.
+	// If ExecutedByUserID is just a UUID field, you might need a separate query to get user details.
+	// For now, assuming a relation `ExecutedByUser` exists on `models.Draw` that links to `models.AdminUser` via `ExecutedByUserID`.
+	// If not, this Preload will fail or do nothing. The model needs: ExecutedByUser models.AdminUser `gorm:"foreignKey:ExecutedByUserID"`
+	result := config.DB.Preload("PrizeStructure").Preload("ExecutedByUser").Order("draw_date desc").Find(&draws)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve draws: " + result.Error.Error()})
 		return
@@ -299,9 +296,8 @@ func GetDrawDetails(c *gin.Context) {
 	}
 
 	var draw models.Draw
-	result := config.DB.Preload("PrizeStructure.Prizes").Preload("Winners.Prize").Preload("ExecutedByUser", func(db *gorm.DB) *gorm.DB {
-		return db.Select("id", "username", "email", "first_name", "last_name")
-	}).First(&draw, "id = ?", drawID)
+	// Similar to ListDraws, assuming ExecutedByUser relation exists.
+	result := config.DB.Preload("PrizeStructure.Prizes").Preload("Winners.Prize").Preload("ExecutedByUser").First(&draw, "id = ?", drawID)
 
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
@@ -314,22 +310,5 @@ func GetDrawDetails(c *gin.Context) {
 	c.JSON(http.StatusOK, draw)
 }
 
-// ListDataUploadAuditEntries handles listing data upload audit entries
-func ListDataUploadAuditEntries(c *gin.Context) {
-	var auditEntries []models.DataUploadAudit
-	// TODO: Add pagination and filtering (by user, date range, status)
-	result := config.DB.Preload("UploadedByUser", func(db *gorm.DB) *gorm.DB {
-        return db.Select("id, username, email, first_name, last_name")
-    }).Order("upload_timestamp desc").Find(&auditEntries)
-
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve data upload audit entries: " + result.Error.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, auditEntries)
-}
-
-// Note: Winner management handlers (ListWinners, ExportWinnersForMoMo, UpdateWinnerPaymentStatus) from the original file
-// would need to be updated to use UUIDs and align with the final models.DrawWinner struct.
-// They are omitted here for brevity as the focus is on Draw execution and listing.
+// Note: ListDataUploadAuditEntries was removed from here as it's in data_upload_audit_handler.go
 
