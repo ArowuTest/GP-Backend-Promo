@@ -33,7 +33,7 @@ type AdminUser struct {
 	CreatedAt           time.Time      `json:"created_at"`
 	UpdatedAt           time.Time      `json:"updated_at"`
 	DeletedAt           gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
-	Username            string         `json:"username" gorm:"uniqueIndex"` // Temporarily allow NULL for migration
+	Username            string         `json:"username" gorm:"uniqueIndex;not null"`
 	Email               string         `json:"email" gorm:"uniqueIndex;not null"`
 	PasswordHash        string         `json:"-" gorm:"not null"`
 	Salt                string         `json:"-" gorm:"not null"`
