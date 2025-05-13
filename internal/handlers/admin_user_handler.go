@@ -19,9 +19,6 @@ import (
 )
 
 // CreateUser godoc
-// ... (rest of CreateUser, GetUser, UpdateUser, DeleteUser, ListUsers functions remain unchanged) ...
-
-// CreateUser godoc
 // @Summary Create a new admin user
 // @Description Create a new admin user with username, password, email, and role.
 // @Tags AdminUsers
@@ -268,13 +265,13 @@ func ListUsers(c *gin.Context) {
 // @Failure 500 {object} gin.H{"error": string}
 // @Router /admin/login [post] // Ensure this matches the frontend API call path /api/v1/auth/login
 func Login(c *gin.Context) {
-	fmt.Fprintf(os.Stderr, "DEBUG: LOGIN HANDLER ENTERED\n") // More reliable logging
+	fmt.Fprintf(os.Stderr, "DEBUG: LOGIN HANDLER ENTERED (v2 Error Test)\n") // More reliable logging & version marker
 
 	bodyBytes, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "DEBUG: Error reading request body: %v\n", err)
+		fmt.Fprintf(os.Stderr, "DEBUG: Error reading request body (v2 Error Test): %v\n", err)
 	} else {
-		fmt.Fprintf(os.Stderr, "DEBUG: Raw Login Request Body: %s\n", string(bodyBytes))
+		fmt.Fprintf(os.Stderr, "DEBUG: Raw Login Request Body (v2 Error Test): %s\n", string(bodyBytes))
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}
 
@@ -284,40 +281,41 @@ func Login(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&creds); err != nil {
-		fmt.Fprintf(os.Stderr, "DEBUG: Error binding JSON for login: %v. Payload was: %s\n", err, string(bodyBytes))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
+		fmt.Fprintf(os.Stderr, "DEBUG: Error binding JSON for login (v2 Error Test): %v. Payload was: %s\n", err, string(bodyBytes))
+		// MODIFIED ERROR MESSAGE FOR TESTING
+		c.JSON(http.StatusBadRequest, gin.H{"error": "LOGIN PAYLOAD BINDING ERROR (v2): " + err.Error()})
 		return
 	}
-	fmt.Fprintf(os.Stderr, "DEBUG: Login credentials bound successfully: Username=\"%s\"\n", creds.Username)
+	fmt.Fprintf(os.Stderr, "DEBUG: Login credentials bound successfully (v2 Error Test): Username=\"%s\"\n", creds.Username)
 
 	var user models.AdminUser
 	if err := config.DB.Where("username = ?", creds.Username).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			fmt.Fprintf(os.Stderr, "DEBUG: User not found for username: %s\n", creds.Username)
+			fmt.Fprintf(os.Stderr, "DEBUG: User not found for username (v2 Error Test): %s\n", creds.Username)
 		    c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
 		} else {
-			fmt.Fprintf(os.Stderr, "DEBUG: Database error looking up user %s: %v\n", creds.Username, err)
+			fmt.Fprintf(os.Stderr, "DEBUG: Database error looking up user (v2 Error Test) %s: %v\n", creds.Username, err)
 		    c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error during login: " + err.Error()})
 		}
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(creds.Password)); err != nil {
-		fmt.Fprintf(os.Stderr, "DEBUG: Password mismatch for user: %s\n", creds.Username)
+		fmt.Fprintf(os.Stderr, "DEBUG: Password mismatch for user (v2 Error Test): %s\n", creds.Username)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
 		return
 	}
-	fmt.Fprintf(os.Stderr, "DEBUG: User %s authenticated successfully\n", creds.Username)
+	fmt.Fprintf(os.Stderr, "DEBUG: User %s authenticated successfully (v2 Error Test)\n", creds.Username)
 
 	token, err := auth.GenerateJWT(user.ID.String(), user.Username, user.Role)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "DEBUG: Error generating JWT for user %s: %v\n", creds.Username, err)
+		fmt.Fprintf(os.Stderr, "DEBUG: Error generating JWT for user (v2 Error Test) %s: %v\n", creds.Username, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token: " + err.Error()})
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "DEBUG: JWT generated successfully for user %s\n", creds.Username)
+	fmt.Fprintf(os.Stderr, "DEBUG: JWT generated successfully for user (v2 Error Test) %s\n", creds.Username)
 	c.JSON(http.StatusOK, gin.H{"token": token, "user_id": user.ID.String(), "username": user.Username, "role": user.Role})
-	fmt.Fprintf(os.Stderr, "DEBUG: Login handler finished\n")
+	fmt.Fprintf(os.Stderr, "DEBUG: Login handler finished (v2 Error Test)\n")
 }
 
