@@ -3,18 +3,23 @@ package handlers
 import (
 	"bytes"
 	"errors" // Added for errors.Is
+	"fmt"    // Added for fmt.Fprintf
 	"io"
-	"log"
+	// "log" // Replaced with fmt.Fprintf(os.Stderr, ...)
 	"net/http"
+	"os"     // Added for os.Stderr
 
 	"github.com/ArowuTest/GP-Backend-Promo/internal/auth"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/config"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt" // Keep bcrypt as it's used for CompareHashAndPassword and GenerateFromPassword
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+// CreateUser godoc
+// ... (rest of CreateUser, GetUser, UpdateUser, DeleteUser, ListUsers functions remain unchanged) ...
 
 // CreateUser godoc
 // @Summary Create a new admin user
@@ -261,18 +266,15 @@ func ListUsers(c *gin.Context) {
 // @Failure 400 {object} gin.H{"error": string}
 // @Failure 401 {object} gin.H{"error": string}
 // @Failure 500 {object} gin.H{"error": string}
-// @Router /admin/login [post]
+// @Router /admin/login [post] // Ensure this matches the frontend API call path /api/v1/auth/login
 func Login(c *gin.Context) {
-	log.Println("DEBUG: Login handler started")
+	fmt.Fprintf(os.Stderr, "DEBUG: LOGIN HANDLER ENTERED\n") // More reliable logging
 
-	// Log the raw request body
 	bodyBytes, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		log.Printf("DEBUG: Error reading request body: %v\n", err)
-		// Don't return here, try to proceed if possible, or handle as appropriate
+		fmt.Fprintf(os.Stderr, "DEBUG: Error reading request body: %v\n", err)
 	} else {
-		log.Printf("DEBUG: Raw Login Request Body: %s\n", string(bodyBytes))
-		// After reading, we need to replace the body so Gin can read it again for binding
+		fmt.Fprintf(os.Stderr, "DEBUG: Raw Login Request Body: %s\n", string(bodyBytes))
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}
 
@@ -282,40 +284,40 @@ func Login(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&creds); err != nil {
-		log.Printf("DEBUG: Error binding JSON for login: %v. Payload was: %s\n", err, string(bodyBytes)) // Log body again on error
+		fmt.Fprintf(os.Stderr, "DEBUG: Error binding JSON for login: %v. Payload was: %s\n", err, string(bodyBytes))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
 		return
 	}
-	log.Printf("DEBUG: Login credentials bound successfully: Username=\"%s\"", creds.Username)
+	fmt.Fprintf(os.Stderr, "DEBUG: Login credentials bound successfully: Username=\"%s\"\n", creds.Username)
 
 	var user models.AdminUser
 	if err := config.DB.Where("username = ?", creds.Username).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Printf("DEBUG: User not found for username: %s\n", creds.Username)
+			fmt.Fprintf(os.Stderr, "DEBUG: User not found for username: %s\n", creds.Username)
 		    c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
 		} else {
-			log.Printf("DEBUG: Database error looking up user %s: %v\n", creds.Username, err)
+			fmt.Fprintf(os.Stderr, "DEBUG: Database error looking up user %s: %v\n", creds.Username, err)
 		    c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error during login: " + err.Error()})
 		}
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(creds.Password)); err != nil {
-		log.Printf("DEBUG: Password mismatch for user: %s\n", creds.Username)
+		fmt.Fprintf(os.Stderr, "DEBUG: Password mismatch for user: %s\n", creds.Username)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
 		return
 	}
-	log.Printf("DEBUG: User %s authenticated successfully\n", creds.Username)
+	fmt.Fprintf(os.Stderr, "DEBUG: User %s authenticated successfully\n", creds.Username)
 
 	token, err := auth.GenerateJWT(user.ID.String(), user.Username, user.Role)
 	if err != nil {
-		log.Printf("DEBUG: Error generating JWT for user %s: %v\n", creds.Username, err)
+		fmt.Fprintf(os.Stderr, "DEBUG: Error generating JWT for user %s: %v\n", creds.Username, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token: " + err.Error()})
 		return
 	}
 
-	log.Printf("DEBUG: JWT generated successfully for user %s\n", creds.Username)
+	fmt.Fprintf(os.Stderr, "DEBUG: JWT generated successfully for user %s\n", creds.Username)
 	c.JSON(http.StatusOK, gin.H{"token": token, "user_id": user.ID.String(), "username": user.Username, "role": user.Role})
-	log.Println("DEBUG: Login handler finished")
+	fmt.Fprintf(os.Stderr, "DEBUG: Login handler finished\n")
 }
 
