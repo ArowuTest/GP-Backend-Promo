@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt" // Added for diagnostic printing
 	"log"
 	"os"
 
@@ -9,6 +10,8 @@ import (
 )
 
 func main() {
+	fmt.Fprintf(os.Stderr, "<<<<< DEPLOYMENT PIPELINE TEST - MAIN.GO STARTED SUCCESSFULLY - V4 >>>>>\n") // Diagnostic line
+
 	// Load environment variables and connect to the database
 	config.ConnectDB()
 
