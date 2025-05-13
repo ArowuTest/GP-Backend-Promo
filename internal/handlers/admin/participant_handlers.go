@@ -14,11 +14,15 @@ import (
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	// "gorm.io/gorm" // This import was flagged as unused in the last log, and its direct types are not used.
-	"gorm.io/gorm/clause"
+	"gorm.io/gorm"
 )
 
-// HandleParticipantUpload processes the uploaded CSV file for participants.
+// normalizeMSISDN ensures MSISDN is in a standard format if needed (e.g., remove leading +, spaces)
+func normalizeMSISDN(msisdn string) string {
+	return strings.TrimSpace(msisdn) // Basic trimming, can be expanded
+}
+
+// HandleParticipantUpload processes the uploaded CSV file for participant events.
 func HandleParticipantUpload(c *gin.Context) {
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
@@ -27,7 +31,7 @@ func HandleParticipantUpload(c *gin.Context) {
 	}
 	defer file.Close()
 
-	adminIDClaim, _ := c.Get("userID") // Assuming userID is set by auth middleware
+	adminIDClaim, _ := c.Get("userID")
 	adminIDStr, ok := adminIDClaim.(string)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Admin user ID in token is not a string"})
@@ -53,12 +57,12 @@ func HandleParticipantUpload(c *gin.Context) {
 	}
 
 	reader := csv.NewReader(bufio.NewReader(file))
-	var participantsToCreate []models.Participant
 	var errorMessages []string
-	rowCount := 0
-	successfulRowCount := 0
+	var skippedDuplicateDetails []string
+	csvRowCount := 0
+	successfullyImportedCount := 0
+	duplicatesSkippedCount := 0
 
-	// Read header row
 	headerRow, err := reader.Read()
 	if err != nil {
 		auditEntry.Status = "Failed"
@@ -67,139 +71,194 @@ func HandleParticipantUpload(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": auditEntry.Notes})
 		return
 	}
-	rowCount++ // Account for header row in processed rows
+	csvRowCount++
 
+	// Define expected headers (case-insensitive check)
+	// msisdn, amount, optinstatus, points, timestamp
+	colMap := make(map[string]int)
 	expectedHeaders := []string{"msisdn", "amount", "optinstatus", "points", "timestamp"}
-	if len(headerRow) < len(expectedHeaders) {
-		auditEntry.Status = "Failed"
-		auditEntry.Notes = fmt.Sprintf("Invalid CSV header. Expected %d columns, got %d. Headers should be: MSISDN, amount, optInStatus, Points, timestamp", len(expectedHeaders), len(headerRow))
-		config.DB.Save(&auditEntry)
-		c.JSON(http.StatusBadRequest, gin.H{"error": auditEntry.Notes})
-		return
+	for i, h := range headerRow {
+		colMap[strings.ToLower(strings.TrimSpace(h))] = i
 	}
-
-	for i, expected := range expectedHeaders {
-		if strings.ToLower(strings.TrimSpace(headerRow[i])) != expected {
+	for _, eh := range expectedHeaders {
+		if _, exists := colMap[eh]; !exists {
 			auditEntry.Status = "Failed"
-			auditEntry.Notes = fmt.Sprintf("Invalid CSV header. Column %d should be ", i+1) + strings.Title(expected) + fmt.Sprintf(" (case-insensitive), but got %s", headerRow[i])
+			auditEntry.Notes = fmt.Sprintf("Missing expected header column: %s. Expected headers are: msisdn, amount, optinstatus, points, timestamp (case-insensitive).", eh)
 			config.DB.Save(&auditEntry)
 			c.JSON(http.StatusBadRequest, gin.H{"error": auditEntry.Notes})
 			return
 		}
 	}
 
+	var participantEventsToCreate []models.ParticipantEvent
+	var participantsToUpsert []models.Participant // For master participant records
+	// Use a map to track unique events within this CSV to avoid processing exact same row multiple times if it appears in CSV
+	// Key: msisdn_amount_points_timestamp_optinstatus (a composite key for uniqueness of an event)
+	processedEventsInCSV := make(map[string]bool)
+	// Use a map to track participants for upserting into Participant master table
+	participantMasterMap := make(map[string]models.Participant)
+
 	for {
 		row, err := reader.Read()
 		if err == io.EOF {
 			break
 		}
+		csvRowCount++
 		if err != nil {
-			errorMessages = append(errorMessages, fmt.Sprintf("Error reading row %d: %s", rowCount+1, err.Error()))
-			rowCount++
-			continue
-		}
-		rowCount++
-
-		if len(row) < len(expectedHeaders) {
-			errorMessages = append(errorMessages, fmt.Sprintf("Row %d: Not enough columns. Expected %d, got %d.", rowCount, len(expectedHeaders), len(row)))
+			errorMessages = append(errorMessages, fmt.Sprintf("Error reading CSV row %d: %s", csvRowCount, err.Error()))
 			continue
 		}
 
-		msisdn := strings.TrimSpace(row[0])
-		pointsStr := strings.TrimSpace(row[3])
-		timestampStr := strings.TrimSpace(row[4])
+		msisdn := normalizeMSISDN(row[colMap["msisdn"]])
+		amountStr := strings.TrimSpace(row[colMap["amount"]])
+		optInStatusStr := strings.TrimSpace(row[colMap["optinstatus"]])
+		pointsStr := strings.TrimSpace(row[colMap["points"]])
+		timestampStr := strings.TrimSpace(row[colMap["timestamp"]])
 
 		if msisdn == "" {
-			errorMessages = append(errorMessages, fmt.Sprintf("Row %d: MSISDN is empty", rowCount))
+			errorMessages = append(errorMessages, fmt.Sprintf("Row %d: MSISDN is empty.", csvRowCount))
 			continue
 		}
 
-		points, err := strconv.Atoi(pointsStr)
+		pointsEarned, err := strconv.Atoi(pointsStr)
 		if err != nil {
-			errorMessages = append(errorMessages, fmt.Sprintf("Row %d (MSISDN %s): Invalid Points value \"%s\"", rowCount, msisdn, pointsStr))
+			errorMessages = append(errorMessages, fmt.Sprintf("Row %d (MSISDN %s): Invalid Points value \"%s\". Must be a number.", csvRowCount, msisdn, pointsStr))
 			continue
 		}
 
-		var optInDate *time.Time
+		var transactionTime *time.Time
 		if timestampStr != "" {
-			parsedDate, err := time.Parse("02/01/2006 15:04", timestampStr)
-			if err != nil {
-				parsedDateOnly, errOnly := time.Parse("02/01/2006", timestampStr)
-				if errOnly != nil {
-					errorMessages = append(errorMessages, fmt.Sprintf("Row %d (MSISDN %s): Invalid timestamp format \"%s\". Expected DD/MM/YYYY HH:MM or DD/MM/YYYY", rowCount, msisdn, timestampStr))
-				} else {
-					optInDate = &parsedDateOnly
+			t, errParse := time.Parse("02/01/2006 15:04", timestampStr) // DD/MM/YYYY HH:MM
+			if errParse != nil {
+				tDateOnly, errParseDateOnly := time.Parse("02/01/2006", timestampStr) // DD/MM/YYYY
+				if errParseDateOnly != nil {
+					errorMessages = append(errorMessages, fmt.Sprintf("Row %d (MSISDN %s): Invalid timestamp format \"%s\". Expected DD/MM/YYYY HH:MM or DD/MM/YYYY.", csvRowCount, msisdn, timestampStr))
+					continue
 				}
+				transactionTime = &tDateOnly
 			} else {
-				optInDate = &parsedDate
+				transactionTime = &t
 			}
+		} else {
+		    errorMessages = append(errorMessages, fmt.Sprintf("Row %d (MSISDN %s): Timestamp is required for participant event.", csvRowCount, msisdn))
+		    continue
 		}
 
-		participantsToCreate = append(participantsToCreate, models.Participant{
-			MSISDN:    msisdn,
-			Points:    points,
-			OptInDate: optInDate,
+		// Create a unique key for the event from the CSV to handle duplicates within the same file
+		eventKey := fmt.Sprintf("%s_%s_%d_%s_%s", msisdn, amountStr, pointsEarned, transactionTime.Format(time.RFC3339Nano), optInStatusStr)
+		if processedEventsInCSV[eventKey] {
+			duplicatesSkippedCount++
+			skippedDuplicateDetails = append(skippedDuplicateDetails, fmt.Sprintf("Row %d (MSISDN %s): Duplicate event within CSV file.", csvRowCount, msisdn))
+			continue
+		}
+		processedEventsInCSV[eventKey] = true
+
+		// Check for existing event in DB (true duplicate)
+		var existingEvent models.ParticipantEvent
+		result := config.DB.Where("msisdn = ? AND amount = ? AND points_earned = ? AND transaction_timestamp = ? AND opt_in_status = ?",
+			msisdn, amountStr, pointsEarned, transactionTime, optInStatusStr).First(&existingEvent)
+
+		if result.Error == nil { // Found an existing identical event in DB
+			duplicatesSkippedCount++
+			skippedDuplicateDetails = append(skippedDuplicateDetails, fmt.Sprintf("Row %d (MSISDN %s): Exact duplicate event already exists in database (ID: %s).", csvRowCount, msisdn, existingEvent.ID.String()))
+			continue
+		} else if result.Error != gorm.ErrRecordNotFound {
+			errorMessages = append(errorMessages, fmt.Sprintf("Row %d (MSISDN %s): DB error checking for duplicate event: %s", csvRowCount, msisdn, result.Error.Error()))
+			continue
+		}
+
+		// If we reach here, it's a new, unique event to be added
+		participantEventsToCreate = append(participantEventsToCreate, models.ParticipantEvent{
+			MSISDN:               msisdn,
+			Amount:               amountStr,
+			OptInStatus:          optInStatusStr,
+			PointsEarned:         pointsEarned,
+			TransactionTimestamp: transactionTime,
+			UploadAuditID:        auditEntry.ID,
 		})
-		successfulRowCount++
+
+		// Prepare participant master record for upsert
+		if pMaster, exists := participantMasterMap[msisdn]; !exists {
+			participantMasterMap[msisdn] = models.Participant{MSISDN: msisdn, OptInDate: transactionTime} // First time seeing this MSISDN in CSV
+		} else {
+		    // Update OptInDate if current event's timestamp is earlier (or based on defined logic)
+		    if pMaster.OptInDate == nil || (transactionTime != nil && transactionTime.Before(*pMaster.OptInDate)) {
+		        pMaster.OptInDate = transactionTime
+                participantMasterMap[msisdn] = pMaster
+		    }
+		}
 	}
 
-	auditEntry.RecordCount = rowCount - 1 // Subtract header row for actual data row count
+	for _, p := range participantMasterMap {
+	    participantsToUpsert = append(participantsToUpsert, p)
+	}
 
-	if len(participantsToCreate) > 0 {
-		tx := config.DB.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "msisdn"}},
-			DoUpdates: clause.AssignmentColumns([]string{"points", "opt_in_date", "updated_at"}),
-		}).Create(&participantsToCreate)
+	auditEntry.RecordCount = csvRowCount - 1 // Total data rows in CSV (excluding header)
 
-		if tx.Error != nil {
-			errorMessages = append(errorMessages, "Database error during bulk insert/update: "+tx.Error.Error())
-			auditEntry.Status = "Failed"
-		} else {
-			if len(errorMessages) > 0 {
-				auditEntry.Status = "Partial Success"
-			} else {
-				auditEntry.Status = "Success"
+	// Database transaction
+	err = config.DB.Transaction(func(tx *gorm.DB) error {
+		// 1. Upsert Participant master records
+		if len(participantsToUpsert) > 0 {
+			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "msisdn"}}, DoUpdates: clause.AssignmentColumns([]string{"opt_in_date", "updated_at"})}).Create(&participantsToUpsert).Error; err != nil {
+				return fmt.Errorf("failed to upsert participant master records: %w", err)
 			}
 		}
-	} else if auditEntry.RecordCount > 0 && len(errorMessages) == auditEntry.RecordCount {
-		auditEntry.Status = "Failed"
-	} else if auditEntry.RecordCount == 0 {
-		auditEntry.Status = "Failed"
-		if len(errorMessages) == 0 {
-			errorMessages = append(errorMessages, "No data rows found in the CSV file after the header.")
+
+		// 2. Create Participant Events
+		if len(participantEventsToCreate) > 0 {
+			if err := tx.CreateInBatches(&participantEventsToCreate, 100).Error; err != nil { // Batch insert for efficiency
+				return fmt.Errorf("failed to create participant events: %w", err)
+			}
+			successfullyImportedCount = len(participantEventsToCreate)
 		}
+		return nil
+	})
+
+	if err != nil {
+		errorMessages = append(errorMessages, "Database transaction error: "+err.Error())
+		auditEntry.Status = "Failed"
 	} else {
 		if len(errorMessages) > 0 {
 			auditEntry.Status = "Partial Success"
-		} else {
+		} else if successfullyImportedCount == 0 && auditEntry.RecordCount > 0 && duplicatesSkippedCount == auditEntry.RecordCount {
+            auditEntry.Status = "Success" // All records were duplicates, which is a form of success
+        } else if successfullyImportedCount == 0 && auditEntry.RecordCount == 0 {
+            auditEntry.Status = "Failed"
+            errorMessages = append(errorMessages, "No data rows found or processed from CSV.")
+        } else {
 			auditEntry.Status = "Success"
 		}
 	}
 
-	auditEntry.Notes = strings.Join(errorMessages, "; ")
-	if err := config.DB.Save(&auditEntry).Error; err != nil {
-		fmt.Printf("Failed to update audit entry %s: %s\n", auditEntry.ID, err.Error())
+	auditEntry.SuccessfullyImported = successfullyImportedCount
+	auditEntry.DuplicatesSkipped = duplicatesSkippedCount
+	notes := strings.Join(errorMessages, "; ")
+	if len(skippedDuplicateDetails) > 0 {
+		notes += "; Skipped Duplicates: " + strings.Join(skippedDuplicateDetails, ", ")
+	}
+    auditEntry.Notes = notes
+
+	if errSaveAudit := config.DB.Save(&auditEntry).Error; errSaveAudit != nil {
+		fmt.Printf("Critical: Failed to update final audit entry %s: %s\n", auditEntry.ID, errSaveAudit.Error())
+		// Log this critical failure, but the main response to user might have already been determined
 	}
 
-	if auditEntry.Status == "Failed" && auditEntry.RecordCount == 0 && len(participantsToCreate) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "File processed. No valid participant data found to upload.",
-			"audit_id": auditEntry.ID,
-			"status": auditEntry.Status,
-			"total_data_rows_processed": auditEntry.RecordCount,
-			"successful_rows_imported": successfulRowCount,
-			"errors": errorMessages,
-		})
-		return
+	responseStatus := http.StatusOK
+	if auditEntry.Status == "Failed" {
+		responseStatus = http.StatusBadRequest
+	} else if auditEntry.Status == "Partial Success" {
+	    responseStatus = http.StatusMultiStatus
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "File processed.",
-		"audit_id": auditEntry.ID,
-		"status": auditEntry.Status,
-		"total_data_rows_processed": auditEntry.RecordCount,
-		"successful_rows_imported": successfulRowCount,
-		"errors": errorMessages,
+	c.JSON(responseStatus, gin.H{
+		"message":                   "File processing complete.",
+		"audit_id":                  auditEntry.ID,
+		"status":                    auditEntry.Status,
+		"total_data_rows_in_csv":  auditEntry.RecordCount,
+		"new_events_imported":       auditEntry.SuccessfullyImported,
+		"true_duplicates_skipped": auditEntry.DuplicatesSkipped,
+		"processing_errors":         errorMessages,
+        "skipped_duplicate_details": skippedDuplicateDetails, // For more detailed client-side display if needed
 	})
 }
 

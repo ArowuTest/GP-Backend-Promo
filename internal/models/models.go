@@ -53,15 +53,6 @@ func (u *AdminUser) BeforeCreate(tx *gorm.DB) (err error) {
 	return
 }
 
-// CreatePrizeRequest defines the structure for creating a prize tier within a prize structure request
-type CreatePrizeRequest struct {
-	Name      string `json:"name" binding:"required"`
-	Value     string `json:"value,omitempty"`
-	PrizeType string `json:"prize_type,omitempty"`
-	Quantity  int    `json:"quantity" binding:"required,min=1"`
-	Order     int    `json:"order,omitempty"`
-}
-
 // PrizeStructure represents the structure of prizes for a draw or period
 type PrizeStructure struct {
 	ID                uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
@@ -155,15 +146,16 @@ func (dw *DrawWinner) BeforeCreate(tx *gorm.DB) (err error) {
 	return
 }
 
-// Participant represents an individual who can participate in draws
+// Participant represents an individual who can participate in draws (Master Record)
 type Participant struct {
 	ID        uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 	MSISDN    string         `json:"msisdn" gorm:"uniqueIndex;not null"`
-	Points    int            `json:"points" gorm:"default:0"`
-	OptInDate *time.Time     `json:"opt_in_date,omitempty"` // Date the participant opted in or became eligible
+	// Points field is deprecated here; points are aggregated from ParticipantEvent records.
+	// Points    int            `json:"points" gorm:"default:0"` 
+	OptInDate *time.Time     `json:"opt_in_date,omitempty"` // Date the participant first opted in or became eligible
 }
 
 // BeforeCreate will set a UUID for Participant
@@ -174,18 +166,43 @@ func (pt *Participant) BeforeCreate(tx *gorm.DB) (err error) {
 	return
 }
 
+// ParticipantEvent represents an individual point-earning event from a CSV upload.
+// This table will store each row from the CSV as a separate event.
+type ParticipantEvent struct {
+	ID                   uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
+	CreatedAt            time.Time      `json:"created_at"` // Timestamp of when this event record was created in DB
+	MSISDN               string         `json:"msisdn" gorm:"index;not null"`
+	Amount               string         `json:"amount,omitempty"`      // Amount from CSV (can be string if it varies)
+	OptInStatus          string         `json:"opt_in_status,omitempty"` // OptInStatus from CSV
+	PointsEarned         int            `json:"points_earned" gorm:"not null"`
+	TransactionTimestamp *time.Time     `json:"transaction_timestamp,omitempty" gorm:"index"` // Timestamp from CSV, represents when the event occurred
+	UploadAuditID        uuid.UUID      `json:"upload_audit_id" gorm:"type:uuid"` // FK to DataUploadAudit
+	IsDuplicate          bool           `json:"is_duplicate" gorm:"default:false"` // Flag to mark if this was identified as a true duplicate during upload but loaded due to override (future use)
+	Notes                string         `json:"notes,omitempty"` // For any notes specific to this event processing
+}
+
+// BeforeCreate will set a UUID for ParticipantEvent
+func (pe *ParticipantEvent) BeforeCreate(tx *gorm.DB) (err error) {
+	if pe.ID == uuid.Nil {
+		pe.ID = uuid.New()
+	}
+	return
+}
+
 // DataUploadAudit represents an audit trail for data uploads
 type DataUploadAudit struct {
-	ID                uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
-	UploadedByUserID  uuid.UUID      `json:"uploaded_by_user_id" gorm:"type:uuid"`
-	UploadTimestamp   time.Time      `json:"upload_timestamp" gorm:"not null"`
-	FileName          string         `json:"file_name,omitempty"`
-	RecordCount       int            `json:"record_count,omitempty"`
-	Status            string         `json:"status,omitempty"` // e.g., "Success", "Failed", "Partial Success"
-	Notes             string         `json:"notes,omitempty"`      // For error messages or other details
-	OperationType     string         `json:"operation_type,omitempty"` // e.g., "ParticipantUpload", "BlacklistUpload"
-	CreatedAt         time.Time      `json:"created_at"`
-	DeletedAt         gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	ID                   uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
+	UploadedByUserID     uuid.UUID      `json:"uploaded_by_user_id" gorm:"type:uuid"`
+	UploadTimestamp      time.Time      `json:"upload_timestamp" gorm:"not null"`
+	FileName             string         `json:"file_name,omitempty"`
+	RecordCount          int            `json:"record_count,omitempty"` // Total data rows in CSV
+	SuccessfullyImported int            `json:"successfully_imported,omitempty"` // Count of unique events inserted
+	DuplicatesSkipped    int            `json:"duplicates_skipped,omitempty"`    // Count of true duplicates skipped
+	Status               string         `json:"status,omitempty"` // e.g., "Success", "Failed", "Partial Success"
+	Notes                string         `json:"notes,omitempty"`      // For error messages or other details, including list of skipped duplicates
+	OperationType        string         `json:"operation_type,omitempty"` // e.g., "ParticipantUpload", "BlacklistUpload"
+	CreatedAt            time.Time      `json:"created_at"`
+	DeletedAt            gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 }
 
 // BeforeCreate will set a UUID for DataUploadAudit
