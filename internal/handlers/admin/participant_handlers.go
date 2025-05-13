@@ -15,7 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause" // Added missing import
+	"gorm.io/gorm/clause"
 )
 
 // normalizeMSISDN ensures MSISDN is in a standard format if needed (e.g., remove leading +, spaces)
@@ -74,8 +74,6 @@ func HandleParticipantUpload(c *gin.Context) {
 	}
 	csvRowCount++
 
-	// Define expected headers (case-insensitive check)
-	// msisdn, amount, optinstatus, points, timestamp
 	colMap := make(map[string]int)
 	expectedHeaders := []string{"msisdn", "amount", "optinstatus", "points", "timestamp"}
 	for i, h := range headerRow {
@@ -92,11 +90,8 @@ func HandleParticipantUpload(c *gin.Context) {
 	}
 
 	var participantEventsToCreate []models.ParticipantEvent
-	var participantsToUpsert []models.Participant // For master participant records
-	// Use a map to track unique events within this CSV to avoid processing exact same row multiple times if it appears in CSV
-	// Key: msisdn_amount_points_timestamp_optinstatus (a composite key for uniqueness of an event)
+	var participantsToUpsert []models.Participant
 	processedEventsInCSV := make(map[string]bool)
-	// Use a map to track participants for upserting into Participant master table
 	participantMasterMap := make(map[string]models.Participant)
 
 	for {
@@ -145,7 +140,6 @@ func HandleParticipantUpload(c *gin.Context) {
 		    continue
 		}
 
-		// Create a unique key for the event from the CSV to handle duplicates within the same file
 		eventKey := fmt.Sprintf("%s_%s_%d_%s_%s", msisdn, amountStr, pointsEarned, transactionTime.Format(time.RFC3339Nano), optInStatusStr)
 		if processedEventsInCSV[eventKey] {
 			duplicatesSkippedCount++
@@ -154,12 +148,11 @@ func HandleParticipantUpload(c *gin.Context) {
 		}
 		processedEventsInCSV[eventKey] = true
 
-		// Check for existing event in DB (true duplicate)
 		var existingEvent models.ParticipantEvent
 		result := config.DB.Where("msisdn = ? AND amount = ? AND points_earned = ? AND transaction_timestamp = ? AND opt_in_status = ?",
 			msisdn, amountStr, pointsEarned, transactionTime, optInStatusStr).First(&existingEvent)
 
-		if result.Error == nil { // Found an existing identical event in DB
+		if result.Error == nil { 
 			duplicatesSkippedCount++
 			skippedDuplicateDetails = append(skippedDuplicateDetails, fmt.Sprintf("Row %d (MSISDN %s): Exact duplicate event already exists in database (ID: %s).", csvRowCount, msisdn, existingEvent.ID.String()))
 			continue
@@ -168,7 +161,6 @@ func HandleParticipantUpload(c *gin.Context) {
 			continue
 		}
 
-		// If we reach here, it's a new, unique event to be added
 		participantEventsToCreate = append(participantEventsToCreate, models.ParticipantEvent{
 			MSISDN:               msisdn,
 			Amount:               amountStr,
@@ -178,11 +170,9 @@ func HandleParticipantUpload(c *gin.Context) {
 			UploadAuditID:        auditEntry.ID,
 		})
 
-		// Prepare participant master record for upsert
 		if pMaster, exists := participantMasterMap[msisdn]; !exists {
-			participantMasterMap[msisdn] = models.Participant{MSISDN: msisdn, OptInDate: transactionTime} // First time seeing this MSISDN in CSV
+			participantMasterMap[msisdn] = models.Participant{MSISDN: msisdn, OptInDate: transactionTime}
 		} else {
-		    // Update OptInDate if current event's timestamp is earlier (or based on defined logic)
 		    if pMaster.OptInDate == nil || (transactionTime != nil && transactionTime.Before(*pMaster.OptInDate)) {
 		        pMaster.OptInDate = transactionTime
                 participantMasterMap[msisdn] = pMaster
@@ -194,20 +184,17 @@ func HandleParticipantUpload(c *gin.Context) {
 	    participantsToUpsert = append(participantsToUpsert, p)
 	}
 
-	auditEntry.RecordCount = csvRowCount - 1 // Total data rows in CSV (excluding header)
+	auditEntry.RecordCount = csvRowCount - 1
 
-	// Database transaction
 	err = config.DB.Transaction(func(tx *gorm.DB) error {
-		// 1. Upsert Participant master records
 		if len(participantsToUpsert) > 0 {
 			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "msisdn"}}, DoUpdates: clause.AssignmentColumns([]string{"opt_in_date", "updated_at"})}).Create(&participantsToUpsert).Error; err != nil {
 				return fmt.Errorf("failed to upsert participant master records: %w", err)
 			}
 		}
 
-		// 2. Create Participant Events
 		if len(participantEventsToCreate) > 0 {
-			if err := tx.CreateInBatches(&participantEventsToCreate, 100).Error; err != nil { // Batch insert for efficiency
+			if err := tx.CreateInBatches(&participantEventsToCreate, 100).Error; err != nil {
 				return fmt.Errorf("failed to create participant events: %w", err)
 			}
 			successfullyImportedCount = len(participantEventsToCreate)
@@ -222,7 +209,7 @@ func HandleParticipantUpload(c *gin.Context) {
 		if len(errorMessages) > 0 {
 			auditEntry.Status = "Partial Success"
 		} else if successfullyImportedCount == 0 && auditEntry.RecordCount > 0 && duplicatesSkippedCount == auditEntry.RecordCount {
-            auditEntry.Status = "Success" // All records were duplicates, which is a form of success
+            auditEntry.Status = "Success"
         } else if successfullyImportedCount == 0 && auditEntry.RecordCount == 0 {
             auditEntry.Status = "Failed"
             errorMessages = append(errorMessages, "No data rows found or processed from CSV.")
@@ -241,7 +228,6 @@ func HandleParticipantUpload(c *gin.Context) {
 
 	if errSaveAudit := config.DB.Save(&auditEntry).Error; errSaveAudit != nil {
 		fmt.Printf("Critical: Failed to update final audit entry %s: %s\n", auditEntry.ID, errSaveAudit.Error())
-		// Log this critical failure, but the main response to user might have already been determined
 	}
 
 	responseStatus := http.StatusOK
@@ -252,14 +238,14 @@ func HandleParticipantUpload(c *gin.Context) {
 	}
 
 	c.JSON(responseStatus, gin.H{
-		"message":                   "File processing complete.",
-		"audit_id":                  auditEntry.ID,
-		"status":                    auditEntry.Status,
-		"total_data_rows_in_csv":  auditEntry.RecordCount,
-		"new_events_imported":       auditEntry.SuccessfullyImported,
-		"true_duplicates_skipped": auditEntry.DuplicatesSkipped,
-		"processing_errors":         errorMessages,
-        "skipped_duplicate_details": skippedDuplicateDetails, // For more detailed client-side display if needed
+		"message":                         "File processing complete.",
+		"audit_id":                        auditEntry.ID,
+		"status":                          auditEntry.Status,
+		"total_data_rows_processed":       auditEntry.RecordCount,          // Changed key
+		"successfully_imported_rows":      auditEntry.SuccessfullyImported, // Changed key
+		"duplicates_skipped_count":        auditEntry.DuplicatesSkipped,    // Changed key
+		"processing_error_messages":       errorMessages,                   // Changed key
+        "skipped_duplicate_event_details": skippedDuplicateDetails,         // Changed key
 	})
 }
 
