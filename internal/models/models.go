@@ -53,6 +53,15 @@ func (u *AdminUser) BeforeCreate(tx *gorm.DB) (err error) {
 	return
 }
 
+// CreatePrizeRequest defines the structure for creating a prize tier within a prize structure request
+type CreatePrizeRequest struct {
+	Name      string `json:"name" binding:"required"`
+	Value     string `json:"value,omitempty"`
+	PrizeType string `json:"prize_type,omitempty"`
+	Quantity  int    `json:"quantity" binding:"required,min=1"`
+	Order     int    `json:"order,omitempty"`
+}
+
 // PrizeStructure represents the structure of prizes for a draw or period
 type PrizeStructure struct {
 	ID                uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
