@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause" // Added missing import
 )
 
 // normalizeMSISDN ensures MSISDN is in a standard format if needed (e.g., remove leading +, spaces)
