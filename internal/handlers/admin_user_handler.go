@@ -258,64 +258,76 @@ func ListUsers(c *gin.Context) {
 // @Tags Auth
 // @Accept json
 // @Produce json
-// @Param credentials body struct{Username string `json:"username" binding:"required"`; Password string `json:"password" binding:"required"`} true "Login credentials"
+// @Param credentials body struct{Username string `json:"username"`; Email string `json:"email"`; Password string `json:"password" binding:"required"`} true "Login credentials (username or email required)"
 // @Success 200 {object} gin.H{"token": string, "user_id": string, "username": string, "role": string}
 // @Failure 400 {object} gin.H{"error": string}
 // @Failure 401 {object} gin.H{"error": string}
 // @Failure 500 {object} gin.H{"error": string}
 // @Router /admin/login [post] // Ensure this matches the frontend API call path /api/v1/auth/login
 func Login(c *gin.Context) {
-	fmt.Fprintf(os.Stderr, "DEBUG: LOGIN HANDLER ENTERED (v2 Error Test)\n") // More reliable logging & version marker
+	fmt.Fprintf(os.Stderr, "DEBUG: LOGIN HANDLER ENTERED (v2 Error Test with Payload Fix)\n") // More reliable logging & version marker
 
 	bodyBytes, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "DEBUG: Error reading request body (v2 Error Test): %v\n", err)
+		fmt.Fprintf(os.Stderr, "DEBUG: Error reading request body (v2 Error Test with Payload Fix): %v\n", err)
 	} else {
-		fmt.Fprintf(os.Stderr, "DEBUG: Raw Login Request Body (v2 Error Test): %s\n", string(bodyBytes))
+		fmt.Fprintf(os.Stderr, "DEBUG: Raw Login Request Body (v2 Error Test with Payload Fix): %s\n", string(bodyBytes))
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}
 
 	var creds struct {
-		Username string `json:"username" binding:"required"`
+		Username string `json:"username"` // Username is now optional at binding stage
+		Email    string `json:"email"`    // Email is now accepted
 		Password string `json:"password" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&creds); err != nil {
-		fmt.Fprintf(os.Stderr, "DEBUG: Error binding JSON for login (v2 Error Test): %v. Payload was: %s\n", err, string(bodyBytes))
-		// MODIFIED ERROR MESSAGE FOR TESTING
-		c.JSON(http.StatusBadRequest, gin.H{"error": "LOGIN PAYLOAD BINDING ERROR (v2): " + err.Error()})
+		fmt.Fprintf(os.Stderr, "DEBUG: Error binding JSON for login (v2 Error Test with Payload Fix): %v. Payload was: %s\n", err, string(bodyBytes))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "LOGIN PAYLOAD BINDING ERROR (v2 Payload Fix): " + err.Error()})
 		return
 	}
-	fmt.Fprintf(os.Stderr, "DEBUG: Login credentials bound successfully (v2 Error Test): Username=\"%s\"\n", creds.Username)
+
+	if creds.Username == "" && creds.Email == "" {
+		fmt.Fprintf(os.Stderr, "DEBUG: Username and Email both empty (v2 Error Test with Payload Fix). Payload was: %s\n", string(bodyBytes))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "LOGIN PAYLOAD ERROR (v2 Payload Fix): Username or Email is required"})
+		return
+	}
+
+	loginIdentifier := creds.Username
+	if loginIdentifier == "" {
+		loginIdentifier = creds.Email
+	}
+	fmt.Fprintf(os.Stderr, "DEBUG: Login credentials bound (v2 Error Test with Payload Fix): Identifier=\"%s\"\n", loginIdentifier)
 
 	var user models.AdminUser
-	if err := config.DB.Where("username = ?", creds.Username).First(&user).Error; err != nil {
+	// Query by username or email
+	if err := config.DB.Where("username = ? OR email = ?", loginIdentifier, loginIdentifier).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			fmt.Fprintf(os.Stderr, "DEBUG: User not found for username (v2 Error Test): %s\n", creds.Username)
-		    c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
+			fmt.Fprintf(os.Stderr, "DEBUG: User not found for identifier (v2 Error Test with Payload Fix): %s\n", loginIdentifier)
+		    c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"}) // More generic error
 		} else {
-			fmt.Fprintf(os.Stderr, "DEBUG: Database error looking up user (v2 Error Test) %s: %v\n", creds.Username, err)
+			fmt.Fprintf(os.Stderr, "DEBUG: Database error looking up user (v2 Error Test with Payload Fix) %s: %v\n", loginIdentifier, err)
 		    c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error during login: " + err.Error()})
 		}
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(creds.Password)); err != nil {
-		fmt.Fprintf(os.Stderr, "DEBUG: Password mismatch for user (v2 Error Test): %s\n", creds.Username)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
+		fmt.Fprintf(os.Stderr, "DEBUG: Password mismatch for user (v2 Error Test with Payload Fix): %s\n", loginIdentifier)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"}) // More generic error
 		return
 	}
-	fmt.Fprintf(os.Stderr, "DEBUG: User %s authenticated successfully (v2 Error Test)\n", creds.Username)
+	fmt.Fprintf(os.Stderr, "DEBUG: User %s authenticated successfully (v2 Error Test with Payload Fix)\n", loginIdentifier)
 
-	token, err := auth.GenerateJWT(user.ID.String(), user.Username, user.Role)
+	token, err := auth.GenerateJWT(user.ID.String(), user.Username, user.Role) // Use user.Username for JWT claim
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "DEBUG: Error generating JWT for user (v2 Error Test) %s: %v\n", creds.Username, err)
+		fmt.Fprintf(os.Stderr, "DEBUG: Error generating JWT for user (v2 Error Test with Payload Fix) %s: %v\n", loginIdentifier, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token: " + err.Error()})
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "DEBUG: JWT generated successfully for user (v2 Error Test) %s\n", creds.Username)
+	fmt.Fprintf(os.Stderr, "DEBUG: JWT generated successfully for user (v2 Error Test with Payload Fix) %s\n", loginIdentifier)
 	c.JSON(http.StatusOK, gin.H{"token": token, "user_id": user.ID.String(), "username": user.Username, "role": user.Role})
-	fmt.Fprintf(os.Stderr, "DEBUG: Login handler finished (v2 Error Test)\n")
+	fmt.Fprintf(os.Stderr, "DEBUG: Login handler finished (v2 Error Test with Payload Fix)\n")
 }
 
