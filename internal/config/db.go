@@ -24,7 +24,6 @@ func LoadEnv() {
 // ConnectDB connects to the PostgreSQL database
 func ConnectDB() {
 	LoadEnv()
-
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		// Fallback DSN for local development if DATABASE_URL is not set
@@ -36,11 +35,9 @@ func ConnectDB() {
 	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info), // Use logger.Info for dev, logger.Silent for prod
 	})
-
 	if err != nil {
 		panic("Failed to connect to database: " + err.Error())
 	}
-
 	fmt.Println("Database connected successfully")
 
 	// Auto-migrate the schema
@@ -57,17 +54,21 @@ func autoMigrate() {
 	err := DB.AutoMigrate(
 		&models.AdminUser{},
 		&models.PrizeStructure{},
-		&models.Prize{},
-		&models.Draw{},
+		&models.PrizeTier{},
+		// &models.Prize{}, // Prize model seems to be replaced by PrizeTier based on recent model definitions
+		&models.DrawMaster{},
+		// &models.Draw{}, // Draw model seems to be replaced by DrawMaster
 		&models.DrawWinner{},
-		&models.Participant{}, // Added Participant model
-		&models.DataUploadAudit{}, // Added DataUploadAudit model
+		&models.Participant{},
+		&models.ParticipantEvent{}, // <<< ADDED ParticipantEvent MODEL HERE
+		&models.DataUploadAudit{},
+		&models.SystemAuditEntry{},
 		// Add any other models here that need to be migrated
 	)
-
 	if err != nil {
 		panic("Failed to auto-migrate database schema: " + err.Error())
 	}
+
 	fmt.Println("Database migration completed successfully")
 }
 
