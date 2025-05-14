@@ -54,13 +54,12 @@ func autoMigrate() {
 	err := DB.AutoMigrate(
 		&models.AdminUser{},
 		&models.PrizeStructure{},
-		&models.Prize{}, // Corrected from PrizeTier
-		&models.Draw{}, // Corrected from DrawMaster
+		&models.Prize{},
+		&models.Draw{},
 		&models.DrawWinner{},
 		&models.Participant{},
-		&models.ParticipantEvent{}, // Ensure this is present
-		&models.DataUploadAudit{}
-		// SystemAuditEntry was removed as it does not appear in models.go
+		&models.ParticipantEvent{},
+		&models.DataUploadAudit{}, // Added comma here
 	)
 	if err != nil {
 		panic("Failed to auto-migrate database schema: " + err.Error())
