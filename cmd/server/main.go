@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 
@@ -9,12 +10,18 @@ import (
 )
 
 func main() {
+	// V5 DEPLOYMENT DIAGNOSTIC
+	fmt.Fprintf(os.Stdout, ">>>>> V5 DEPLOYMENT PIPELINE TEST - MAIN.GO STARTED SUCCESSFULLY (STDOUT) <<<<<\n")
+	fmt.Fprintf(os.Stderr, ">>>>> V5 DEPLOYMENT PIPELINE TEST - MAIN.GO STARTED SUCCESSFULLY (STDERR) <<<<<\n")
+	log.Println(">>>>> V5 DEPLOYMENT PIPELINE TEST - MAIN.GO STARTED SUCCESSFULLY (LOG) <<<<<")
+
+
 	// Load environment variables and connect to the database
 	config.ConnectDB()
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "8080" // Default port if not set
 	}
 
 	// Initialize Gin router
