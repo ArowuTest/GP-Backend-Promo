@@ -129,7 +129,8 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 		if prizeStructure.ValidTo != nil {
 			end = prizeStructure.ValidTo.Format("2006-01-02")
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Draw date %s is outside the prize structure's validity period (%s to %s)", drawDate.Format("2006-01-02"), start, end)})		return
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Draw date %s is outside the prize structure's validity period (%s to %s)", drawDate.Format("2006-01-02"), start, end)})
+		return
 	}
 
 	var existingDraw models.Draw
