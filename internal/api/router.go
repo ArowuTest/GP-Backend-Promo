@@ -39,62 +39,55 @@ func SetupRouter() *gin.Engine {
 	drawHandler := admin_handlers.NewDrawHandler(drawService)
 
 	// API v1 Group
-	apiV1 := router.Group("/api/v1") {
-		// Authentication routes (public)
-		authRoutes := apiV1.Group("/auth") {
-			authRoutes.POST("/login", admin_handlers.Login)
-		}
+	apiV1 := router.Group("/api/v1")
 
-		// Admin routes - protected by JWT middleware
-		adminProtectedRoutes := apiV1.Group("/admin")
-		adminProtectedRoutes.Use(auth.JWTMiddleware()) {
-			// User Management (SuperAdmin only)
-			userManagement := adminProtectedRoutes.Group("/users")
-			userManagement.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin)) {
-				userManagement.POST("/", admin_handlers.CreateAdminUser)
-				userManagement.GET("/", admin_handlers.ListAdminUsers)
-				userManagement.GET("/:id", admin_handlers.GetAdminUser)
-				userManagement.PUT("/:id", admin_handlers.UpdateAdminUser)
-				userManagement.DELETE("/:id", admin_handlers.DeleteAdminUser)
-			}
+	// Authentication routes (public)
+	authRoutes := apiV1.Group("/auth")
+	authRoutes.POST("/login", admin_handlers.Login)
 
-			// Prize Structure Management (SuperAdmin, Admin)
-			prizeManagement := adminProtectedRoutes.Group("/prize-structures")
-			prizeManagement.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin)) {
-				prizeManagement.POST("/", admin_handlers.CreatePrizeStructure)
-				prizeManagement.GET("/", admin_handlers.ListPrizeStructures)
-				prizeManagement.GET("/:id", admin_handlers.GetPrizeStructure)
-				prizeManagement.PUT("/:id", admin_handlers.UpdatePrizeStructure)
-				prizeManagement.DELETE("/:id", admin_handlers.DeletePrizeStructure)
-			}
+	// Admin routes - protected by JWT middleware
+	adminProtectedRoutes := apiV1.Group("/admin")
+	adminProtectedRoutes.Use(auth.JWTMiddleware())
 
-			// Draw Management
-			drawManagement := adminProtectedRoutes.Group("/draws") {
-				// Use methods from the instantiated drawHandler
-				drawManagement.POST("/execute", auth.RoleAuthMiddleware(models.RoleSuperAdmin), drawHandler.ExecuteDraw)
-				drawManagement.POST("/invoke-runner-up", auth.RoleAuthMiddleware(models.RoleSuperAdmin), drawHandler.InvokeRunnerUp) // Added InvokeRunnerUp route
-				drawManagement.GET("/", auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser), drawHandler.ListDraws)
-				drawManagement.GET("/:draw_id", auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser), drawHandler.GetDrawDetails) // Changed :id to :draw_id to match handler
-			}
+	// User Management (SuperAdmin only)
+	userManagement := adminProtectedRoutes.Group("/users")
+	userManagement.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin))
+	userManagement.POST("/", admin_handlers.CreateAdminUser)
+	userManagement.GET("/", admin_handlers.ListAdminUsers)
+	userManagement.GET("/:id", admin_handlers.GetAdminUser)
+	userManagement.PUT("/:id", admin_handlers.UpdateAdminUser)
+	userManagement.DELETE("/:id", admin_handlers.DeleteAdminUser)
 
-			// Participant Data Management (SuperAdmin, Admin)
-			participantManagement := adminProtectedRoutes.Group("/participants")
-			participantManagement.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin)) {
-				participantManagement.POST("/upload", admin_handlers.HandleParticipantUpload)
-				// Add endpoint to get participant statistics for a specific date
-				participantManagement.GET("/stats", admin_handlers.GetParticipantStats)
-			}
+	// Prize Structure Management (SuperAdmin, Admin)
+	prizeManagement := adminProtectedRoutes.Group("/prize-structures")
+	prizeManagement.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin))
+	prizeManagement.POST("/", admin_handlers.CreatePrizeStructure)
+	prizeManagement.GET("/", admin_handlers.ListPrizeStructures)
+	prizeManagement.GET("/:id", admin_handlers.GetPrizeStructure)
+	prizeManagement.PUT("/:id", admin_handlers.UpdatePrizeStructure)
+	prizeManagement.DELETE("/:id", admin_handlers.DeletePrizeStructure)
 
-			// Reporting
-			reports := adminProtectedRoutes.Group("/reports") {
-				// Data Upload Audit Reporting (SuperAdmin, Admin, AllReportUser)
-				dataUploadAudits := reports.Group("/data-uploads")
-				dataUploadAudits.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleAllReportUser)) {
-					dataUploadAudits.GET("/", handlers.ListDataUploadAuditEntries)
-				}
-			}
-		}
-	}
+	// Draw Management
+	drawManagement := adminProtectedRoutes.Group("/draws")
+	// Use methods from the instantiated drawHandler
+	drawManagement.POST("/execute", auth.RoleAuthMiddleware(models.RoleSuperAdmin), drawHandler.ExecuteDraw)
+	drawManagement.POST("/invoke-runner-up", auth.RoleAuthMiddleware(models.RoleSuperAdmin), drawHandler.InvokeRunnerUp) // Added InvokeRunnerUp route
+	drawManagement.GET("/", auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser), drawHandler.ListDraws)
+	drawManagement.GET("/:draw_id", auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser), drawHandler.GetDrawDetails) // Changed :id to :draw_id to match handler
+
+	// Participant Data Management (SuperAdmin, Admin)
+	participantManagement := adminProtectedRoutes.Group("/participants")
+	participantManagement.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin))
+	participantManagement.POST("/upload", admin_handlers.HandleParticipantUpload)
+	// Add endpoint to get participant statistics for a specific date
+	participantManagement.GET("/stats", admin_handlers.GetParticipantStats)
+
+	// Reporting
+	reports := adminProtectedRoutes.Group("/reports")
+	// Data Upload Audit Reporting (SuperAdmin, Admin, AllReportUser)
+	dataUploadAudits := reports.Group("/data-uploads")
+	dataUploadAudits.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleAllReportUser))
+	dataUploadAudits.GET("/", handlers.ListDataUploadAuditEntries)
 
 	return router
 }
