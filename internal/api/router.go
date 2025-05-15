@@ -8,6 +8,8 @@ import (
 	"github.com/ArowuTest/GP-Backend-Promo/internal/handlers" // General handlers
 	admin_handlers "github.com/ArowuTest/GP-Backend-Promo/internal/handlers/admin" // Alias for admin sub-package handlers
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/services" // Added for DrawDataService
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
@@ -18,7 +20,7 @@ func SetupRouter() *gin.Engine {
 
 	// CORS Middleware Configuration
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "https://gp-admin-promo.vercel.app"}, // Allow localhost for dev and Vercel for prod
+		AllowOrigins:     []string{"http://localhost:3000", "https://gp-admin-promo.vercel.app", "http://localhost:3001"}, // Added localhost:3001 for local frontend dev
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -31,14 +33,18 @@ func SetupRouter() *gin.Engine {
 		c.JSON(http.StatusOK, gin.H{"status": "Backend Healthy"})
 	})
 
+	// Instantiate services and handlers
+	// For now, we use MockDrawDataService. This can be replaced with a real one later.
+	drawService := &services.MockDrawDataService{}
+	drawHandler := admin_handlers.NewDrawHandler(drawService)
+
 	// API v1 Group
 	apiV1 := router.Group("/api/v1")
 	{
 		// Authentication routes (public)
 		authRoutes := apiV1.Group("/auth")
 		{
-			// Use Login from admin_handlers for consistency with other admin user functions
-			authRoutes.POST("/login", admin_handlers.Login) 
+			authRoutes.POST("/login", admin_handlers.Login)
 		}
 
 		// Admin routes - protected by JWT middleware
@@ -49,11 +55,11 @@ func SetupRouter() *gin.Engine {
 			userManagement := adminProtectedRoutes.Group("/users")
 			userManagement.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin))
 			{
-				userManagement.POST("/", admin_handlers.CreateAdminUser) // Corrected name
-				userManagement.GET("/", admin_handlers.ListAdminUsers)    // Corrected name
-				userManagement.GET("/:id", admin_handlers.GetAdminUser)     // Corrected name
-				userManagement.PUT("/:id", admin_handlers.UpdateAdminUser)   // Corrected name
-				userManagement.DELETE("/:id", admin_handlers.DeleteAdminUser) // Corrected name
+				userManagement.POST("/", admin_handlers.CreateAdminUser)
+				userManagement.GET("/", admin_handlers.ListAdminUsers)
+				userManagement.GET("/:id", admin_handlers.GetAdminUser)
+				userManagement.PUT("/:id", admin_handlers.UpdateAdminUser)
+				userManagement.DELETE("/:id", admin_handlers.DeleteAdminUser)
 			}
 
 			// Prize Structure Management (SuperAdmin, Admin)
@@ -70,9 +76,11 @@ func SetupRouter() *gin.Engine {
 			// Draw Management
 			drawManagement := adminProtectedRoutes.Group("/draws")
 			{
-				drawManagement.POST("/execute", auth.RoleAuthMiddleware(models.RoleSuperAdmin), admin_handlers.ExecuteDraw)
-				drawManagement.GET("/", auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser), admin_handlers.ListDraws)
-				drawManagement.GET("/:id", auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser), admin_handlers.GetDrawDetails)
+				// Use methods from the instantiated drawHandler
+				drawManagement.POST("/execute", auth.RoleAuthMiddleware(models.RoleSuperAdmin), drawHandler.ExecuteDraw)
+				drawManagement.POST("/invoke-runner-up", auth.RoleAuthMiddleware(models.RoleSuperAdmin), drawHandler.InvokeRunnerUp) // Added InvokeRunnerUp route
+				drawManagement.GET("/", auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser), drawHandler.ListDraws)
+				drawManagement.GET("/:draw_id", auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser), drawHandler.GetDrawDetails) // Changed :id to :draw_id to match handler
 			}
 
 			// Participant Data Management (SuperAdmin, Admin)
@@ -85,19 +93,11 @@ func SetupRouter() *gin.Engine {
 			// Reporting
 			reports := adminProtectedRoutes.Group("/reports")
 			{
-				// Winner Reporting (All roles that need winner reports)
-				// winnerReports := reports.Group("/winners")
-				// winnerReports.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleSeniorUser, models.RoleWinnerReportsUser, models.RoleAllReportUser))
-				// {
-				// 	// winnerReports.GET("/", admin_handlers.ListWinners) // Assuming ListWinners is in admin_handlers
-				// }
-
 				// Data Upload Audit Reporting (SuperAdmin, Admin, AllReportUser)
 				dataUploadAudits := reports.Group("/data-uploads")
 				dataUploadAudits.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleAllReportUser))
 				{
-					// ListDataUploadAuditEntries is in package handlers, not admin_handlers
-					dataUploadAudits.GET("/", handlers.ListDataUploadAuditEntries) 
+					dataUploadAudits.GET("/", handlers.ListDataUploadAuditEntries)
 				}
 			}
 		}

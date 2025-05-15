@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -18,20 +19,23 @@ type DrawDataService interface {
 	GetEligibleParticipants(drawDate time.Time, prizeStructureID string) ([]ParticipantData, error)
 }
 
-// // MockDrawDataService is an example implementation for testing or development
-// type MockDrawDataService struct{}
+// MockDrawDataService is an example implementation for testing or development
+type MockDrawDataService struct{}
 
-// // GetEligibleParticipants for MockDrawDataService
-// func (s *MockDrawDataService) GetEligibleParticipants(drawDate time.Time, prizeStructureID string) ([]ParticipantData, error) {
-// 	// Return some mock data
-// 	return []ParticipantData{
-// 		{MSISDN: "2348030000001", TotalPoints: 10},
-// 		{MSISDN: "2348030000002", TotalPoints: 5},
-// 		{MSISDN: "2348030000003", TotalPoints: 20},
-// 	}, nil
-// }
+// GetEligibleParticipants for MockDrawDataService
+func (s *MockDrawDataService) GetEligibleParticipants(drawDate time.Time, prizeStructureID string) ([]ParticipantData, error) {
+	// Return some mock data
+	fmt.Printf("MockDrawDataService: GetEligibleParticipants called for date %s, prizeStructureID %s\n", drawDate.String(), prizeStructureID)
+	return []ParticipantData{
+		{MSISDN: "2348030000001", TotalPoints: 10},
+		{MSISDN: "2348030000002", TotalPoints: 5},
+		{MSISDN: "2348030000003", TotalPoints: 20},
+		{MSISDN: "2348030000004", TotalPoints: 15},
+		{MSISDN: "2348030000005", TotalPoints: 8},
+	}, nil
+}
 
-// // DatabaseDrawDataService could be an implementation that fetches from your database
+// DatabaseDrawDataService could be an implementation that fetches from your database
 // type DatabaseDrawDataService struct {
 // 	// DB *gorm.DB // or your database connection
 // }
