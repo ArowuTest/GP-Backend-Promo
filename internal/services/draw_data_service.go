@@ -5,14 +5,16 @@ import (
 )
 
 // ParticipantData represents the essential data for a participant in a draw context.
-// This is what the DrawHandler will expect from the service.	ype ParticipantData struct {
+// This is what the DrawHandler will expect from the service.
+type ParticipantData struct {
 	MSISDN      string
 	TotalPoints int
 	// Add any other fields that might be relevant from PostHog/DB for draw eligibility or processing
 }
 
 // DrawDataService defines the interface for fetching eligible participant data for draws.
-// This allows for different implementations (e.g., mock, PostHog, direct DB).	ype DrawDataService interface {
+// This allows for different implementations (e.g., mock, PostHog, direct DB).
+type DrawDataService interface {
 	GetEligibleParticipants(drawDate time.Time, prizeStructureID string) ([]ParticipantData, error)
 }
 
