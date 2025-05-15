@@ -53,15 +53,6 @@ func (u *AdminUser) BeforeCreate(tx *gorm.DB) (err error) {
 	return
 }
 
-// CreatePrizeRequest defines the structure for creating a prize tier within a prize structure request
-type CreatePrizeRequest struct {
-	Name      string `json:"name" binding:"required"`
-	Value     string `json:"value,omitempty"`
-	PrizeType string `json:"prize_type,omitempty"`
-	Quantity  int    `json:"quantity" binding:"required,min=1"`
-	Order     int    `json:"order,omitempty"`
-}
-
 // PrizeStructure represents the structure of prizes for a draw or period
 type PrizeStructure struct {
 	ID                uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
@@ -90,10 +81,11 @@ type Prize struct {
 	ID                uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
 	PrizeStructureID  uuid.UUID      `json:"prize_structure_id" gorm:"type:uuid;not null"`
 	Name              string         `json:"name" gorm:"not null"`
-	Value             string         `json:"value"`
-	PrizeType         string         `json:"prize_type,omitempty"`
+	Value             string         `json:"value"` // Display value, e.g., "N1000 Airtime"
+	PrizeType         string         `json:"prize_type,omitempty"` // e.g., Cash, Airtime, Data, Physical
 	Quantity          int            `json:"quantity" gorm:"not null;default:1"`
 	Order             int            `json:"order,omitempty"`
+	NumberOfRunnerUps int            `json:"numberOfRunnerUps,omitempty" gorm:"default:1"` // Key change: Added for configurable runner-ups
 	DeletedAt         gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 }
 
@@ -113,8 +105,10 @@ type Draw struct {
 	DeletedAt                 gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 	DrawDate                  time.Time      `json:"draw_date" gorm:"not null"`
 	PrizeStructureID          uuid.UUID      `json:"prize_structure_id" gorm:"type:uuid"`
+	PrizeStructure            PrizeStructure `json:"prize_structure,omitempty"` // Eager load if needed
 	ExecutedByUserID          uuid.UUID      `json:"executed_by_user_id" gorm:"type:uuid"`
-	Status                    string         `json:"status,omitempty"`
+	ExecutedByUser            AdminUser      `json:"executed_by_user,omitempty" gorm:"foreignKey:ExecutedByUserID"` // Eager load if needed
+	Status                    string         `json:"status,omitempty"` // e.g., "Completed", "Pending", "Failed"
 	EligibleParticipantsCount int            `json:"eligible_participants_count,omitempty"`
 	TotalPointsInDraw         int            `json:"total_points_in_draw,omitempty"`
 	Winners                   []DrawWinner   `json:"winners,omitempty" gorm:"foreignKey:DrawID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
@@ -130,21 +124,24 @@ func (d *Draw) BeforeCreate(tx *gorm.DB) (err error) {
 
 // DrawWinner represents a winner for a specific prize in a draw
 type DrawWinner struct {
-	ID            uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
-	DrawID        uuid.UUID      `json:"draw_id" gorm:"type:uuid;not null"`
-	PrizeID       uuid.UUID      `json:"prize_id" gorm:"type:uuid;not null"`
-	MSISDN        string         `json:"msisdn"`
-	IsRunnerUp    bool           `json:"is_runner_up" gorm:"default:false"`
-	RunnerUpRank  int            `json:"runner_up_rank,omitempty"`
-	PointsAtWin   int            `json:"points_at_win,omitempty"`
-	NotificationStatus string    `json:"notification_status,omitempty"`
-	ClaimStatus   string         `json:"claim_status" gorm:"default:'Pending'"`
-	NotifiedAt    *time.Time     `json:"notified_at,omitempty"`
-	ClaimedAt     *time.Time     `json:"claimed_at,omitempty"`
-	ForfeitedAt   *time.Time     `json:"forfeited_at,omitempty"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
-	DeletedAt     gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	ID                      uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
+	DrawID                  uuid.UUID      `json:"draw_id" gorm:"type:uuid;not null"`
+	PrizeID                 uuid.UUID      `json:"prize_id" gorm:"type:uuid;not null"`
+	Prize                   Prize          `json:"prize,omitempty"` // Eager load if needed
+	MSISDN                  string         `json:"msisdn"`
+	IsRunnerUp              bool           `json:"is_runner_up" gorm:"default:false"`
+	RunnerUpRank            int            `json:"runner_up_rank,omitempty"` // If IsRunnerUp is true, this indicates their rank (1st runner-up, 2nd, etc.)
+	OriginalWinnerID        *uuid.UUID     `json:"original_winner_id,omitempty" gorm:"type:uuid"` // If this is a promoted runner-up
+	PointsAtWin             int            `json:"points_at_win,omitempty"`
+	NotificationStatus      string         `json:"notification_status,omitempty"` // e.g., "Pending", "Sent", "Failed"
+	ClaimStatus             string         `json:"claim_status" gorm:"default:'Pending'"` // e.g., "Pending", "Claimed", "Forfeited", "RunnerUp-Promoted"
+	NotifiedAt              *time.Time     `json:"notified_at,omitempty"`
+	ClaimedAt               *time.Time     `json:"claimed_at,omitempty"`
+	ForfeitedAt             *time.Time     `json:"forfeited_at,omitempty"`
+	Notes                   string         `json:"notes,omitempty"`
+	CreatedAt               time.Time      `json:"created_at"`
+	UpdatedAt               time.Time      `json:"updated_at"`
+	DeletedAt               gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 }
 
 // BeforeCreate will set a UUID for DrawWinner
@@ -162,9 +159,7 @@ type Participant struct {
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 	MSISDN    string         `json:"msisdn" gorm:"uniqueIndex;not null"`
-	// Points field is deprecated here; points are aggregated from ParticipantEvent records.
-	// Points    int            `json:"points" gorm:"default:0"` 
-	OptInDate *time.Time     `json:"opt_in_date,omitempty"` // Date the participant first opted in or became eligible
+	OptInDate *time.Time     `json:"opt_in_date,omitempty"`
 }
 
 // BeforeCreate will set a UUID for Participant
@@ -176,18 +171,17 @@ func (pt *Participant) BeforeCreate(tx *gorm.DB) (err error) {
 }
 
 // ParticipantEvent represents an individual point-earning event from a CSV upload.
-// This table will store each row from the CSV as a separate event.
 type ParticipantEvent struct {
 	ID                   uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
-	CreatedAt            time.Time      `json:"created_at"` // Timestamp of when this event record was created in DB
+	CreatedAt            time.Time      `json:"created_at"`
 	MSISDN               string         `json:"msisdn" gorm:"index;not null"`
-	Amount               string         `json:"amount,omitempty"`      // Amount from CSV (can be string if it varies)
-	OptInStatus          string         `json:"opt_in_status,omitempty"` // OptInStatus from CSV
+	Amount               string         `json:"amount,omitempty"`
+	OptInStatus          string         `json:"opt_in_status,omitempty"`
 	PointsEarned         int            `json:"points_earned" gorm:"not null"`
-	TransactionTimestamp *time.Time     `json:"transaction_timestamp,omitempty" gorm:"index"` // Timestamp from CSV, represents when the event occurred
-	UploadAuditID        uuid.UUID      `json:"upload_audit_id" gorm:"type:uuid"` // FK to DataUploadAudit
-	IsDuplicate          bool           `json:"is_duplicate" gorm:"default:false"` // Flag to mark if this was identified as a true duplicate during upload but loaded due to override (future use)
-	Notes                string         `json:"notes,omitempty"` // For any notes specific to this event processing
+	TransactionTimestamp *time.Time     `json:"transaction_timestamp,omitempty" gorm:"index"`
+	UploadAuditID        uuid.UUID      `json:"upload_audit_id" gorm:"type:uuid"`
+	IsDuplicate          bool           `json:"is_duplicate" gorm:"default:false"`
+	Notes                string         `json:"notes,omitempty"`
 }
 
 // BeforeCreate will set a UUID for ParticipantEvent
@@ -202,14 +196,15 @@ func (pe *ParticipantEvent) BeforeCreate(tx *gorm.DB) (err error) {
 type DataUploadAudit struct {
 	ID                   uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
 	UploadedByUserID     uuid.UUID      `json:"uploaded_by_user_id" gorm:"type:uuid"`
+	UploadedByUser       AdminUser      `json:"uploaded_by_user,omitempty" gorm:"foreignKey:UploadedByUserID"`
 	UploadTimestamp      time.Time      `json:"upload_timestamp" gorm:"not null"`
 	FileName             string         `json:"file_name,omitempty"`
-	RecordCount          int            `json:"record_count,omitempty"` // Total data rows in CSV
-	SuccessfullyImported int            `json:"successfully_imported,omitempty"` // Count of unique events inserted
-	DuplicatesSkipped    int            `json:"duplicates_skipped,omitempty"`    // Count of true duplicates skipped
-	Status               string         `json:"status,omitempty"` // e.g., "Success", "Failed", "Partial Success"
-	Notes                string         `json:"notes,omitempty"`      // For error messages or other details, including list of skipped duplicates
-	OperationType        string         `json:"operation_type,omitempty"` // e.g., "ParticipantUpload", "BlacklistUpload"
+	RecordCount          int            `json:"record_count,omitempty"`
+	SuccessfullyImported int            `json:"successfully_imported,omitempty"`
+	DuplicatesSkipped    int            `json:"duplicates_skipped,omitempty"`
+	Status               string         `json:"status,omitempty"`
+	Notes                string         `json:"notes,omitempty" gorm:"type:text"`
+	OperationType        string         `json:"operation_type,omitempty"`
 	CreatedAt            time.Time      `json:"created_at"`
 	DeletedAt            gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 }
@@ -218,6 +213,25 @@ type DataUploadAudit struct {
 func (dua *DataUploadAudit) BeforeCreate(tx *gorm.DB) (err error) {
 	if dua.ID == uuid.Nil {
 		dua.ID = uuid.New()
+	}
+	return
+}
+
+// SystemAuditLog for general system actions
+type SystemAuditLog struct {
+	ID        uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id"`
+	UserID    *uuid.UUID `gorm:"type:uuid" json:"userId,omitempty"` // User performing the action, can be null for system events
+	User      AdminUser `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Action    string    `gorm:"not null" json:"action"` // e.g., "USER_LOGIN", "PRIZE_STRUCTURE_CREATED"
+	Details   string    `gorm:"type:text" json:"details,omitempty"` // JSON string or text details of the action
+	Timestamp time.Time `gorm:"not null" json:"timestamp"`
+	IPAddress string    `json:"ipAddress,omitempty"`
+}
+
+// BeforeCreate will set a UUID for SystemAuditLog
+func (sal *SystemAuditLog) BeforeCreate(tx *gorm.DB) (err error) {
+	if sal.ID == uuid.Nil {
+		sal.ID = uuid.New()
 	}
 	return
 }
