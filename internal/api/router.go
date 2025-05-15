@@ -79,8 +79,7 @@ func SetupRouter() *gin.Engine {
 	participantManagement := adminProtectedRoutes.Group("/participants")
 	participantManagement.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin))
 	participantManagement.POST("/upload", admin_handlers.HandleParticipantUpload)
-	// Add endpoint to get participant statistics for a specific date
-	participantManagement.GET("/stats", admin_handlers.GetParticipantStats)
+	// Removed the GetParticipantStats endpoint that doesn't exist in the backend
 
 	// Reporting
 	reports := adminProtectedRoutes.Group("/reports")
