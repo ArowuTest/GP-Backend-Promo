@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/ArowuTest/GP-Backend-Promo/internal/auth"
