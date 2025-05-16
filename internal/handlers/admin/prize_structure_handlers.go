@@ -17,13 +17,13 @@ import (
 
 // CreatePrizeStructureRequest defines the structure for creating a prize structure
 type CreatePrizeStructureRequest struct {
-	Name           string                      `json:"name" binding:"required"`
-	Description    string                      `json:"description,omitempty"`
-	IsActive       bool                        `json:"is_active"` // Default is true in model
-	ValidFrom      *time.Time                  `json:"valid_from,omitempty"`
-	ValidTo        *time.Time                  `json:"valid_to,omitempty"`
-	Prizes         []models.CreatePrizeRequest `json:"prizes" binding:"required,dive"`
-	ApplicableDays []string                    `json:"applicable_days,omitempty"` // Added field for applicable days
+	Name          string                      `json:"name" binding:"required"`
+	Description   string                      `json:"description,omitempty"`
+	IsActive      bool                        `json:"is_active"`      // Default is true in model
+	ValidFrom     *time.Time                  `json:"valid_from,omitempty"`
+	ValidTo       *time.Time                  `json:"valid_to,omitempty"`
+	Prizes        []models.CreatePrizeRequest `json:"prizes" binding:"required,dive"`
+	ApplicableDays []string                   `json:"applicable_days,omitempty"` // Added field for applicable days
 }
 
 // CreatePrizeStructure handles the creation of a new prize structure
@@ -34,8 +34,21 @@ func CreatePrizeStructure(c *gin.Context) {
 		return
 	}
 
+	// Validate dates
 	if req.ValidFrom != nil && req.ValidTo != nil && req.ValidTo.Before(*req.ValidFrom) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ValidTo cannot be before ValidFrom"})
+		return
+	}
+
+	// Ensure ValidFrom is not zero if provided
+	if req.ValidFrom != nil && req.ValidFrom.IsZero() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ValidFrom date"})
+		return
+	}
+
+	// Ensure ValidTo is not zero if provided
+	if req.ValidTo != nil && req.ValidTo.IsZero() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ValidTo date"})
 		return
 	}
 
@@ -63,14 +76,14 @@ func CreatePrizeStructure(c *gin.Context) {
 	var createdPrizeStructure models.PrizeStructure
 	txErr := config.DB.Transaction(func(tx *gorm.DB) error {
 		prizeStructure := models.PrizeStructure{
-			Name:             req.Name,
-			Description:      req.Description,
-			IsActive:         req.IsActive, // Model has default true, this will override if false
-			ValidFrom:        req.ValidFrom,
-			ValidTo:          req.ValidTo,
+			Name:            req.Name,
+			Description:     req.Description,
+			IsActive:        req.IsActive, // Model has default true, this will override if false
+			ValidFrom:       req.ValidFrom,
+			ValidTo:         req.ValidTo,
 			CreatedByAdminID: parsedAdminID,
-			DayType:          dayType, // Set the derived day_type
-			ApplicableDays:   req.ApplicableDays, // Store applicable_days in virtual field for response
+			DayType:         dayType,           // Set the derived day_type
+			ApplicableDays:  req.ApplicableDays, // Store applicable_days in virtual field for response
 		}
 
 		if err := tx.Create(&prizeStructure).Error; err != nil {
@@ -79,13 +92,13 @@ func CreatePrizeStructure(c *gin.Context) {
 
 		for _, prizeReq := range req.Prizes {
 			prize := models.Prize{
-				PrizeStructureID:   prizeStructure.ID,
-				Name:               prizeReq.Name,
-				Value:              prizeReq.Value,
-				PrizeType:          prizeReq.PrizeType,
-				Quantity:           prizeReq.Quantity,
-				Order:              prizeReq.Order,
-				NumberOfRunnerUps:  prizeReq.NumberOfRunnerUps,
+				PrizeStructureID:  prizeStructure.ID,
+				Name:              prizeReq.Name,
+				Value:             prizeReq.Value,
+				PrizeType:         prizeReq.PrizeType,
+				Quantity:          prizeReq.Quantity,
+				Order:             prizeReq.Order,
+				NumberOfRunnerUps: prizeReq.NumberOfRunnerUps,
 			}
 
 			if err := tx.Create(&prize).Error; err != nil {
@@ -106,6 +119,9 @@ func CreatePrizeStructure(c *gin.Context) {
 		return
 	}
 
+	// Format dates for response
+	formatDatesForResponse(&createdPrizeStructure)
+
 	c.JSON(http.StatusCreated, createdPrizeStructure)
 }
 
@@ -121,6 +137,7 @@ func ListPrizeStructures(c *gin.Context) {
 	// Process each prize structure to populate applicable_days from day_type
 	for i := range prizeStructures {
 		prizeStructures[i].ApplicableDays = getApplicableDaysFromDayType(prizeStructures[i].DayType)
+		formatDatesForResponse(&prizeStructures[i])
 	}
 
 	c.JSON(http.StatusOK, prizeStructures)
@@ -148,19 +165,22 @@ func GetPrizeStructure(c *gin.Context) {
 
 	// Populate applicable_days from day_type
 	prizeStructure.ApplicableDays = getApplicableDaysFromDayType(prizeStructure.DayType)
+	
+	// Format dates for response
+	formatDatesForResponse(&prizeStructure)
 
 	c.JSON(http.StatusOK, prizeStructure)
 }
 
 // UpdatePrizeStructureRequest defines the structure for updating a prize structure
 type UpdatePrizeStructureRequest struct {
-	Name           *string                      `json:"name,omitempty"`
-	Description    *string                      `json:"description,omitempty"`
-	IsActive       *bool                        `json:"is_active,omitempty"`
-	ValidFrom      *time.Time                   `json:"valid_from,omitempty"`
-	ValidTo        **time.Time                  `json:"valid_to,omitempty"` // Pointer to pointer for explicit null
-	Prizes         *[]models.CreatePrizeRequest `json:"prizes,omitempty"`
-	ApplicableDays *[]string                    `json:"applicable_days,omitempty"` // Added field for applicable days
+	Name          *string                      `json:"name,omitempty"`
+	Description   *string                      `json:"description,omitempty"`
+	IsActive      *bool                        `json:"is_active,omitempty"`
+	ValidFrom     *time.Time                   `json:"valid_from,omitempty"`
+	ValidTo       **time.Time                  `json:"valid_to,omitempty"` // Pointer to pointer for explicit null
+	Prizes        *[]models.CreatePrizeRequest `json:"prizes,omitempty"`
+	ApplicableDays *[]string                   `json:"applicable_days,omitempty"` // Added field for applicable days
 }
 
 // UpdatePrizeStructure handles updating an existing prize structure
@@ -175,6 +195,18 @@ func UpdatePrizeStructure(c *gin.Context) {
 	var req UpdatePrizeStructureRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
+		return
+	}
+
+	// Validate ValidFrom if provided
+	if req.ValidFrom != nil && req.ValidFrom.IsZero() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ValidFrom date"})
+		return
+	}
+
+	// Validate ValidTo if provided and not null
+	if req.ValidTo != nil && *req.ValidTo != nil && (*req.ValidTo).IsZero() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ValidTo date"})
 		return
 	}
 
@@ -244,44 +276,41 @@ func UpdatePrizeStructure(c *gin.Context) {
 
 			for _, prizeReq := range *req.Prizes {
 				newPrize := models.Prize{
-					PrizeStructureID:   prizeStructure.ID,
-					Name:               prizeReq.Name,
-					Value:              prizeReq.Value,
-					PrizeType:          prizeReq.PrizeType,
-					Quantity:           prizeReq.Quantity,
-					Order:              prizeReq.Order,
-					NumberOfRunnerUps:  prizeReq.NumberOfRunnerUps,
+					PrizeStructureID:  prizeStructure.ID,
+					Name:              prizeReq.Name,
+					Value:             prizeReq.Value,
+					PrizeType:         prizeReq.PrizeType,
+					Quantity:          prizeReq.Quantity,
+					Order:             prizeReq.Order,
+					NumberOfRunnerUps: prizeReq.NumberOfRunnerUps,
 				}
 
 				if err := tx.Create(&newPrize).Error; err != nil {
-					return fmt.Errorf("failed to create new prize tier %s: %w", prizeReq.Name, err)
+					return fmt.Errorf("failed to create prize tier %s: %w", prizeReq.Name, err)
 				}
 			}
 		}
 
-		if err := tx.Preload("Prizes").First(&updatedPrizeStructure, "id = ?", structureID).Error; err != nil {
-			return fmt.Errorf("failed to reload updated prize structure: %w", err)
+		if err := tx.Preload("Prizes").First(&prizeStructure, prizeStructure.ID).Error; err != nil {
+			return fmt.Errorf("failed to reload prize structure with prizes: %w", err)
 		}
 
-		// Populate applicable_days from day_type for response
-		updatedPrizeStructure.ApplicableDays = getApplicableDaysFromDayType(updatedPrizeStructure.DayType)
-
+		updatedPrizeStructure = prizeStructure
 		return nil
 	})
 
 	if txErr != nil {
-		if errors.Is(txErr, gorm.ErrRecordNotFound) || txErr.Error() == "prize structure not found" {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Prize structure not found"})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": txErr.Error()})
-		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": txErr.Error()})
 		return
 	}
+
+	// Format dates for response
+	formatDatesForResponse(&updatedPrizeStructure)
 
 	c.JSON(http.StatusOK, updatedPrizeStructure)
 }
 
-// DeletePrizeStructure handles deleting a prize structure (soft delete)
+// DeletePrizeStructure handles deleting a prize structure
 func DeletePrizeStructure(c *gin.Context) {
 	structureIDStr := c.Param("id")
 	structureID, err := uuid.Parse(structureIDStr)
@@ -290,16 +319,19 @@ func DeletePrizeStructure(c *gin.Context) {
 		return
 	}
 
+	// Check if the prize structure exists
 	var prizeStructure models.PrizeStructure
-	if err := config.DB.First(&prizeStructure, "id = ?", structureID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	result := config.DB.First(&prizeStructure, "id = ?", structureID)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Prize structure not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to find prize structure: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve prize structure: " + result.Error.Error()})
 		return
 	}
 
+	// Delete the prize structure (and associated prizes due to CASCADE)
 	if err := config.DB.Delete(&prizeStructure).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prize structure: " + err.Error()})
 		return
@@ -309,33 +341,59 @@ func DeletePrizeStructure(c *gin.Context) {
 }
 
 // Helper function to derive day_type from applicable_days
-func deriveDayTypeFromApplicableDays(applicableDays []string) string {
-	if len(applicableDays) == 0 {
-		return "AllDays" // Default if no days specified
+func deriveDayTypeFromApplicableDays(days []string) string {
+	if len(days) == 0 {
+		return "AllDays" // Default to all days if none specified
 	}
 
-	// Sort the days for consistent comparison
+	// Sort and deduplicate days
+	uniqueDays := make(map[string]bool)
+	for _, day := range days {
+		uniqueDays[day] = true
+	}
+
+	// Check for specific patterns
 	weekdays := []string{"Mon", "Tue", "Wed", "Thu", "Fri"}
 	weekend := []string{"Sat", "Sun"}
 	allDays := append(weekdays, weekend...)
 
 	// Check if all days are selected
-	if containsAll(applicableDays, allDays) || len(applicableDays) == 7 {
+	if len(uniqueDays) == 7 {
 		return "AllDays"
 	}
 
-	// Check if only weekdays are selected
-	if containsAll(applicableDays, weekdays) && len(applicableDays) == 5 {
+	// Check if all weekdays are selected
+	allWeekdaysSelected := true
+	for _, day := range weekdays {
+		if !uniqueDays[day] {
+			allWeekdaysSelected = false
+			break
+		}
+	}
+	if allWeekdaysSelected && len(uniqueDays) == 5 {
 		return "Weekday"
 	}
 
-	// Check if only weekend days are selected
-	if containsAll(applicableDays, weekend) && len(applicableDays) == 2 {
+	// Check if all weekend days are selected
+	allWeekendSelected := true
+	for _, day := range weekend {
+		if !uniqueDays[day] {
+			allWeekendSelected = false
+			break
+		}
+	}
+	if allWeekendSelected && len(uniqueDays) == 2 {
 		return "Weekend"
 	}
 
-	// For specific days, join them with commas
-	return strings.Join(applicableDays, ",")
+	// Custom selection - create a comma-separated list
+	var selectedDays []string
+	for _, day := range allDays {
+		if uniqueDays[day] {
+			selectedDays = append(selectedDays, day)
+		}
+	}
+	return strings.Join(selectedDays, ",")
 }
 
 // Helper function to get applicable_days from day_type
@@ -348,29 +406,29 @@ func getApplicableDaysFromDayType(dayType string) []string {
 	case "Weekend":
 		return []string{"Sat", "Sun"}
 	default:
-		// If day_type contains comma-separated days, split them
-		if strings.Contains(dayType, ",") {
-			return strings.Split(dayType, ",")
+		// Handle custom day selection (comma-separated list)
+		if dayType == "" {
+			return []string{} // Empty if no day_type
 		}
-		// If it's a single day or custom value
-		if dayType != "" {
-			return []string{dayType}
-		}
-		// Default to all days if day_type is empty
-		return []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+		return strings.Split(dayType, ",")
 	}
 }
 
-// Helper function to check if a slice contains all items from another slice
-func containsAll(slice []string, items []string) bool {
-	set := make(map[string]struct{}, len(slice))
-	for _, s := range slice {
-		set[s] = struct{}{}
+// Helper function to format dates for JSON response
+func formatDatesForResponse(prizeStructure *models.PrizeStructure) {
+	// Ensure ValidFrom is in a consistent format
+	if prizeStructure.ValidFrom != nil {
+		// Format as RFC3339 for consistent ISO8601 format
+		formattedTime := prizeStructure.ValidFrom.Format(time.RFC3339)
+		tempTime, _ := time.Parse(time.RFC3339, formattedTime)
+		prizeStructure.ValidFrom = &tempTime
 	}
-	for _, item := range items {
-		if _, ok := set[item]; !ok {
-			return false
-		}
+
+	// Ensure ValidTo is in a consistent format
+	if prizeStructure.ValidTo != nil {
+		// Format as RFC3339 for consistent ISO8601 format
+		formattedTime := prizeStructure.ValidTo.Format(time.RFC3339)
+		tempTime, _ := time.Parse(time.RFC3339, formattedTime)
+		prizeStructure.ValidTo = &tempTime
 	}
-	return true
 }

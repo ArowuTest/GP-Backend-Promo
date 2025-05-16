@@ -19,14 +19,18 @@ func SetupRouter() *gin.Engine {
 
 	// CORS Middleware Configuration - Updated for production
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "https://gp-admin-promo.vercel.app", "http://localhost:3001", "https://gp-admin-promo.vercel.app/*"}, 
+		AllowOrigins:     []string{"http://localhost:3000", "https://gp-admin-promo.vercel.app"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With"},
 		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
 		AllowCredentials: true,
-		AllowWildcard:    true,  // Enable wildcard support for origins
 		MaxAge:           12 * time.Hour,
 	}))
+
+	// Handle OPTIONS requests directly
+	router.OPTIONS("/*path", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
 
 	// Health check
 	router.GET("/health", func(c *gin.Context) {
@@ -83,6 +87,7 @@ func SetupRouter() *gin.Engine {
 
 	// Reporting
 	reports := adminProtectedRoutes.Group("/reports")
+
 	// Data Upload Audit Reporting (SuperAdmin, Admin, AllReportUser)
 	dataUploadAudits := reports.Group("/data-uploads")
 	dataUploadAudits.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin, models.RoleAllReportUser))
