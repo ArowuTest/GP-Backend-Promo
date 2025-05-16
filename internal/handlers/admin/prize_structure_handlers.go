@@ -1,8 +1,10 @@
 package admin
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -38,11 +40,16 @@ func CreatePrizeStructure(c *gin.Context) {
 	}
 	
 	// Read raw request body for debugging
-	bodyBytes, _ := c.GetRawData()
+	bodyBytes, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		fmt.Printf("Error reading request body: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body: " + err.Error()})
+		return
+	}
 	fmt.Printf("Raw request body: %s\n", string(bodyBytes))
 	
 	// Reset request body for binding
-	c.Request.Body = gin.CreateReadCloser(bodyBytes)
+	c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	
 	var req CreatePrizeStructureRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -259,11 +266,16 @@ func UpdatePrizeStructure(c *gin.Context) {
 	}
 	
 	// Read raw request body for debugging
-	bodyBytes, _ := c.GetRawData()
+	bodyBytes, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		fmt.Printf("Error reading request body: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body: " + err.Error()})
+		return
+	}
 	fmt.Printf("Raw request body: %s\n", string(bodyBytes))
 	
 	// Reset request body for binding
-	c.Request.Body = gin.CreateReadCloser(bodyBytes)
+	c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	
 	structureID, err := uuid.Parse(structureIDStr)
 	if err != nil {
