@@ -21,9 +21,10 @@ func SetupRouter() *gin.Engine {
 	router.RedirectTrailingSlash = false
 	router.RedirectFixedPath = false
 
-	// CORS Middleware Configuration - Updated for production
+	// CORS Middleware Configuration - Enhanced for production
+	// Use a more permissive CORS configuration to ensure all requests work
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "https://gp-admin-promo.vercel.app"},
+		AllowOrigins:     []string{"*"}, // Allow all origins temporarily for debugging
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With"},
 		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
@@ -32,9 +33,10 @@ func SetupRouter() *gin.Engine {
 	}))
 
 	// Custom middleware to handle OPTIONS requests for all paths
+	// This ensures CORS preflight requests are properly handled
 	router.Use(func(c *gin.Context) {
 		if c.Request.Method == "OPTIONS" {
-			c.Header("Access-Control-Allow-Origin", "https://gp-admin-promo.vercel.app")
+			c.Header("Access-Control-Allow-Origin", "*") // Allow all origins temporarily
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Requested-With")
 			c.Header("Access-Control-Allow-Credentials", "true")
@@ -79,13 +81,26 @@ func SetupRouter() *gin.Engine {
 	// Prize Structure Management (SuperAdmin, Admin)
 	prizeManagement := adminProtectedRoutes.Group("/prize-structures")
 	prizeManagement.Use(auth.RoleAuthMiddleware(models.RoleSuperAdmin, models.RoleAdmin))
+	
+	// Create prize structure - both with and without trailing slash
 	prizeManagement.POST("/", admin_handlers.CreatePrizeStructure)
+	prizeManagement.POST("", admin_handlers.CreatePrizeStructure)
+	
+	// List prize structures - both with and without trailing slash
 	prizeManagement.GET("/", admin_handlers.ListPrizeStructures)
+	prizeManagement.GET("", admin_handlers.ListPrizeStructures)
+	
+	// Get single prize structure - both with and without trailing slash
 	prizeManagement.GET("/:id", admin_handlers.GetPrizeStructure)
+	prizeManagement.GET("/:id/", admin_handlers.GetPrizeStructure)
+	
+	// Update prize structure - both with and without trailing slash
 	prizeManagement.PUT("/:id", admin_handlers.UpdatePrizeStructure)
-	// Add route with trailing slash to handle both versions
 	prizeManagement.PUT("/:id/", admin_handlers.UpdatePrizeStructure)
+	
+	// Delete prize structure - both with and without trailing slash
 	prizeManagement.DELETE("/:id", admin_handlers.DeletePrizeStructure)
+	prizeManagement.DELETE("/:id/", admin_handlers.DeletePrizeStructure)
 
 	// Draw Management
 	drawManagement := adminProtectedRoutes.Group("/draws")

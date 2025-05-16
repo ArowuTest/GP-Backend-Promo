@@ -28,8 +28,25 @@ type CreatePrizeStructureRequest struct {
 
 // CreatePrizeStructure handles the creation of a new prize structure
 func CreatePrizeStructure(c *gin.Context) {
+	// Enhanced logging for debugging
+	fmt.Println("CreatePrizeStructure handler called")
+	
+	// Log request headers for debugging
+	fmt.Println("Request Headers:")
+	for k, v := range c.Request.Header {
+		fmt.Printf("%s: %v\n", k, v)
+	}
+	
+	// Read raw request body for debugging
+	bodyBytes, _ := c.GetRawData()
+	fmt.Printf("Raw request body: %s\n", string(bodyBytes))
+	
+	// Reset request body for binding
+	c.Request.Body = gin.CreateReadCloser(bodyBytes)
+	
 	var req CreatePrizeStructureRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		fmt.Printf("Error binding JSON: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
 		return
 	}
@@ -40,41 +57,56 @@ func CreatePrizeStructure(c *gin.Context) {
 	for i, prize := range req.Prizes {
 		fmt.Printf("Prize %d: %+v\n", i, prize)
 	}
+	
+	// Log applicable days
+	fmt.Printf("Applicable days: %v\n", req.ApplicableDays)
 
 	// Validate dates
 	if req.ValidFrom != nil && req.ValidTo != nil && req.ValidTo.Before(*req.ValidFrom) {
+		fmt.Println("Date validation error: ValidTo before ValidFrom")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ValidTo cannot be before ValidFrom"})
 		return
 	}
 
 	// Ensure ValidFrom is not zero if provided
 	if req.ValidFrom != nil && req.ValidFrom.IsZero() {
+		fmt.Println("Date validation error: ValidFrom is zero")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ValidFrom date"})
 		return
 	}
 
 	// Ensure ValidTo is not zero if provided
 	if req.ValidTo != nil && req.ValidTo.IsZero() {
+		fmt.Println("Date validation error: ValidTo is zero")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ValidTo date"})
 		return
 	}
 
 	adminIDClaim, exists := c.Get("userID")
 	if !exists {
+		fmt.Println("Auth error: Admin user ID not found in token")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Admin user ID not found in token"})
 		return
 	}
 
 	adminIDStr, ok := adminIDClaim.(string)
 	if !ok {
+		fmt.Println("Auth error: Admin user ID in token is not a string")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Admin user ID in token is not a string"})
 		return
 	}
 
 	parsedAdminID, err := uuid.Parse(adminIDStr)
 	if err != nil {
+		fmt.Printf("Auth error: Invalid admin user ID format: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid admin user ID format in token"})
 		return
+	}
+
+	// Set default applicable days if not provided
+	if len(req.ApplicableDays) == 0 {
+		fmt.Println("Setting default applicable days (all days)")
+		req.ApplicableDays = []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
 	}
 
 	// Derive day_type from applicable_days
@@ -95,6 +127,7 @@ func CreatePrizeStructure(c *gin.Context) {
 		}
 
 		if err := tx.Create(&prizeStructure).Error; err != nil {
+			fmt.Printf("Error creating prize structure: %v\n", err)
 			return fmt.Errorf("failed to create prize structure: %w", err)
 		}
 
@@ -113,6 +146,7 @@ func CreatePrizeStructure(c *gin.Context) {
 			}
 
 			if err := tx.Create(&prize).Error; err != nil {
+				fmt.Printf("Error creating prize tier %d: %v\n", i, err)
 				return fmt.Errorf("failed to create prize tier %d (%s): %w", i, prizeReq.Name, err)
 			}
 			fmt.Printf("Created prize tier %d with ID: %s\n", i, prize.ID)
@@ -120,6 +154,7 @@ func CreatePrizeStructure(c *gin.Context) {
 
 		// Reload the prize structure with prizes to return in response
 		if err := tx.Preload("Prizes").First(&prizeStructure, prizeStructure.ID).Error; err != nil {
+			fmt.Printf("Error reloading prize structure: %v\n", err)
 			return fmt.Errorf("failed to reload prize structure with prizes: %w", err)
 		}
 
@@ -139,17 +174,23 @@ func CreatePrizeStructure(c *gin.Context) {
 	// Ensure applicable_days is populated in the response
 	createdPrizeStructure.ApplicableDays = req.ApplicableDays
 
+	fmt.Println("Prize structure created successfully")
 	c.JSON(http.StatusCreated, createdPrizeStructure)
 }
 
 // ListPrizeStructures handles listing all prize structures
 func ListPrizeStructures(c *gin.Context) {
+	fmt.Println("ListPrizeStructures handler called")
+	
 	var prizeStructures []models.PrizeStructure
 	result := config.DB.Preload("Prizes").Order("created_at desc").Find(&prizeStructures)
 	if result.Error != nil {
+		fmt.Printf("Error retrieving prize structures: %v\n", result.Error)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve prize structures: " + result.Error.Error()})
 		return
 	}
+
+	fmt.Printf("Found %d prize structures\n", len(prizeStructures))
 
 	// Process each prize structure to populate applicable_days from day_type
 	for i := range prizeStructures {
@@ -163,8 +204,11 @@ func ListPrizeStructures(c *gin.Context) {
 // GetPrizeStructure handles retrieving a single prize structure by ID
 func GetPrizeStructure(c *gin.Context) {
 	structureIDStr := c.Param("id")
+	fmt.Printf("GetPrizeStructure handler called for ID: %s\n", structureIDStr)
+	
 	structureID, err := uuid.Parse(structureIDStr)
 	if err != nil {
+		fmt.Printf("Invalid prize structure ID format: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prize structure ID format"})
 		return
 	}
@@ -173,9 +217,11 @@ func GetPrizeStructure(c *gin.Context) {
 	result := config.DB.Preload("Prizes").First(&prizeStructure, "id = ?", structureID)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			fmt.Printf("Prize structure not found for ID: %s\n", structureIDStr)
 			c.JSON(http.StatusNotFound, gin.H{"error": "Prize structure not found"})
 			return
 		}
+		fmt.Printf("Error retrieving prize structure: %v\n", result.Error)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve prize structure: " + result.Error.Error()})
 		return
 	}
@@ -186,6 +232,7 @@ func GetPrizeStructure(c *gin.Context) {
 	// Format dates for response
 	formatDatesForResponse(&prizeStructure)
 
+	fmt.Printf("Retrieved prize structure with ID: %s\n", structureIDStr)
 	c.JSON(http.StatusOK, prizeStructure)
 }
 
@@ -203,14 +250,31 @@ type UpdatePrizeStructureRequest struct {
 // UpdatePrizeStructure handles updating an existing prize structure
 func UpdatePrizeStructure(c *gin.Context) {
 	structureIDStr := c.Param("id")
+	fmt.Printf("UpdatePrizeStructure handler called for ID: %s\n", structureIDStr)
+	
+	// Log request headers for debugging
+	fmt.Println("Request Headers:")
+	for k, v := range c.Request.Header {
+		fmt.Printf("%s: %v\n", k, v)
+	}
+	
+	// Read raw request body for debugging
+	bodyBytes, _ := c.GetRawData()
+	fmt.Printf("Raw request body: %s\n", string(bodyBytes))
+	
+	// Reset request body for binding
+	c.Request.Body = gin.CreateReadCloser(bodyBytes)
+	
 	structureID, err := uuid.Parse(structureIDStr)
 	if err != nil {
+		fmt.Printf("Invalid prize structure ID format: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prize structure ID format"})
 		return
 	}
 
 	var req UpdatePrizeStructureRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		fmt.Printf("Error binding JSON: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
 		return
 	}
@@ -223,15 +287,22 @@ func UpdatePrizeStructure(c *gin.Context) {
 			fmt.Printf("Prize %d: %+v\n", i, prize)
 		}
 	}
+	
+	// Log applicable days if provided
+	if req.ApplicableDays != nil {
+		fmt.Printf("Applicable days: %v\n", *req.ApplicableDays)
+	}
 
 	// Validate ValidFrom if provided
 	if req.ValidFrom != nil && req.ValidFrom.IsZero() {
+		fmt.Println("Date validation error: ValidFrom is zero")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ValidFrom date"})
 		return
 	}
 
 	// Validate ValidTo if provided and not null
 	if req.ValidTo != nil && *req.ValidTo != nil && (*req.ValidTo).IsZero() {
+		fmt.Println("Date validation error: ValidTo is zero")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ValidTo date"})
 		return
 	}
@@ -241,8 +312,10 @@ func UpdatePrizeStructure(c *gin.Context) {
 		var prizeStructure models.PrizeStructure
 		if err := tx.Preload("Prizes").First(&prizeStructure, "id = ?", structureID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
+				fmt.Printf("Prize structure not found for ID: %s\n", structureIDStr)
 				return errors.New("prize structure not found")
 			}
+			fmt.Printf("Error finding prize structure: %v\n", err)
 			return fmt.Errorf("failed to find prize structure: %w", err)
 		}
 
@@ -287,11 +360,13 @@ func UpdatePrizeStructure(c *gin.Context) {
 		}
 
 		if currentValidFrom != nil && currentValidTo != nil && currentValidTo.Before(*currentValidFrom) {
+			fmt.Println("Date validation error: ValidTo before ValidFrom")
 			return errors.New("ValidTo cannot be before ValidFrom")
 		}
 
 		if len(updates) > 0 {
 			if err := tx.Model(&prizeStructure).Updates(updates).Error; err != nil {
+				fmt.Printf("Error updating prize structure fields: %v\n", err)
 				return fmt.Errorf("failed to update prize structure details: %w", err)
 			}
 			fmt.Printf("Updated prize structure fields: %v\n", updates)
@@ -300,6 +375,7 @@ func UpdatePrizeStructure(c *gin.Context) {
 		if req.Prizes != nil {
 			// First delete existing prizes
 			if err := tx.Where("prize_structure_id = ?", prizeStructure.ID).Delete(&models.Prize{}).Error; err != nil {
+				fmt.Printf("Error deleting existing prizes: %v\n", err)
 				return fmt.Errorf("failed to delete existing prizes: %w", err)
 			}
 			fmt.Printf("Deleted existing prizes for structure ID: %s\n", prizeStructure.ID)
@@ -317,6 +393,7 @@ func UpdatePrizeStructure(c *gin.Context) {
 				}
 
 				if err := tx.Create(&newPrize).Error; err != nil {
+					fmt.Printf("Error creating prize tier %d: %v\n", i, err)
 					return fmt.Errorf("failed to create prize tier %d (%s): %w", i, prizeReq.Name, err)
 				}
 				fmt.Printf("Created new prize tier %d with ID: %s\n", i, newPrize.ID)
@@ -325,6 +402,7 @@ func UpdatePrizeStructure(c *gin.Context) {
 
 		// Reload the prize structure with prizes to return in response
 		if err := tx.Preload("Prizes").First(&prizeStructure, prizeStructure.ID).Error; err != nil {
+			fmt.Printf("Error reloading prize structure: %v\n", err)
 			return fmt.Errorf("failed to reload prize structure with prizes: %w", err)
 		}
 
@@ -348,14 +426,18 @@ func UpdatePrizeStructure(c *gin.Context) {
 		updatedPrizeStructure.ApplicableDays = getApplicableDaysFromDayType(updatedPrizeStructure.DayType)
 	}
 
+	fmt.Printf("Prize structure updated successfully for ID: %s\n", structureIDStr)
 	c.JSON(http.StatusOK, updatedPrizeStructure)
 }
 
 // DeletePrizeStructure handles deleting a prize structure
 func DeletePrizeStructure(c *gin.Context) {
 	structureIDStr := c.Param("id")
+	fmt.Printf("DeletePrizeStructure handler called for ID: %s\n", structureIDStr)
+	
 	structureID, err := uuid.Parse(structureIDStr)
 	if err != nil {
+		fmt.Printf("Invalid prize structure ID format: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prize structure ID format"})
 		return
 	}
@@ -365,19 +447,23 @@ func DeletePrizeStructure(c *gin.Context) {
 	result := config.DB.First(&prizeStructure, "id = ?", structureID)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			fmt.Printf("Prize structure not found for ID: %s\n", structureIDStr)
 			c.JSON(http.StatusNotFound, gin.H{"error": "Prize structure not found"})
 			return
 		}
+		fmt.Printf("Error retrieving prize structure: %v\n", result.Error)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve prize structure: " + result.Error.Error()})
 		return
 	}
 
 	// Delete the prize structure (and associated prizes due to CASCADE)
 	if err := config.DB.Delete(&prizeStructure).Error; err != nil {
+		fmt.Printf("Error deleting prize structure: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prize structure: " + err.Error()})
 		return
 	}
 
+	fmt.Printf("Prize structure deleted successfully for ID: %s\n", structureIDStr)
 	c.JSON(http.StatusOK, gin.H{"message": "Prize structure deleted successfully"})
 }
 
