@@ -17,13 +17,13 @@ import (
 
 // CreatePrizeStructureRequest defines the structure for creating a prize structure
 type CreatePrizeStructureRequest struct {
-	Name          string                      `json:"name" binding:"required"`
-	Description   string                      `json:"description,omitempty"`
-	IsActive      bool                        `json:"is_active"`      // Default is true in model
-	ValidFrom     *time.Time                  `json:"valid_from,omitempty"`
-	ValidTo       *time.Time                  `json:"valid_to,omitempty"`
-	Prizes        []models.CreatePrizeRequest `json:"prizes" binding:"required,dive"`
-	ApplicableDays []string                   `json:"applicable_days,omitempty"` // Added field for applicable days
+	Name           string                      `json:"name" binding:"required"`
+	Description    string                      `json:"description,omitempty"`
+	IsActive       bool                        `json:"is_active"` // Default is true in model
+	ValidFrom      *time.Time                  `json:"valid_from,omitempty"`
+	ValidTo        *time.Time                  `json:"valid_to,omitempty"`
+	Prizes         []models.CreatePrizeRequest `json:"prizes" binding:"required,dive"`
+	ApplicableDays []string                    `json:"applicable_days,omitempty"` // Added field for applicable days
 }
 
 // CreatePrizeStructure handles the creation of a new prize structure
@@ -76,14 +76,14 @@ func CreatePrizeStructure(c *gin.Context) {
 	var createdPrizeStructure models.PrizeStructure
 	txErr := config.DB.Transaction(func(tx *gorm.DB) error {
 		prizeStructure := models.PrizeStructure{
-			Name:            req.Name,
-			Description:     req.Description,
-			IsActive:        req.IsActive, // Model has default true, this will override if false
-			ValidFrom:       req.ValidFrom,
-			ValidTo:         req.ValidTo,
+			Name:             req.Name,
+			Description:      req.Description,
+			IsActive:         req.IsActive, // Model has default true, this will override if false
+			ValidFrom:        req.ValidFrom,
+			ValidTo:          req.ValidTo,
 			CreatedByAdminID: parsedAdminID,
-			DayType:         dayType,           // Set the derived day_type
-			ApplicableDays:  req.ApplicableDays, // Store applicable_days in virtual field for response
+			DayType:          dayType, // Set the derived day_type
+			ApplicableDays:   req.ApplicableDays, // Store applicable_days in virtual field for response
 		}
 
 		if err := tx.Create(&prizeStructure).Error; err != nil {
@@ -92,13 +92,13 @@ func CreatePrizeStructure(c *gin.Context) {
 
 		for _, prizeReq := range req.Prizes {
 			prize := models.Prize{
-				PrizeStructureID:  prizeStructure.ID,
-				Name:              prizeReq.Name,
-				Value:             prizeReq.Value,
-				PrizeType:         prizeReq.PrizeType,
-				Quantity:          prizeReq.Quantity,
-				Order:             prizeReq.Order,
-				NumberOfRunnerUps: prizeReq.NumberOfRunnerUps,
+				PrizeStructureID:   prizeStructure.ID,
+				Name:               prizeReq.Name,
+				Value:              prizeReq.Value,
+				PrizeType:          prizeReq.PrizeType,
+				Quantity:           prizeReq.Quantity,
+				Order:              prizeReq.Order,
+				NumberOfRunnerUps:  prizeReq.NumberOfRunnerUps,
 			}
 
 			if err := tx.Create(&prize).Error; err != nil {
@@ -174,13 +174,13 @@ func GetPrizeStructure(c *gin.Context) {
 
 // UpdatePrizeStructureRequest defines the structure for updating a prize structure
 type UpdatePrizeStructureRequest struct {
-	Name          *string                      `json:"name,omitempty"`
-	Description   *string                      `json:"description,omitempty"`
-	IsActive      *bool                        `json:"is_active,omitempty"`
-	ValidFrom     *time.Time                   `json:"valid_from,omitempty"`
-	ValidTo       **time.Time                  `json:"valid_to,omitempty"` // Pointer to pointer for explicit null
-	Prizes        *[]models.CreatePrizeRequest `json:"prizes,omitempty"`
-	ApplicableDays *[]string                   `json:"applicable_days,omitempty"` // Added field for applicable days
+	Name           *string                      `json:"name,omitempty"`
+	Description    *string                      `json:"description,omitempty"`
+	IsActive       *bool                        `json:"is_active,omitempty"`
+	ValidFrom      *time.Time                   `json:"valid_from,omitempty"`
+	ValidTo        **time.Time                  `json:"valid_to,omitempty"` // Pointer to pointer for explicit null
+	Prizes         *[]models.CreatePrizeRequest `json:"prizes,omitempty"`
+	ApplicableDays *[]string                    `json:"applicable_days,omitempty"` // Added field for applicable days
 }
 
 // UpdatePrizeStructure handles updating an existing prize structure
