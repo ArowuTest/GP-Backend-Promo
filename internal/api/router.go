@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ArowuTest/GP-Backend-Promo/internal/auth"
@@ -17,6 +18,10 @@ import (
 func SetupRouter() *gin.Engine {
 	router := gin.Default()
 
+	// Disable automatic trailing slash redirects to prevent CORS preflight issues
+	router.RedirectTrailingSlash = false
+	router.RedirectFixedPath = false
+
 	// CORS Middleware Configuration - Updated for production
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:3000", "https://gp-admin-promo.vercel.app"},
@@ -27,9 +32,19 @@ func SetupRouter() *gin.Engine {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// Handle OPTIONS requests directly
-	router.OPTIONS("/*path", func(c *gin.Context) {
-		c.Status(http.StatusOK)
+	// Custom middleware to handle OPTIONS requests for all paths
+	router.Use(func(c *gin.Context) {
+		if c.Request.Method == "OPTIONS" {
+			c.Header("Access-Control-Allow-Origin", "https://gp-admin-promo.vercel.app")
+			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Requested-With")
+			c.Header("Access-Control-Allow-Credentials", "true")
+			c.Header("Access-Control-Max-Age", "43200") // 12 hours in seconds
+			c.Status(http.StatusOK)
+			c.Abort()
+			return
+		}
+		c.Next()
 	})
 
 	// Health check
@@ -69,6 +84,8 @@ func SetupRouter() *gin.Engine {
 	prizeManagement.GET("/", admin_handlers.ListPrizeStructures)
 	prizeManagement.GET("/:id", admin_handlers.GetPrizeStructure)
 	prizeManagement.PUT("/:id", admin_handlers.UpdatePrizeStructure)
+	// Add route with trailing slash to handle both versions
+	prizeManagement.PUT("/:id/", admin_handlers.UpdatePrizeStructure)
 	prizeManagement.DELETE("/:id", admin_handlers.DeletePrizeStructure)
 
 	// Draw Management
