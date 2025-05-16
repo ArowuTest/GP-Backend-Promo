@@ -34,6 +34,13 @@ func CreatePrizeStructure(c *gin.Context) {
 		return
 	}
 
+	// Log the received payload for debugging
+	fmt.Printf("Received CreatePrizeStructure payload: %+v\n", req)
+	fmt.Printf("Number of prizes in payload: %d\n", len(req.Prizes))
+	for i, prize := range req.Prizes {
+		fmt.Printf("Prize %d: %+v\n", i, prize)
+	}
+
 	// Validate dates
 	if req.ValidFrom != nil && req.ValidTo != nil && req.ValidTo.Before(*req.ValidFrom) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ValidTo cannot be before ValidFrom"})
@@ -72,6 +79,7 @@ func CreatePrizeStructure(c *gin.Context) {
 
 	// Derive day_type from applicable_days
 	dayType := deriveDayTypeFromApplicableDays(req.ApplicableDays)
+	fmt.Printf("Derived day_type: %s from applicable_days: %v\n", dayType, req.ApplicableDays)
 
 	var createdPrizeStructure models.PrizeStructure
 	txErr := config.DB.Transaction(func(tx *gorm.DB) error {
@@ -90,7 +98,10 @@ func CreatePrizeStructure(c *gin.Context) {
 			return fmt.Errorf("failed to create prize structure: %w", err)
 		}
 
-		for _, prizeReq := range req.Prizes {
+		fmt.Printf("Created prize structure with ID: %s\n", prizeStructure.ID)
+
+		// Create prizes one by one and check for errors
+		for i, prizeReq := range req.Prizes {
 			prize := models.Prize{
 				PrizeStructureID:   prizeStructure.ID,
 				Name:               prizeReq.Name,
@@ -102,10 +113,12 @@ func CreatePrizeStructure(c *gin.Context) {
 			}
 
 			if err := tx.Create(&prize).Error; err != nil {
-				return fmt.Errorf("failed to create prize tier %s: %w", prizeReq.Name, err)
+				return fmt.Errorf("failed to create prize tier %d (%s): %w", i, prizeReq.Name, err)
 			}
+			fmt.Printf("Created prize tier %d with ID: %s\n", i, prize.ID)
 		}
 
+		// Reload the prize structure with prizes to return in response
 		if err := tx.Preload("Prizes").First(&prizeStructure, prizeStructure.ID).Error; err != nil {
 			return fmt.Errorf("failed to reload prize structure with prizes: %w", err)
 		}
@@ -115,12 +128,16 @@ func CreatePrizeStructure(c *gin.Context) {
 	})
 
 	if txErr != nil {
+		fmt.Printf("Transaction error in CreatePrizeStructure: %v\n", txErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": txErr.Error()})
 		return
 	}
 
 	// Format dates for response
 	formatDatesForResponse(&createdPrizeStructure)
+
+	// Ensure applicable_days is populated in the response
+	createdPrizeStructure.ApplicableDays = req.ApplicableDays
 
 	c.JSON(http.StatusCreated, createdPrizeStructure)
 }
@@ -198,6 +215,15 @@ func UpdatePrizeStructure(c *gin.Context) {
 		return
 	}
 
+	// Log the received payload for debugging
+	fmt.Printf("Received UpdatePrizeStructure payload for ID %s: %+v\n", structureIDStr, req)
+	if req.Prizes != nil {
+		fmt.Printf("Number of prizes in update payload: %d\n", len(*req.Prizes))
+		for i, prize := range *req.Prizes {
+			fmt.Printf("Prize %d: %+v\n", i, prize)
+		}
+	}
+
 	// Validate ValidFrom if provided
 	if req.ValidFrom != nil && req.ValidFrom.IsZero() {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ValidFrom date"})
@@ -245,6 +271,7 @@ func UpdatePrizeStructure(c *gin.Context) {
 			dayType := deriveDayTypeFromApplicableDays(*req.ApplicableDays)
 			updates["day_type"] = dayType
 			prizeStructure.ApplicableDays = *req.ApplicableDays // Update virtual field
+			fmt.Printf("Updating day_type to: %s from applicable_days: %v\n", dayType, *req.ApplicableDays)
 		}
 
 		currentValidFrom := prizeStructure.ValidFrom
@@ -267,14 +294,18 @@ func UpdatePrizeStructure(c *gin.Context) {
 			if err := tx.Model(&prizeStructure).Updates(updates).Error; err != nil {
 				return fmt.Errorf("failed to update prize structure details: %w", err)
 			}
+			fmt.Printf("Updated prize structure fields: %v\n", updates)
 		}
 
 		if req.Prizes != nil {
+			// First delete existing prizes
 			if err := tx.Where("prize_structure_id = ?", prizeStructure.ID).Delete(&models.Prize{}).Error; err != nil {
 				return fmt.Errorf("failed to delete existing prizes: %w", err)
 			}
+			fmt.Printf("Deleted existing prizes for structure ID: %s\n", prizeStructure.ID)
 
-			for _, prizeReq := range *req.Prizes {
+			// Then create new prizes
+			for i, prizeReq := range *req.Prizes {
 				newPrize := models.Prize{
 					PrizeStructureID:  prizeStructure.ID,
 					Name:              prizeReq.Name,
@@ -286,11 +317,13 @@ func UpdatePrizeStructure(c *gin.Context) {
 				}
 
 				if err := tx.Create(&newPrize).Error; err != nil {
-					return fmt.Errorf("failed to create prize tier %s: %w", prizeReq.Name, err)
+					return fmt.Errorf("failed to create prize tier %d (%s): %w", i, prizeReq.Name, err)
 				}
+				fmt.Printf("Created new prize tier %d with ID: %s\n", i, newPrize.ID)
 			}
 		}
 
+		// Reload the prize structure with prizes to return in response
 		if err := tx.Preload("Prizes").First(&prizeStructure, prizeStructure.ID).Error; err != nil {
 			return fmt.Errorf("failed to reload prize structure with prizes: %w", err)
 		}
@@ -300,12 +333,20 @@ func UpdatePrizeStructure(c *gin.Context) {
 	})
 
 	if txErr != nil {
+		fmt.Printf("Transaction error in UpdatePrizeStructure: %v\n", txErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": txErr.Error()})
 		return
 	}
 
 	// Format dates for response
 	formatDatesForResponse(&updatedPrizeStructure)
+
+	// Ensure applicable_days is populated in the response
+	if req.ApplicableDays != nil {
+		updatedPrizeStructure.ApplicableDays = *req.ApplicableDays
+	} else {
+		updatedPrizeStructure.ApplicableDays = getApplicableDaysFromDayType(updatedPrizeStructure.DayType)
+	}
 
 	c.JSON(http.StatusOK, updatedPrizeStructure)
 }
