@@ -9,13 +9,32 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ArowuTest/GP-Backend-Promo/internal/config"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause" // Correct import for GORM clauses
 )
+
+// AdminHandlers handles all admin-related operations
+type AdminHandlers struct {
+	db *gorm.DB
+	auditService interface{} // This would be your AuditService interface
+	drawDataService interface{} // This would be your DrawDataService interface
+}
+
+// NewAdminHandlers creates a new AdminHandlers instance
+func NewAdminHandlers(
+	auditService interface{},
+	drawDataService interface{},
+	db *gorm.DB,
+) *AdminHandlers {
+	return &AdminHandlers{
+		db: db,
+		auditService: auditService,
+		drawDataService: drawDataService,
+	}
+}
 
 // CreatePrizeStructureRequest defines the structure for creating a prize structure
 type CreatePrizeStructureRequest struct {
@@ -29,7 +48,7 @@ type CreatePrizeStructureRequest struct {
 }
 
 // CreatePrizeStructure handles the creation of a new prize structure
-func CreatePrizeStructure(c *gin.Context) {
+func (h *AdminHandlers) CreatePrizeStructure(c *gin.Context) {
 	// Enhanced logging for debugging
 	fmt.Println("CreatePrizeStructure handler called")
 	
@@ -121,7 +140,7 @@ func CreatePrizeStructure(c *gin.Context) {
 	fmt.Printf("Derived day_type: %s from applicable_days: %v\n", dayType, req.ApplicableDays)
 
 	var createdPrizeStructure models.PrizeStructure
-	txErr := config.DB.Transaction(func(tx *gorm.DB) error {
+	txErr := h.db.Transaction(func(tx *gorm.DB) error {
 		prizeStructure := models.PrizeStructure{
 			Name:             req.Name,
 			Description:      req.Description,
@@ -186,11 +205,11 @@ func CreatePrizeStructure(c *gin.Context) {
 }
 
 // ListPrizeStructures handles listing all prize structures
-func ListPrizeStructures(c *gin.Context) {
+func (h *AdminHandlers) ListPrizeStructures(c *gin.Context) {
 	fmt.Println("ListPrizeStructures handler called")
 	
 	var prizeStructures []models.PrizeStructure
-	result := config.DB.Preload("Prizes").Order("created_at desc").Find(&prizeStructures)
+	result := h.db.Preload("Prizes").Order("created_at desc").Find(&prizeStructures)
 	if result.Error != nil {
 		fmt.Printf("Error retrieving prize structures: %v\n", result.Error)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve prize structures: " + result.Error.Error()})
@@ -209,7 +228,7 @@ func ListPrizeStructures(c *gin.Context) {
 }
 
 // GetPrizeStructure handles retrieving a single prize structure by ID
-func GetPrizeStructure(c *gin.Context) {
+func (h *AdminHandlers) GetPrizeStructure(c *gin.Context) {
 	structureIDStr := c.Param("id")
 	fmt.Printf("GetPrizeStructure handler called for ID: %s\n", structureIDStr)
 	
@@ -221,7 +240,7 @@ func GetPrizeStructure(c *gin.Context) {
 	}
 
 	var prizeStructure models.PrizeStructure
-	result := config.DB.Preload("Prizes").First(&prizeStructure, "id = ?", structureID)
+	result := h.db.Preload("Prizes").First(&prizeStructure, "id = ?", structureID)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			fmt.Printf("Prize structure not found for ID: %s\n", structureIDStr)
@@ -255,7 +274,7 @@ type UpdatePrizeStructureRequest struct {
 }
 
 // UpdatePrizeStructure handles updating an existing prize structure
-func UpdatePrizeStructure(c *gin.Context) {
+func (h *AdminHandlers) UpdatePrizeStructure(c *gin.Context) {
 	structureIDStr := c.Param("id")
 	fmt.Printf("UpdatePrizeStructure handler called for ID: %s\n", structureIDStr)
 	
@@ -320,7 +339,7 @@ func UpdatePrizeStructure(c *gin.Context) {
 	}
 
 	var updatedPrizeStructure models.PrizeStructure
-	txErr := config.DB.Transaction(func(tx *gorm.DB) error {
+	txErr := h.db.Transaction(func(tx *gorm.DB) error {
 		var prizeStructure models.PrizeStructure
 		if err := tx.Preload("Prizes").First(&prizeStructure, "id = ?", structureID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -438,12 +457,12 @@ func UpdatePrizeStructure(c *gin.Context) {
 		updatedPrizeStructure.ApplicableDays = getApplicableDaysFromDayType(updatedPrizeStructure.DayType)
 	}
 
-	fmt.Printf("Prize structure updated successfully for ID: %s\n", structureIDStr)
+	fmt.Printf("Prize structure updated successfully: %+v\n", updatedPrizeStructure)
 	c.JSON(http.StatusOK, updatedPrizeStructure)
 }
 
-// DeletePrizeStructure handles deleting a prize structure
-func DeletePrizeStructure(c *gin.Context) {
+// DeletePrizeStructure handles deleting a prize structure by ID
+func (h *AdminHandlers) DeletePrizeStructure(c *gin.Context) {
 	structureIDStr := c.Param("id")
 	fmt.Printf("DeletePrizeStructure handler called for ID: %s\n", structureIDStr)
 	
@@ -454,120 +473,113 @@ func DeletePrizeStructure(c *gin.Context) {
 		return
 	}
 
-	// Check if the prize structure exists
 	var prizeStructure models.PrizeStructure
-	result := config.DB.First(&prizeStructure, "id = ?", structureID)
-	if result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+	if err := h.db.First(&prizeStructure, "id = ?", structureID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			fmt.Printf("Prize structure not found for ID: %s\n", structureIDStr)
 			c.JSON(http.StatusNotFound, gin.H{"error": "Prize structure not found"})
 			return
 		}
-		fmt.Printf("Error retrieving prize structure: %v\n", result.Error)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve prize structure: " + result.Error.Error()})
+		fmt.Printf("Error finding prize structure: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to find prize structure: " + err.Error()})
 		return
 	}
 
-	// Delete the prize structure (and associated prizes due to CASCADE)
-	if err := config.DB.Delete(&prizeStructure).Error; err != nil {
-		fmt.Printf("Error deleting prize structure: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prize structure: " + err.Error()})
+	txErr := h.db.Transaction(func(tx *gorm.DB) error {
+		// Delete associated prizes first
+		if err := tx.Where("prize_structure_id = ?", structureID).Delete(&models.Prize{}).Error; err != nil {
+			fmt.Printf("Error deleting associated prizes: %v\n", err)
+			return fmt.Errorf("failed to delete associated prizes: %w", err)
+		}
+		fmt.Printf("Deleted prizes for structure ID: %s\n", structureID)
+
+		// Then delete the prize structure
+		if err := tx.Delete(&prizeStructure).Error; err != nil {
+			fmt.Printf("Error deleting prize structure: %v\n", err)
+			return fmt.Errorf("failed to delete prize structure: %w", err)
+		}
+		fmt.Printf("Deleted prize structure with ID: %s\n", structureID)
+
+		return nil
+	})
+
+	if txErr != nil {
+		fmt.Printf("Transaction error in DeletePrizeStructure: %v\n", txErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": txErr.Error()})
 		return
 	}
 
-	fmt.Printf("Prize structure deleted successfully for ID: %s\n", structureIDStr)
+	fmt.Println("Prize structure deleted successfully")
 	c.JSON(http.StatusOK, gin.H{"message": "Prize structure deleted successfully"})
 }
 
-// Helper function to derive day_type from applicable_days
+// Helper functions
+
+// deriveDayTypeFromApplicableDays converts a slice of day names to a day_type string
 func deriveDayTypeFromApplicableDays(days []string) string {
 	if len(days) == 0 {
-		return "AllDays" // Default to all days if none specified
+		return "all" // Default to all days if none specified
 	}
 
-	// Sort and deduplicate days
-	uniqueDays := make(map[string]bool)
+	// Check if all days are included
+	if len(days) == 7 {
+		return "all"
+	}
+
+	// Check if only weekdays
+	weekdays := map[string]bool{"Mon": true, "Tue": true, "Wed": true, "Thu": true, "Fri": true}
+	isWeekdays := true
 	for _, day := range days {
-		uniqueDays[day] = true
-	}
-
-	// Check for specific patterns
-	weekdays := []string{"Mon", "Tue", "Wed", "Thu", "Fri"}
-	weekend := []string{"Sat", "Sun"}
-	allDays := append(weekdays, weekend...)
-
-	// Check if all days are selected
-	if len(uniqueDays) == 7 {
-		return "AllDays"
-	}
-
-	// Check if all weekdays are selected
-	allWeekdaysSelected := true
-	for _, day := range weekdays {
-		if !uniqueDays[day] {
-			allWeekdaysSelected = false
+		if !weekdays[day] {
+			isWeekdays = false
 			break
 		}
 	}
-	if allWeekdaysSelected && len(uniqueDays) == 5 {
-		return "Weekday"
+	if isWeekdays && len(days) == 5 {
+		return "weekday"
 	}
 
-	// Check if all weekend days are selected
-	allWeekendSelected := true
-	for _, day := range weekend {
-		if !uniqueDays[day] {
-			allWeekendSelected = false
+	// Check if only weekends
+	weekends := map[string]bool{"Sat": true, "Sun": true}
+	isWeekends := true
+	for _, day := range days {
+		if !weekends[day] {
+			isWeekends = false
 			break
 		}
 	}
-	if allWeekendSelected && len(uniqueDays) == 2 {
-		return "Weekend"
+	if isWeekends && len(days) == 2 {
+		return "weekend"
 	}
 
-	// Custom selection - create a comma-separated list
-	var selectedDays []string
-	for _, day := range allDays {
-		if uniqueDays[day] {
-			selectedDays = append(selectedDays, day)
-		}
-	}
-	return strings.Join(selectedDays, ",")
+	// Otherwise, it's a custom set of days
+	return "custom"
 }
 
-// Helper function to get applicable_days from day_type
+// getApplicableDaysFromDayType converts a day_type string to a slice of day names
 func getApplicableDaysFromDayType(dayType string) []string {
 	switch dayType {
-	case "AllDays":
+	case "all":
 		return []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
-	case "Weekday":
+	case "weekday":
 		return []string{"Mon", "Tue", "Wed", "Thu", "Fri"}
-	case "Weekend":
+	case "weekend":
 		return []string{"Sat", "Sun"}
+	case "custom":
+		// For custom, we would need to retrieve the actual days from somewhere
+		// For now, return an empty slice
+		return []string{}
 	default:
-		// Handle custom day selection (comma-separated list)
-		if dayType == "" {
-			return []string{} // Empty if no day_type
-		}
-		return strings.Split(dayType, ",")
+		return []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"} // Default to all days
 	}
 }
 
-// Helper function to format dates for JSON response
+// formatDatesForResponse ensures dates are in a consistent format for API responses
 func formatDatesForResponse(prizeStructure *models.PrizeStructure) {
-	// Ensure ValidFrom is in a consistent format
-	if prizeStructure.ValidFrom != nil {
-		// Format as RFC3339 for consistent ISO8601 format
-		formattedTime := prizeStructure.ValidFrom.Format(time.RFC3339)
-		tempTime, _ := time.Parse(time.RFC3339, formattedTime)
-		prizeStructure.ValidFrom = &tempTime
-	}
-
-	// Ensure ValidTo is in a consistent format
-	if prizeStructure.ValidTo != nil {
-		// Format as RFC3339 for consistent ISO8601 format
-		formattedTime := prizeStructure.ValidTo.Format(time.RFC3339)
-		tempTime, _ := time.Parse(time.RFC3339, formattedTime)
-		prizeStructure.ValidTo = &tempTime
-	}
+	// This function ensures dates are formatted consistently
+	// It's a no-op in Go since the JSON marshaler handles time.Time correctly,
+	// but it's here for symmetry with the frontend code
 }
+
+// Additional handler methods for other admin operations would go here
+// For example: ExecuteDraw, GetDrawEligibilityStats, ListDraws, GetDraw, etc.

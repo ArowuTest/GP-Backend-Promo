@@ -4,12 +4,23 @@ import (
 	"errors" // For errors.Is
 	"net/http"
 
-	"github.com/ArowuTest/GP-Backend-Promo/internal/config"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid" // For UUID parsing
 	"gorm.io/gorm"         // For gorm.ErrRecordNotFound
 )
+
+// PrizeHandler handles operations related to prize structures
+type PrizeHandler struct {
+	db *gorm.DB
+}
+
+// NewPrizeHandler creates a new PrizeHandler with the provided database connection
+func NewPrizeHandler(db *gorm.DB) *PrizeHandler {
+	return &PrizeHandler{
+		db: db,
+	}
+}
 
 // CreatePrizeStructure godoc
 // @Summary Create a new prize structure
@@ -22,7 +33,7 @@ import (
 // @Failure 400 {object} gin.H{"error": string}
 // @Failure 500 {object} gin.H{"error": string}
 // @Router /admin/prize-structures [post]
-func CreatePrizeStructure(c *gin.Context) {
+func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 	var newPrizeStructure models.PrizeStructure
 	// Bind only specific fields for creation
 	var input struct {
@@ -61,7 +72,7 @@ func CreatePrizeStructure(c *gin.Context) {
 		}
 	}
 
-	if err := config.DB.Create(&newPrizeStructure).Error; err != nil {
+	if err := h.db.Create(&newPrizeStructure).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prize structure: " + err.Error()})
 		return
 	}
@@ -76,9 +87,9 @@ func CreatePrizeStructure(c *gin.Context) {
 // @Success 200 {array} models.PrizeStructure
 // @Failure 500 {object} gin.H{"error": string}
 // @Router /admin/prize-structures [get]
-func ListPrizeStructures(c *gin.Context) {
+func (h *PrizeHandler) ListPrizeStructures(c *gin.Context) {
 	var prizeStructures []models.PrizeStructure
-	if err := config.DB.Preload("Prizes").Find(&prizeStructures).Error; err != nil {
+	if err := h.db.Preload("Prizes").Find(&prizeStructures).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve prize structures: " + err.Error()})
 		return
 	}
@@ -95,7 +106,7 @@ func ListPrizeStructures(c *gin.Context) {
 // @Failure 400 {object} gin.H{"error": string}
 // @Failure 404 {object} gin.H{"error": string}
 // @Router /admin/prize-structures/{id} [get]
-func GetPrizeStructure(c *gin.Context) {
+func (h *PrizeHandler) GetPrizeStructure(c *gin.Context) {
 	idStr := c.Param("id")
 	structureID, err := uuid.Parse(idStr)
 	if err != nil {
@@ -104,7 +115,7 @@ func GetPrizeStructure(c *gin.Context) {
 	}
 
 	var prizeStructure models.PrizeStructure
-	if err := config.DB.Preload("Prizes").First(&prizeStructure, structureID).Error; err != nil {
+	if err := h.db.Preload("Prizes").First(&prizeStructure, structureID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Prize structure not found"})
 		} else {
@@ -128,7 +139,7 @@ func GetPrizeStructure(c *gin.Context) {
 // @Failure 404 {object} gin.H{"error": string}
 // @Failure 500 {object} gin.H{"error": string}
 // @Router /admin/prize-structures/{id} [put]
-func UpdatePrizeStructure(c *gin.Context) {
+func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 	idStr := c.Param("id")
 	structureID, err := uuid.Parse(idStr)
 	if err != nil {
@@ -137,7 +148,7 @@ func UpdatePrizeStructure(c *gin.Context) {
 	}
 
 	var existingPrizeStructure models.PrizeStructure
-	if err := config.DB.First(&existingPrizeStructure, structureID).Error; err != nil {
+	if err := h.db.First(&existingPrizeStructure, structureID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Prize structure not found"})
 		} else {
@@ -158,7 +169,7 @@ func UpdatePrizeStructure(c *gin.Context) {
 		return
 	}
 
-	tx := config.DB.Begin()
+	tx := h.db.Begin()
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
@@ -205,7 +216,7 @@ func UpdatePrizeStructure(c *gin.Context) {
 
 	// Refetch to ensure all associations are correctly loaded for the response
 	var finalStructure models.PrizeStructure
-	config.DB.Preload("Prizes").First(&finalStructure, existingPrizeStructure.ID)
+	h.db.Preload("Prizes").First(&finalStructure, existingPrizeStructure.ID)
 
 	c.JSON(http.StatusOK, finalStructure)
 }
@@ -221,7 +232,7 @@ func UpdatePrizeStructure(c *gin.Context) {
 // @Failure 404 {object} gin.H{"error": string}
 // @Failure 500 {object} gin.H{"error": string}
 // @Router /admin/prize-structures/{id} [delete]
-func DeletePrizeStructure(c *gin.Context) {
+func (h *PrizeHandler) DeletePrizeStructure(c *gin.Context) {
 	idStr := c.Param("id")
 	structureID, err := uuid.Parse(idStr)
 	if err != nil {
@@ -231,7 +242,7 @@ func DeletePrizeStructure(c *gin.Context) {
 
 	// Check if structure exists
 	var existingPrizeStructure models.PrizeStructure
-	if err := config.DB.First(&existingPrizeStructure, structureID).Error; err != nil {
+	if err := h.db.First(&existingPrizeStructure, structureID).Error; err != nil {
 	    if errors.Is(err, gorm.ErrRecordNotFound) {
 	        c.JSON(http.StatusNotFound, gin.H{"error": "Prize structure not found"})
 	    } else {
@@ -240,7 +251,7 @@ func DeletePrizeStructure(c *gin.Context) {
 	    return
 	}
 
-	tx := config.DB.Begin()
+	tx := h.db.Begin()
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
@@ -268,4 +279,3 @@ func DeletePrizeStructure(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Prize structure and associated prizes deleted successfully"})
 }
-
