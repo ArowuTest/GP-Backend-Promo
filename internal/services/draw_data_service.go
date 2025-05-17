@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 	
-	"github.com/ArowuTest/GP-Backend-Promo/internal/config"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"gorm.io/gorm"
 )

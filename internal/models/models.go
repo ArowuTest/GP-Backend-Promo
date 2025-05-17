@@ -189,11 +189,13 @@ type ParticipantEvent struct {
 	CreatedAt           time.Time  `json:"created_at"`
 	MSISDN              string     `json:"msisdn" gorm:"index;not null"`
 	Amount              string     `json:"amount,omitempty"`
+	RechargeAmount      float64    `json:"recharge_amount,omitempty"` // Added field to match draw_data_service.go
 	OptInStatus         string     `json:"opt_in_status,omitempty"`
 	PointsEarned        int        `json:"points_earned" gorm:"not null"`
 	TransactionTimestamp *time.Time `json:"transaction_timestamp,omitempty" gorm:"index"`
 	UploadAuditID       uuid.UUID  `json:"upload_audit_id" gorm:"type:uuid"`
 	IsDuplicate         bool       `json:"is_duplicate" gorm:"default:false"`
+	IsEligible          bool       `json:"is_eligible" gorm:"default:true"` // Added field for eligibility check
 	Notes               string     `json:"notes,omitempty"`
 }
 
@@ -220,6 +222,25 @@ type ParticipantPoints struct {
 func (pp *ParticipantPoints) BeforeCreate(tx *gorm.DB) (err error) {
 	if pp.ID == uuid.Nil {
 		pp.ID = uuid.New()
+	}
+	return
+}
+
+// BlacklistedMSISDN represents a blacklisted phone number that should be excluded from draws
+type BlacklistedMSISDN struct {
+	ID          uuid.UUID      `json:"id" gorm:"type:uuid;primary_key;"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	MSISDN      string         `json:"msisdn" gorm:"uniqueIndex;not null"`
+	Reason      string         `json:"reason,omitempty"`
+	AddedByUserID uuid.UUID    `json:"added_by_user_id,omitempty" gorm:"type:uuid"`
+}
+
+// BeforeCreate will set a UUID for BlacklistedMSISDN
+func (b *BlacklistedMSISDN) BeforeCreate(tx *gorm.DB) (err error) {
+	if b.ID == uuid.Nil {
+		b.ID = uuid.New()
 	}
 	return
 }
