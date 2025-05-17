@@ -3,183 +3,173 @@ package services
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
-	"github.com/ArowuTest/GP-Backend-Promo/internal/config"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
-// AuditService provides methods for system-wide audit logging
-type AuditService struct{}
-
-// NewAuditService creates a new AuditService
-func NewAuditService() *AuditService {
-	return &AuditService{}
+// AuditService handles audit logging operations
+type AuditService struct {
+	db *gorm.DB
 }
 
-// LogUserAction logs a user action to the system audit log
-func (s *AuditService) LogUserAction(c *gin.Context, actionType, resourceType, resourceID, description string, actionDetails interface{}) error {
-	// Get user ID from context
-	userID, exists := c.Get("userID")
-	if !exists {
-		return fmt.Errorf("user ID not found in context")
+// NewAuditService creates a new AuditService with the provided database connection
+func NewAuditService(db *gorm.DB) *AuditService {
+	return &AuditService{
+		db: db,
 	}
+}
 
-	// Convert actionDetails to JSON string
-	var actionDetailsStr string
-	if actionDetails != nil {
-		detailsBytes, err := json.Marshal(actionDetails)
-		if err != nil {
-			return fmt.Errorf("failed to marshal action details: %w", err)
-		}
-		actionDetailsStr = string(detailsBytes)
+// ActionType represents the type of action being audited
+type ActionType string
+
+// ResourceType represents the type of resource being acted upon
+type ResourceType string
+
+// Common action types
+const (
+	ActionCreate ActionType = "CREATE"
+	ActionUpdate ActionType = "UPDATE"
+	ActionDelete ActionType = "DELETE"
+	ActionView   ActionType = "VIEW"
+	ActionLogin  ActionType = "LOGIN"
+	ActionLogout ActionType = "LOGOUT"
+)
+
+// Common resource types
+const (
+	ResourceUser           ResourceType = "USER"
+	ResourcePrizeStructure ResourceType = "PRIZE_STRUCTURE"
+	ResourceDraw           ResourceType = "DRAW"
+	ResourceWinner         ResourceType = "WINNER"
+	ResourceParticipant    ResourceType = "PARTICIPANT"
+)
+
+// CreateAuditLog creates a new audit log entry
+func (s *AuditService) CreateAuditLog(log *models.AuditLog) error {
+	if log.ID == "" {
+		log.ID = uuid.New().String()
 	}
-
-	// Get IP address and user agent
-	ipAddress := c.ClientIP()
-	userAgent := c.Request.UserAgent()
-
-	// Create audit log entry
-	err := models.CreateSystemAuditLog(
-		config.DB,
-		userID.(uuid.UUID),
-		actionType,
-		resourceType,
-		resourceID,
-		description,
-		ipAddress,
-		userAgent,
-		actionDetailsStr,
-	)
-
-	return err
+	
+	if log.CreatedAt.IsZero() {
+		log.CreatedAt = time.Now()
+	}
+	
+	return s.db.Create(log).Error
 }
 
 // GetAuditLogs retrieves audit logs with optional filtering
 func (s *AuditService) GetAuditLogs(
-	startDate, endDate *time.Time,
-	userID *uuid.UUID,
-	actionType, resourceType, resourceID *string,
 	page, pageSize int,
-) ([]models.SystemAuditLog, int64, error) {
-	query := config.DB.Model(&models.SystemAuditLog{}).Preload("User")
-
+	startDate, endDate *time.Time,
+	userID, actionType, resourceType, resourceID string,
+) ([]models.AuditLog, int64, error) {
+	var logs []models.AuditLog
+	var total int64
+	
+	query := s.db.Model(&models.AuditLog{})
+	
 	// Apply filters
 	if startDate != nil {
 		query = query.Where("created_at >= ?", startDate)
 	}
+	
 	if endDate != nil {
 		query = query.Where("created_at <= ?", endDate)
 	}
-	if userID != nil {
+	
+	if userID != "" {
 		query = query.Where("user_id = ?", userID)
 	}
-	if actionType != nil && *actionType != "" {
+	
+	if actionType != "" {
 		query = query.Where("action_type = ?", actionType)
 	}
-	if resourceType != nil && *resourceType != "" {
+	
+	if resourceType != "" {
 		query = query.Where("resource_type = ?", resourceType)
 	}
-	if resourceID != nil && *resourceID != "" {
+	
+	if resourceID != "" {
 		query = query.Where("resource_id = ?", resourceID)
 	}
-
-	// Count total records
-	var total int64
+	
+	// Get total count
 	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, fmt.Errorf("failed to count audit logs: %w", err)
+		return nil, 0, err
 	}
-
+	
 	// Apply pagination
-	if page > 0 && pageSize > 0 {
-		offset := (page - 1) * pageSize
-		query = query.Offset(offset).Limit(pageSize)
+	offset := (page - 1) * pageSize
+	if err := query.Preload("User").
+		Order("created_at DESC").
+		Offset(offset).
+		Limit(pageSize).
+		Find(&logs).Error; err != nil {
+		return nil, 0, err
 	}
-
-	// Order by created_at desc
-	query = query.Order("created_at DESC")
-
-	// Execute query
-	var auditLogs []models.SystemAuditLog
-	if err := query.Find(&auditLogs).Error; err != nil {
-		return nil, 0, fmt.Errorf("failed to fetch audit logs: %w", err)
-	}
-
-	return auditLogs, total, nil
+	
+	return logs, total, nil
 }
 
-// Middleware to automatically log API requests
-func (s *AuditService) AuditMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Skip for certain endpoints like health checks or public endpoints
-		if c.Request.URL.Path == "/health" || c.Request.URL.Path == "/api/v1/auth/login" {
-			c.Next()
-			return
+// LogUserAction creates an audit log for a user action
+func (s *AuditService) LogUserAction(
+	userID string,
+	actionType ActionType,
+	resourceType ResourceType,
+	resourceID string,
+	description string,
+	ipAddress string,
+	userAgent string,
+	details interface{},
+) error {
+	// Convert details to JSON
+	var detailsJSON string
+	if details != nil {
+		detailsBytes, err := json.Marshal(details)
+		if err != nil {
+			return fmt.Errorf("failed to marshal action details: %w", err)
 		}
-
-		// Get user ID from context (set by auth middleware)
-		userID, exists := c.Get("userID")
-		if !exists {
-			// If no user ID, this might be a public endpoint or auth failed
-			c.Next()
-			return
-		}
-
-		// Prepare audit log data
-		actionType := "API_REQUEST"
-		resourceType := "ENDPOINT"
-		resourceID := c.Request.URL.Path
-		description := fmt.Sprintf("%s request to %s", c.Request.Method, c.Request.URL.Path)
-
-		// Capture request details
-		requestDetails := map[string]interface{}{
-			"method":      c.Request.Method,
-			"path":        c.Request.URL.Path,
-			"query":       c.Request.URL.Query(),
-			"contentType": c.ContentType(),
-			"statusCode":  c.Writer.Status(),
-		}
-
-		// Execute the request
-		c.Next()
-
-		// Update with response status
-		requestDetails["statusCode"] = c.Writer.Status()
-		requestDetails["responseSize"] = c.Writer.Size()
-
-		// Only log successful requests (status 2xx) or error requests (status 4xx/5xx)
-		statusCode := c.Writer.Status()
-		if statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices ||
-			statusCode >= http.StatusBadRequest {
-			
-			// Convert requestDetails to JSON
-			detailsBytes, err := json.Marshal(requestDetails)
-			if err != nil {
-				// Just log the error but don't interrupt the request flow
-				fmt.Printf("Failed to marshal request details for audit log: %v\n", err)
-				return
-			}
-
-			// Create audit log entry
-			err = models.CreateSystemAuditLog(
-				config.DB,
-				userID.(uuid.UUID),
-				actionType,
-				resourceType,
-				resourceID,
-				description,
-				c.ClientIP(),
-				c.Request.UserAgent(),
-				string(detailsBytes),
-			)
-
-			if err != nil {
-				// Just log the error but don't interrupt the request flow
-				fmt.Printf("Failed to create audit log: %v\n", err)
-			}
-		}
+		detailsJSON = string(detailsBytes)
 	}
+	
+	// Create audit log
+	log := &models.AuditLog{
+		ID:           uuid.New().String(),
+		UserID:       userID,
+		ActionType:   string(actionType),
+		ResourceType: string(resourceType),
+		ResourceID:   resourceID,
+		Description:  description,
+		IPAddress:    ipAddress,
+		UserAgent:    userAgent,
+		ActionDetails: detailsJSON,
+		CreatedAt:    time.Now(),
+	}
+	
+	return s.CreateAuditLog(log)
+}
+
+// GetAuditLogTypes retrieves all unique action types and resource types
+func (s *AuditService) GetAuditLogTypes() ([]string, []string, error) {
+	var actionTypes []string
+	var resourceTypes []string
+	
+	// Get unique action types
+	if err := s.db.Model(&models.AuditLog{}).
+		Distinct("action_type").
+		Pluck("action_type", &actionTypes).Error; err != nil {
+		return nil, nil, err
+	}
+	
+	// Get unique resource types
+	if err := s.db.Model(&models.AuditLog{}).
+		Distinct("resource_type").
+		Pluck("resource_type", &resourceTypes).Error; err != nil {
+		return nil, nil, err
+	}
+	
+	return actionTypes, resourceTypes, nil
 }

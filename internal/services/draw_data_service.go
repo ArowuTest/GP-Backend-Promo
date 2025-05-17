@@ -39,12 +39,12 @@ func (s *MockDrawDataService) GetEligibleParticipants(drawDate time.Time, prizeS
 
 // DatabaseDrawDataService implements DrawDataService using direct database queries
 type DatabaseDrawDataService struct {
-	DB *gorm.DB
+	db *gorm.DB
 }
 
 // NewDatabaseDrawDataService creates a new DatabaseDrawDataService
 func NewDatabaseDrawDataService(db *gorm.DB) *DatabaseDrawDataService {
-	return &DatabaseDrawDataService{DB: db}
+	return &DatabaseDrawDataService{db: db}
 }
 
 // GetEligibleParticipants for DatabaseDrawDataService
@@ -52,7 +52,7 @@ func NewDatabaseDrawDataService(db *gorm.DB) *DatabaseDrawDataService {
 func (s *DatabaseDrawDataService) GetEligibleParticipants(drawDate time.Time, prizeStructureID string) ([]ParticipantData, error) {
 	// Get the prize structure to check applicable days
 	var prizeStructure models.PrizeStructure
-	if err := s.DB.First(&prizeStructure, "id = ?", prizeStructureID).Error; err != nil {
+	if err := s.db.First(&prizeStructure, "id = ?", prizeStructureID).Error; err != nil {
 		return nil, fmt.Errorf("failed to fetch prize structure: %w", err)
 	}
 
@@ -83,7 +83,7 @@ func (s *DatabaseDrawDataService) GetEligibleParticipants(drawDate time.Time, pr
 
 	// Query participant events for the specified date range
 	var participantEvents []models.ParticipantEvent
-	if err := s.DB.Where("transaction_timestamp BETWEEN ? AND ?", startOfDay, endOfDay).
+	if err := s.db.Where("transaction_timestamp BETWEEN ? AND ?", startOfDay, endOfDay).
 		Where("is_eligible = ?", true).
 		Find(&participantEvents).Error; err != nil {
 		return nil, fmt.Errorf("failed to fetch participant events: %w", err)
@@ -91,7 +91,7 @@ func (s *DatabaseDrawDataService) GetEligibleParticipants(drawDate time.Time, pr
 
 	// Check if we have any blacklisted MSISDNs to exclude
 	var blacklistedMSISDNs []string
-	s.DB.Model(&models.BlacklistedMSISDN{}).Pluck("msisdn", &blacklistedMSISDNs)
+	s.db.Model(&models.BlacklistedMSISDN{}).Pluck("msisdn", &blacklistedMSISDNs)
 	blacklistMap := make(map[string]bool)
 	for _, msisdn := range blacklistedMSISDNs {
 		blacklistMap[msisdn] = true
