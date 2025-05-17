@@ -1,70 +1,65 @@
 package config
 
 import (
-	"fmt"
-	"os"
-
-	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
-	"github.com/joho/godotenv"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+    "fmt"
+    "gorm.io/driver/postgres"
+    "gorm.io/gorm"
+    "gorm.io/gorm/logger"
+    "log"
+    "os"
+    "time"
 )
 
-var DB *gorm.DB
-
-// LoadEnv loads environment variables from .env file
-func LoadEnv() {
-	err := godotenv.Load(".env.development") // In production, Render will set these
-	if err != nil {
-		fmt.Println("Error loading .env file, relying on OS environment variables")
-	}
+// DBInstance holds the database connection
+type DBInstance struct {
+    *gorm.DB
 }
 
-// ConnectDB connects to the PostgreSQL database
-func ConnectDB() {
-	LoadEnv()
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		// Fallback DSN for local development if DATABASE_URL is not set
-		dsn = "host=localhost user=postgres password=postgres dbname=mynumba_dev port=5432 sslmode=disable TimeZone=UTC"
-		fmt.Println("DATABASE_URL not set, using default local DSN")
-	}
+// InitDB initializes the database connection
+func InitDB() (*DBInstance, error) {
+    // Ensure config is initialized
+    if Config.DBHost == "" {
+        if err := Initialize(); err != nil {
+            return nil, err
+        }
+    }
 
-	var err error
-	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info), // Use logger.Info for dev, logger.Silent for prod
-	})
-	if err != nil {
-		panic("Failed to connect to database: " + err.Error())
-	}
-	fmt.Println("Database connected successfully")
+    dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=UTC",
+        Config.DBHost,
+        Config.DBUser,
+        Config.DBPassword,
+        Config.DBName,
+        Config.DBPort,
+        Config.DBSSLMode,
+    )
 
-	// Auto-migrate the schema
-	autoMigrate()
+    // Configure GORM logger
+    newLogger := logger.New(
+        log.New(os.Stdout, "\r\n", log.LstdFlags),
+        logger.Config{
+            SlowThreshold: time.Second,
+            LogLevel:      logger.Info,
+            Colorful:      true,
+        },
+    )
+
+    // Open connection
+    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+        Logger: newLogger,
+    })
+    if err != nil {
+        return nil, err
+    }
+
+    // Configure connection pool
+    sqlDB, err := db.DB()
+    if err != nil {
+        return nil, err
+    }
+    
+    sqlDB.SetMaxIdleConns(10)
+    sqlDB.SetMaxOpenConns(100)
+    sqlDB.SetConnMaxLifetime(time.Hour)
+
+    return &DBInstance{db}, nil
 }
-
-func autoMigrate() {
-	// Enable UUID extension if not enabled. This should ideally be done by a superuser once.
-	if err := DB.Exec("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"").Error; err != nil {
-		fmt.Println("Warning: Failed to create uuid-ossp extension, it might already exist or require superuser privileges: ", err)
-	}
-
-	// Auto-migrate all models
-	err := DB.AutoMigrate(
-		&models.AdminUser{},
-		&models.PrizeStructure{},
-		&models.Prize{},
-		&models.Draw{},
-		&models.DrawWinner{},
-		&models.Participant{},
-		&models.ParticipantEvent{},
-		&models.DataUploadAudit{}, // Added comma here
-	)
-	if err != nil {
-		panic("Failed to auto-migrate database schema: " + err.Error())
-	}
-
-	fmt.Println("Database migration completed successfully")
-}
-
