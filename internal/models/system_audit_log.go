@@ -11,7 +11,7 @@ import (
 type SystemAuditLog struct {
 	ID            uuid.UUID      `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
 	UserID        uuid.UUID      `gorm:"type:uuid" json:"user_id"`
-	User          User           `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	User          AdminUser      `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	ActionType    string         `gorm:"not null" json:"action_type"` // e.g., "LOGIN", "CREATE_USER", "UPDATE_PRIZE_STRUCTURE", "EXECUTE_DRAW"
 	ResourceType  string         `gorm:"not null" json:"resource_type"` // e.g., "USER", "PRIZE_STRUCTURE", "DRAW"
 	ResourceID    string         `json:"resource_id,omitempty"`
