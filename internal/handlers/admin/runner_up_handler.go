@@ -1,186 +1,193 @@
 package admin
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
-	"github.com/ArowuTest/GP-Backend-Promo/internal/config"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
-// InvokeRunnerUp godoc
-// @Summary Invoke a runner-up for a prize
-// @Description Promotes a runner-up to winner status when a previous winner forfeits
-// @Tags Draws
-// @Accept json
-// @Produce json
-// @Param Authorization header string true "Bearer token"
-// @Param request body InvokeRunnerUpRequest true "Invoke runner-up request"
-// @Success 200 {object} InvokeRunnerUpResponse
-// @Failure 400 {object} gin.H{"error": string}
-// @Failure 401 {object} gin.H{"error": string}
-// @Failure 404 {object} gin.H{"error": string}
-// @Failure 500 {object} gin.H{"error": string}
-// @Router /admin/draws/invoke-runner-up [post]
-func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
-	var req InvokeRunnerUpRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format: " + err.Error()})
+// RunnerUpHandler handles operations related to runner-ups
+type RunnerUpHandler struct {
+	db             *gorm.DB
+	drawDataService services.DrawDataService
+	auditService    *services.AuditService
+}
+
+// NewRunnerUpHandler creates a new RunnerUpHandler
+func NewRunnerUpHandler(db *gorm.DB, drawDataService services.DrawDataService, auditService *services.AuditService) *RunnerUpHandler {
+	return &RunnerUpHandler{
+		db:             db,
+		drawDataService: drawDataService,
+		auditService:    auditService,
+	}
+}
+
+// ListRunnerUps handles listing all runner-ups
+func (h *RunnerUpHandler) ListRunnerUps(c *gin.Context) {
+	// Parse query parameters
+	drawIDStr := c.Query("draw_id")
+	prizeIDStr := c.Query("prize_id")
+	status := c.Query("status")
+
+	// Build query
+	query := h.db.Model(&models.RunnerUp{}).
+		Preload("Draw").
+		Preload("Prize")
+
+	// Apply filters
+	if drawIDStr != "" {
+		drawID, err := uuid.Parse(drawIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid draw ID format"})
+			return
+		}
+		query = query.Where("draw_id = ?", drawID)
+	}
+
+	if prizeIDStr != "" {
+		prizeID, err := uuid.Parse(prizeIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prize ID format"})
+			return
+		}
+		query = query.Where("prize_id = ?", prizeID)
+	}
+
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+
+	// Get runner-ups
+	var runnerUps []models.RunnerUp
+	if err := query.Find(&runnerUps).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve runner-ups: " + err.Error()})
 		return
 	}
 
-	// Validate request
-	if req.WinnerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "winner_id is required"})
-		return
-	}
+	// Return response
+	c.JSON(http.StatusOK, runnerUps)
+}
 
-	if req.Reason == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "reason is required"})
-		return
-	}
-
-	// Parse winner ID
-	winnerID, err := uuid.Parse(req.WinnerID)
+// GetRunnerUp handles retrieving a single runner-up by ID
+func (h *RunnerUpHandler) GetRunnerUp(c *gin.Context) {
+	runnerUpIDStr := c.Param("id")
+	runnerUpID, err := uuid.Parse(runnerUpIDStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid winner_id format"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid runner-up ID format"})
 		return
 	}
 
-	// Get the current winner
-	var winner models.DrawWinner
-	if err := config.DB.First(&winner, "id = ?", winnerID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Winner not found"})
+	var runnerUp models.RunnerUp
+	if err := h.db.Preload("Draw").
+		Preload("Prize").
+		First(&runnerUp, runnerUpID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Runner-up not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve runner-up: " + err.Error()})
+		}
 		return
 	}
 
-	// Check if winner is already forfeited
-	if winner.Status == "Forfeited" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Winner has already forfeited"})
+	// Return response
+	c.JSON(http.StatusOK, runnerUp)
+}
+
+// UpdateRunnerUpStatus handles updating the status of a runner-up
+func (h *RunnerUpHandler) UpdateRunnerUpStatus(c *gin.Context) {
+	runnerUpIDStr := c.Param("id")
+	runnerUpID, err := uuid.Parse(runnerUpIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid runner-up ID format"})
 		return
 	}
 
-	// Get the draw
-	var draw models.Draw
-	if err := config.DB.First(&draw, "id = ?", winner.DrawID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Draw not found"})
+	// Parse request body
+	var req struct {
+		Status string `json:"status" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
 		return
 	}
 
-	// Begin transaction
-	tx := config.DB.Begin()
-
-	// Update current winner status to forfeited
-	winner.Status = "Forfeited"
-	winner.Notes = req.Reason
-	if err := tx.Save(&winner).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update winner status: " + err.Error()})
+	// Validate status
+	validStatuses := map[string]bool{
+		"pending":   true,
+		"notified":  true,
+		"promoted":  true,
+		"skipped":   true,
+	}
+	if !validStatuses[req.Status] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status. Valid values: pending, notified, promoted, skipped"})
 		return
 	}
 
-	// Find the next eligible runner-up for this prize tier
-	var runnerUp models.DrawWinner
-	if err := tx.Where("draw_id = ? AND prize_tier_id = ? AND is_runner_up = ? AND status = ?",
-		winner.DrawID, winner.PrizeTierID, true, "PendingInvocation").
-		Order("runner_up_rank ASC").
-		First(&runnerUp).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusNotFound, gin.H{"error": "No eligible runner-up found for this prize"})
+	// Get admin ID from context
+	adminIDStr, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Admin user ID not found in token"})
+		return
+	}
+	adminID, err := uuid.Parse(adminIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid admin user ID format in token"})
 		return
 	}
 
-	// Update runner-up to winner status
-	runnerUp.IsRunnerUp = false
-	runnerUp.Status = "PendingNotification"
-	if err := tx.Save(&runnerUp).Error; err != nil {
-		tx.Rollback()
+	// Get runner-up record
+	var runnerUp models.RunnerUp
+	if err := h.db.First(&runnerUp, runnerUpID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Runner-up not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve runner-up: " + err.Error()})
+		}
+		return
+	}
+
+	// Update status
+	updates := map[string]interface{}{
+		"status": req.Status,
+	}
+
+	// Add status-specific fields
+	switch req.Status {
+	case "notified":
+		updates["notified_at"] = time.Now()
+		updates["notified_by_admin_id"] = adminID
+	case "promoted":
+		updates["promoted_at"] = time.Now()
+		updates["promoted_by_admin_id"] = adminID
+	case "skipped":
+		updates["skipped_at"] = time.Now()
+		updates["skipped_by_admin_id"] = adminID
+	}
+
+	if err := h.db.Model(&runnerUp).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update runner-up status: " + err.Error()})
 		return
 	}
 
-	// Create audit log for this action
-	userID, _ := c.Get("userID")
-	auditDetails := map[string]interface{}{
-		"winner_id":      winner.ID.String(),
-		"runner_up_id":   runnerUp.ID.String(),
-		"draw_id":        draw.ID.String(),
-		"prize_tier_id":  winner.PrizeTierID,
-		"reason":         req.Reason,
-		"forfeited_msisdn": winner.MSISDN,
-		"promoted_msisdn":  runnerUp.MSISDN,
+	// Log audit event
+	auditEvent := models.AuditLog{
+		AdminID:     adminID,
+		Action:      "update_runner_up_status",
+		EntityType:  "runner_up",
+		EntityID:    runnerUp.ID.String(),
+		Description: fmt.Sprintf("Updated runner-up status to %s for MSISDN %s", req.Status, runnerUp.MSISDN),
 	}
-	
-	detailsJSON, _ := json.Marshal(auditDetails)
-	
-	auditLog := models.SystemAuditLog{
-		UserID:        userID.(uuid.UUID),
-		ActionType:    "INVOKE_RUNNER_UP",
-		ResourceType:  "DRAW_WINNER",
-		ResourceID:    winner.ID.String(),
-		Description:   fmt.Sprintf("Invoked runner-up for forfeited winner in draw %s", draw.ID.String()),
-		IPAddress:     c.ClientIP(),
-		UserAgent:     c.Request.UserAgent(),
-		ActionDetails: string(detailsJSON),
-	}
-	
-	if err := tx.Create(&auditLog).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create audit log: " + err.Error()})
-		return
-	}
+	h.auditService.LogAuditEvent(auditEvent)
 
-	// Commit transaction
-	if err := tx.Commit().Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction: " + err.Error()})
-		return
-	}
-
-	// Try to send notification to the new winner
-	go func() {
-		// This would be implemented to use the SMS gateway
-		// For now, just log the attempt
-		fmt.Printf("Notification would be sent to new winner %s for prize %s\n", 
-			runnerUp.MSISDN, runnerUp.PrizeTierID)
-	}()
-
-	// Return success response
-	c.JSON(http.StatusOK, InvokeRunnerUpResponse{
-		Message: "Runner-up successfully invoked",
-		ForfeitedWinner: WinnerResponse{
-			ID:     winner.ID.String(),
-			MSISDN: winner.MSISDN,
-			Status: winner.Status,
-		},
-		PromotedRunnerUp: WinnerResponse{
-			ID:     runnerUp.ID.String(),
-			MSISDN: runnerUp.MSISDN,
-			Status: runnerUp.Status,
-		},
+	// Return response
+	c.JSON(http.StatusOK, gin.H{
+		"message":   "Runner-up status updated successfully",
+		"runner_up": runnerUp,
 	})
-}
-
-// InvokeRunnerUpRequest defines the request structure for invoking a runner-up
-type InvokeRunnerUpRequest struct {
-	WinnerID string `json:"winner_id" binding:"required"`
-	Reason   string `json:"reason" binding:"required"`
-}
-
-// InvokeRunnerUpResponse defines the response structure for invoking a runner-up
-type InvokeRunnerUpResponse struct {
-	Message          string         `json:"message"`
-	ForfeitedWinner  WinnerResponse `json:"forfeited_winner"`
-	PromotedRunnerUp WinnerResponse `json:"promoted_runner_up"`
-}
-
-// WinnerResponse defines the winner data in responses
-type WinnerResponse struct {
-	ID     string `json:"id"`
-	MSISDN string `json:"msisdn"`
-	Status string `json:"status"`
 }

@@ -1,78 +1,127 @@
 package admin
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/services"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
-// GetEligibilityStats godoc
-// @Summary Get eligibility statistics for a draw
-// @Description Retrieves the number of eligible participants and total entries for a draw on a specific date
-// @Tags Draws
-// @Accept json
-// @Produce json
-// @Param Authorization header string true "Bearer token"
-// @Param drawDate query string true "Draw date in YYYY-MM-DD format"
-// @Param prize_structure_id query string false "Prize structure ID (UUID)"
-// @Success 200 {object} services.DrawEligibilityStats
-// @Failure 400 {object} gin.H{"error": string}
-// @Failure 401 {object} gin.H{"error": string}
-// @Failure 500 {object} gin.H{"error": string}
-// @Router /admin/draws/eligibility-stats [get]
-func (h *DrawHandler) GetEligibilityStats(c *gin.Context) {
-	drawDateStr := c.Query("drawDate")
-	if drawDateStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "drawDate query parameter is required"})
+// DrawEligibilityHandler handles operations related to draw eligibility
+type DrawEligibilityHandler struct {
+	db             *gorm.DB
+	drawDataService services.DrawDataService
+}
+
+// NewDrawEligibilityHandler creates a new DrawEligibilityHandler
+func NewDrawEligibilityHandler(db *gorm.DB, drawDataService services.DrawDataService) *DrawEligibilityHandler {
+	return &DrawEligibilityHandler{
+		db:             db,
+		drawDataService: drawDataService,
+	}
+}
+
+// GetDrawEligibilityStats returns statistics about eligible participants for a draw
+func (h *DrawEligibilityHandler) GetDrawEligibilityStats(c *gin.Context) {
+	// Parse date parameter
+	dateStr := c.Query("date")
+	var targetDate time.Time
+	var err error
+
+	if dateStr == "" {
+		// Default to today if no date provided
+		targetDate = time.Now()
+	} else {
+		targetDate, err = time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format. Use YYYY-MM-DD"})
+			return
+		}
+	}
+
+	// Get day of week for the target date
+	dayOfWeek := targetDate.Weekday().String()[:3] // Mon, Tue, etc.
+
+	// Get eligible prize structures for this day
+	var eligiblePrizeStructures []models.PrizeStructure
+	dayTypeConditions := []string{"all"}
+
+	// Add specific day type based on weekday/weekend
+	if dayOfWeek == "Sat" || dayOfWeek == "Sun" {
+		dayTypeConditions = append(dayTypeConditions, "weekend")
+	} else {
+		dayTypeConditions = append(dayTypeConditions, "weekday")
+	}
+
+	// Add custom day type that might include this specific day
+	dayTypeConditions = append(dayTypeConditions, "custom")
+
+	// Query for eligible prize structures
+	if err := h.db.Where("is_active = ? AND (valid_from IS NULL OR valid_from <= ?) AND (valid_to IS NULL OR valid_to >= ?) AND day_type IN ?",
+		true, targetDate, targetDate, dayTypeConditions).
+		Preload("Prizes").
+		Find(&eligiblePrizeStructures).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve eligible prize structures: " + err.Error()})
 		return
 	}
 
-	drawDate, err := time.Parse("2006-01-02", drawDateStr)
+	// Filter custom day types to only include those that match this specific day
+	var filteredPrizeStructures []models.PrizeStructure
+	for _, ps := range eligiblePrizeStructures {
+		if ps.DayType != "custom" || contains(getApplicableDaysFromDayType(ps.DayType), dayOfWeek) {
+			filteredPrizeStructures = append(filteredPrizeStructures, ps)
+		}
+	}
+
+	// Get eligible participant count from draw data service
+	eligibleCount, err := h.drawDataService.GetEligibleParticipantCount(targetDate)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid drawDate format. Expected YYYY-MM-DD"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve eligible participant count: " + err.Error()})
 		return
 	}
 
-	prizeStructureID := c.Query("prize_structure_id")
-	if prizeStructureID == "" {
-		// If no prize structure ID is provided, we'll use a default or the first active one
-		// For now, just return an error
-		c.JSON(http.StatusBadRequest, gin.H{"error": "prize_structure_id query parameter is required"})
-		return
+	// Construct response
+	response := gin.H{
+		"date":                   targetDate.Format("2006-01-02"),
+		"day_of_week":            dayOfWeek,
+		"eligible_participants":  eligibleCount,
+		"eligible_prize_structures": filteredPrizeStructures,
 	}
 
-	participants, err := h.DrawDataService.GetEligibleParticipants(drawDate, prizeStructureID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get eligible participants: " + err.Error()})
-		return
+	c.JSON(http.StatusOK, response)
+}
+
+// Helper function to check if a slice contains a string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
 	}
+	return false
+}
 
-	// Calculate total points
-	totalPoints := 0
-	for _, p := range participants {
-		totalPoints += p.TotalPoints
+// getApplicableDaysFromDayType converts a day_type string to a slice of day names
+// This is a duplicate of the function in prize_structure_handlers.go and should be moved to a common utility package
+func getApplicableDaysFromDayType(dayType string) []string {
+	switch dayType {
+	case "all":
+		return []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+	case "weekday":
+		return []string{"Mon", "Tue", "Wed", "Thu", "Fri"}
+	case "weekend":
+		return []string{"Sat", "Sun"}
+	case "custom":
+		// For custom, we would need to retrieve the actual days from somewhere
+		// For now, return an empty slice
+		return []string{}
+	default:
+		return []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"} // Default to all days
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"totalEligibleMSISDNs": len(participants),
-		"totalEntries":         totalPoints,
-	})
-}
-
-// DrawEligibilityStats defines the structure for the eligibility stats API response
-type DrawEligibilityStats struct {
-	TotalEligibleMSISDNs int `json:"totalEligibleMSISDNs"`
-	TotalEntries         int `json:"totalEntries"`
-}
-
-// DrawHandler handles draw related requests
-type DrawHandler struct {
-	DrawDataService services.DrawDataService
-}
-
-// NewDrawHandler creates a new DrawHandler
-func NewDrawHandler(dds services.DrawDataService) *DrawHandler {
-	return &DrawHandler{DrawDataService: dds}
 }

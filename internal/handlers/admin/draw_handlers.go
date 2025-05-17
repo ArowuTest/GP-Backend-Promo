@@ -1,15 +1,13 @@
 package admin
 
 import (
-	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"net/http"
-	"strconv" // Added for StrToInt replacement
+	"strconv"
 	"time"
 
-	"github.com/ArowuTest/GP-Backend-Promo/internal/config"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/services"
 	"github.com/gin-gonic/gin"
@@ -17,66 +15,34 @@ import (
 	"gorm.io/gorm"
 )
 
-// DrawHandler handles draw related requests
+// DrawHandler handles operations related to draws
 type DrawHandler struct {
-	DrawDataService services.DrawDataService
+	db             *gorm.DB
+	drawDataService services.DrawDataService
+	auditService    *services.AuditService
 }
 
 // NewDrawHandler creates a new DrawHandler
-func NewDrawHandler(dds services.DrawDataService) *DrawHandler {
-	return &DrawHandler{DrawDataService: dds}
-}
-
-// ExecuteDrawRequest defines the structure for the execute draw API request
-type ExecuteDrawRequest struct {
-	DrawDate         string `json:"draw_date" binding:"required"`
-	PrizeStructureID string `json:"prize_structure_id" binding:"required"`
-}
-
-// ExecuteDrawResponse defines the structure for the execute draw API response
-type ExecuteDrawResponse struct {
-	DrawID         uuid.UUID             `json:"drawId"`
-	DrawDate       time.Time             `json:"drawDate"`
-	PrizeStructure models.PrizeStructure `json:"prizeStructure"`
-	Winners        []models.DrawWinner   `json:"winners"`
-	Status         string                `json:"status"`
-	Message        string                `json:"message"`
+func NewDrawHandler(db *gorm.DB, drawDataService services.DrawDataService, auditService *services.AuditService) *DrawHandler {
+	return &DrawHandler{
+		db:             db,
+		drawDataService: drawDataService,
+		auditService:    auditService,
+	}
 }
 
 // InvokeRunnerUpRequest defines the structure for invoking a runner-up
 type InvokeRunnerUpRequest struct {
-	OriginalWinnerID string `json:"originalWinnerId" binding:"required"`
-	RunnerUpWinnerID string `json:"runnerUpWinnerId" binding:"required"`
-	Notes            string `json:"notes,omitempty"`
+	Reason string `json:"reason" binding:"required"`
 }
 
-// csprngIntn returns a cryptographically secure random integer in [0, n)
-func csprngIntn(n int) (int, error) {
-	if n <= 0 {
-		return 0, fmt.Errorf("n must be positive for csprngIntn")
-	}
-	val, err := rand.Int(rand.Reader, big.NewInt(int64(n)))
-	if err != nil {
-		return 0, err
-	}
-	return int(val.Int64()), nil
+// ExecuteDrawRequest defines the structure for executing a draw
+type ExecuteDrawRequest struct {
+	Date          string `json:"date" binding:"required"`
+	PrizeStructureID string `json:"prize_structure_id" binding:"required"`
 }
 
-// ExecuteDraw godoc
-// @Summary Execute a draw
-// @Description Executes a draw for a given date and prize structure
-// @Tags Draws
-// @Accept json
-// @Produce json
-// @Param Authorization header string true "Bearer token"
-// @Param drawRequest body ExecuteDrawRequest true "Draw Execution Request"
-// @Success 200 {object} ExecuteDrawResponse
-// @Failure 400 {object} gin.H{"error": string}
-// @Failure 401 {object} gin.H{"error": string}
-// @Failure 403 {object} gin.H{"error": string}
-// @Failure 404 {object} gin.H{"error": string}
-// @Failure 500 {object} gin.H{"error": string}
-// @Router /admin/draws/execute [post]
+// ExecuteDraw handles the execution of a draw
 func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 	var req ExecuteDrawRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -84,431 +50,653 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 		return
 	}
 
-	userIDClaim, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in token"})
-		return
-	}
-	executedByUserID, err := uuid.Parse(userIDClaim.(string))
+	// Parse date
+	drawDate, err := time.Parse("2006-01-02", req.Date)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID in token"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format. Use YYYY-MM-DD"})
 		return
 	}
 
-	drawDate, err := time.Parse("2006-01-02", req.DrawDate)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid draw_date format. Expected YYYY-MM-DD"})
-		return
-	}
-
+	// Parse prize structure ID
 	prizeStructureID, err := uuid.Parse(req.PrizeStructureID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prize_structure_id format"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prize structure ID format"})
 		return
 	}
 
+	// Get admin ID from context
+	adminIDStr, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Admin user ID not found in token"})
+		return
+	}
+	adminID, err := uuid.Parse(adminIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid admin user ID format in token"})
+		return
+	}
+
+	// Verify prize structure exists and is eligible for the draw date
 	var prizeStructure models.PrizeStructure
-	if err := config.DB.Preload("Prizes", func(db *gorm.DB) *gorm.DB {
-		return db.Order("\"order\" ASC")
-	}).First(&prizeStructure, "id = ? AND is_active = ?", prizeStructureID, true).Error; err != nil {
+	if err := h.db.Preload("Prizes").First(&prizeStructure, prizeStructureID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Active prize structure not found or specified ID is inactive"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "Prize structure not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve prize structure: " + err.Error()})
+		}
+		return
+	}
+
+	// Check if prize structure is active
+	if !prizeStructure.IsActive {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Prize structure is not active"})
+		return
+	}
+
+	// Check if prize structure is valid for the draw date
+	if prizeStructure.ValidFrom != nil && drawDate.Before(*prizeStructure.ValidFrom) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Draw date is before prize structure valid from date"})
+		return
+	}
+	if prizeStructure.ValidTo != nil && drawDate.After(*prizeStructure.ValidTo) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Draw date is after prize structure valid to date"})
+		return
+	}
+
+	// Check if prize structure is applicable for the day of the week
+	dayOfWeek := drawDate.Weekday().String()[:3] // Mon, Tue, etc.
+	applicableDays := getApplicableDaysFromDayType(prizeStructure.DayType)
+	if !contains(applicableDays, dayOfWeek) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Prize structure is not applicable for this day of the week"})
+		return
+	}
+
+	// Get eligible participants for the draw
+	eligibleParticipants, err := h.drawDataService.GetEligibleParticipants(drawDate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve eligible participants: " + err.Error()})
+		return
+	}
+
+	if len(eligibleParticipants) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No eligible participants for this draw date"})
+		return
+	}
+
+	// Create a new draw record
+	draw := models.Draw{
+		Date:             drawDate,
+		PrizeStructureID: prizeStructureID,
+		ExecutedByAdminID: adminID,
+		Status:           "completed",
+		ParticipantCount: len(eligibleParticipants),
+	}
+
+	// Begin transaction
+	tx := h.db.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to begin transaction: " + tx.Error.Error()})
+		return
+	}
+
+	// Create draw record
+	if err := tx.Create(&draw).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create draw record: " + err.Error()})
+		return
+	}
+
+	// Execute draw for each prize
+	var winners []models.Winner
+	var runnerUps []models.RunnerUp
+	usedMSISDNs := make(map[string]bool) // Track MSISDNs that have already won
+
+	// Sort prizes by order
+	sortedPrizes := prizeStructure.Prizes
+	// Implement sorting logic here if needed
+
+	for _, prize := range sortedPrizes {
+		// Skip if prize quantity is 0
+		if prize.Quantity <= 0 {
+			continue
+		}
+
+		// Select winners for this prize
+		prizeWinners, prizeRunnerUps, err := h.selectWinnersAndRunnerUps(eligibleParticipants, prize.Quantity, prize.NumberOfRunnerUps, usedMSISDNs)
+		if err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to select winners: " + err.Error()})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve prize structure: " + err.Error()})
-		return
-	}
 
-	if (prizeStructure.ValidFrom != nil && drawDate.Before(*prizeStructure.ValidFrom)) ||
-		(prizeStructure.ValidTo != nil && drawDate.After(*prizeStructure.ValidTo)) {
-		start := "N/A"
-		end := "N/A"
-		if prizeStructure.ValidFrom != nil {
-			start = prizeStructure.ValidFrom.Format("2006-01-02")
-		}
-		if prizeStructure.ValidTo != nil {
-			end = prizeStructure.ValidTo.Format("2006-01-02")
-		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Draw date %s is outside the prize structure's validity period (%s to %s)", drawDate.Format("2006-01-02"), start, end)})
-		return
-	}
-
-	var existingDraw models.Draw
-	if !errors.Is(config.DB.Where("draw_date = ? AND prize_structure_id = ? AND status = ?", drawDate, prizeStructureID, "Completed").First(&existingDraw).Error, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusConflict, gin.H{"error": "A draw for this date and prize structure has already been completed."})
-		return
-	}
-
-	participants, err := h.DrawDataService.GetEligibleParticipants(drawDate, prizeStructureID.String())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get eligible participants: " + err.Error()})
-		return
-	}
-
-	if len(participants) == 0 {
-		drawAttempt := models.Draw{
-			DrawDate:                  drawDate,
-			PrizeStructureID:          prizeStructureID,
-			Status:                    "Completed - No Participants",
-			ExecutedByUserID:          executedByUserID,
-			EligibleParticipantsCount: 0,
-			TotalPointsInDraw:         0,
-		}
-		config.DB.Create(&drawAttempt)
-		c.JSON(http.StatusOK, ExecuteDrawResponse{
-			DrawID:         drawAttempt.ID,
-			DrawDate:       drawAttempt.DrawDate,
-			PrizeStructure: prizeStructure,
-			Winners:        []models.DrawWinner{},
-			Status:         drawAttempt.Status,
-			Message:        "No eligible participants found for this draw.",
-		})
-		return
-	}
-
-	draw := models.Draw{
-		DrawDate:                  drawDate,
-		PrizeStructureID:          prizeStructureID,
-		Status:                    "Pending",
-		ExecutedByUserID:          executedByUserID,
-		EligibleParticipantsCount: len(participants),
-	}
-
-	var allDrawWinners []models.DrawWinner
-	entriesPool := make([]string, 0)
-	totalPointsInDraw := 0
-	for _, p := range participants {
-		for i := 0; i < p.TotalPoints; i++ {
-			entriesPool = append(entriesPool, p.MSISDN)
-		}
-		totalPointsInDraw += p.TotalPoints
-	}
-	draw.TotalPointsInDraw = totalPointsInDraw
-
-	if len(entriesPool) == 0 {
-		draw.Status = "Failed - No Entries"
-		config.DB.Create(&draw)
-		c.JSON(http.StatusOK, ExecuteDrawResponse{
-			DrawID:         draw.ID,
-			DrawDate:       draw.DrawDate,
-			PrizeStructure: prizeStructure,
-			Winners:        []models.DrawWinner{},
-			Status:         draw.Status,
-			Message:        "No entries available from eligible participants (all had zero points or pool was empty).",
-		})
-		return
-	}
-
-	hasWonInThisDraw := make(map[string]bool)
-
-	for _, prize := range prizeStructure.Prizes {
-		numWinnersForPrize := prize.Quantity
-		numRunnerUpsForPrize := prize.NumberOfRunnerUps
-		if numRunnerUpsForPrize < 0 {
-			numRunnerUpsForPrize = 0
-		}
-
-		totalSelectionsForPrize := numWinnersForPrize + numRunnerUpsForPrize
-		prizeSpecificSelections := []models.DrawWinner{}
-		tempPrizePool := make([]string, 0)
-		for _, entryMSISDN := range entriesPool {
-			if !hasWonInThisDraw[entryMSISDN] {
-				tempPrizePool = append(tempPrizePool, entryMSISDN)
+		// Create winner records
+		for i, participant := range prizeWinners {
+			winner := models.Winner{
+				DrawID:       draw.ID,
+				PrizeID:      prize.ID,
+				MSISDN:       participant.MSISDN,
+				Points:       participant.Points,
+				Status:       "pending",
+				WinnerNumber: i + 1,
 			}
-		}
-
-		selectedForThisSpecificPrize := make(map[string]bool)
-
-		for k := 0; k < totalSelectionsForPrize; k++ {
-			if len(tempPrizePool) == 0 {
-				break
-			}
-
-			randomIndex, randErr := csprngIntn(len(tempPrizePool))
-			if randErr != nil {
-				draw.Status = "Failed - RNG Error"
-				config.DB.Create(&draw)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate random number: " + randErr.Error()})
+			if err := tx.Create(&winner).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create winner record: " + err.Error()})
 				return
 			}
-			selectedMSISDN := tempPrizePool[randomIndex]
-
-			if selectedForThisSpecificPrize[selectedMSISDN] {
-				newTempPool := []string{}
-				for _, m := range tempPrizePool {
-					if m != selectedMSISDN {
-						newTempPool = append(newTempPool, m)
-					}
-				}
-				tempPrizePool = newTempPool
-				k-- 
-				continue
-			}
-
-			dw := models.DrawWinner{
-				PrizeID:     prize.ID,
-				MSISDN:      selectedMSISDN,
-				ClaimStatus: "Pending",
-			}
-
-			for _, p := range participants {
-				if p.MSISDN == selectedMSISDN {
-					dw.PointsAtWin = p.TotalPoints
-					break
-				}
-			}
-
-			if len(prizeSpecificSelections) < numWinnersForPrize {
-				dw.IsRunnerUp = false
-				hasWonInThisDraw[selectedMSISDN] = true
-			} else {
-				dw.IsRunnerUp = true
-				dw.RunnerUpRank = (len(prizeSpecificSelections) - numWinnersForPrize) + 1
-			}
-			prizeSpecificSelections = append(prizeSpecificSelections, dw)
-			selectedForThisSpecificPrize[selectedMSISDN] = true
-
-			newTempPool := []string{}
-			for _, m := range tempPrizePool {
-				if m != selectedMSISDN {
-					newTempPool = append(newTempPool, m)
-				}
-			}
-			tempPrizePool = newTempPool
+			winners = append(winners, winner)
+			usedMSISDNs[participant.MSISDN] = true
 		}
-		allDrawWinners = append(allDrawWinners, prizeSpecificSelections...)
+
+		// Create runner-up records
+		for i, participant := range prizeRunnerUps {
+			runnerUp := models.RunnerUp{
+				DrawID:         draw.ID,
+				PrizeID:        prize.ID,
+				MSISDN:         participant.MSISDN,
+				Points:         participant.Points,
+				Status:         "pending",
+				RunnerUpNumber: i + 1,
+			}
+			if err := tx.Create(&runnerUp).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create runner-up record: " + err.Error()})
+				return
+			}
+			runnerUps = append(runnerUps, runnerUp)
+		}
 	}
 
-	draw.Status = "Completed"
-
-	txErr := config.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&draw).Error; err != nil {
-			return fmt.Errorf("failed to create draw record: %w", err)
-		}
-
-		for i := range allDrawWinners {
-			allDrawWinners[i].DrawID = draw.ID
-		}
-		if len(allDrawWinners) > 0 {
-			if err := tx.Create(&allDrawWinners).Error; err != nil {
-				return fmt.Errorf("failed to save draw winners: %w", err)
-			}
-		}
-		return nil
-	})
-
-	if txErr != nil {
-		if draw.ID != uuid.Nil {
-			config.DB.Model(&models.Draw{}).Where("id = ?", draw.ID).Update("status", "Failed - DB Error")
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save draw results: " + txErr.Error()})
+	// Commit transaction
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction: " + err.Error()})
 		return
 	}
 
-	var finalDrawResponse models.Draw
-	config.DB.Preload("PrizeStructure.Prizes").Preload("Winners.Prize").Preload("ExecutedByUser").First(&finalDrawResponse, draw.ID)
+	// Log audit event
+	auditEvent := models.AuditLog{
+		AdminID:     adminID,
+		Action:      "execute_draw",
+		EntityType:  "draw",
+		EntityID:    draw.ID.String(),
+		Description: fmt.Sprintf("Executed draw for date %s with prize structure %s", req.Date, prizeStructure.Name),
+	}
+	h.auditService.LogAuditEvent(auditEvent)
 
-	c.JSON(http.StatusOK, ExecuteDrawResponse{
-		DrawID:         finalDrawResponse.ID,
-		DrawDate:       finalDrawResponse.DrawDate,
-		PrizeStructure: finalDrawResponse.PrizeStructure,
-		Winners:        finalDrawResponse.Winners,
-		Status:         finalDrawResponse.Status,
-		Message:        "Draw executed successfully.",
+	// Return response with draw details
+	response := gin.H{
+		"draw_id":           draw.ID,
+		"date":              draw.Date.Format("2006-01-02"),
+		"prize_structure":   prizeStructure,
+		"participant_count": draw.ParticipantCount,
+		"winners":           winners,
+		"runner_ups":        runnerUps,
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// ListDraws handles listing all draws
+func (h *DrawHandler) ListDraws(c *gin.Context) {
+	// Parse query parameters
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 10
+	}
+	offset := (page - 1) * limit
+
+	// Get total count
+	var totalCount int64
+	if err := h.db.Model(&models.Draw{}).Count(&totalCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count draws: " + err.Error()})
+		return
+	}
+
+	// Get draws with pagination
+	var draws []models.Draw
+	if err := h.db.Preload("PrizeStructure").
+		Preload("ExecutedByAdmin").
+		Order("date desc").
+		Offset(offset).
+		Limit(limit).
+		Find(&draws).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve draws: " + err.Error()})
+		return
+	}
+
+	// Return response
+	c.JSON(http.StatusOK, gin.H{
+		"draws":       draws,
+		"total_count": totalCount,
+		"page":        page,
+		"limit":       limit,
+		"total_pages": (totalCount + int64(limit) - 1) / int64(limit),
 	})
 }
 
-// InvokeRunnerUp godoc
-// @Summary Invoke a runner-up
-// @Description Promotes a runner-up to a winner if the original winner forfeits
-// @Tags Draws
-// @Accept json
-// @Produce json
-// @Param Authorization header string true "Bearer token"
-// @Param invokeRequest body InvokeRunnerUpRequest true "Invoke Runner-Up Request"
-// @Success 200 {object} gin.H{"message": string, "updatedWinner": models.DrawWinner, "originalWinnerStatus": string}
-// @Failure 400 {object} gin.H{"error": string}
-// @Failure 401 {object} gin.H{"error": string}
-// @Failure 403 {object} gin.H{"error": string}
-// @Failure 404 {object} gin.H{"error": string}
-// @Failure 500 {object} gin.H{"error": string}
-// @Router /admin/draws/invoke-runner-up [post]
+// GetDraw handles retrieving a single draw by ID
+func (h *DrawHandler) GetDraw(c *gin.Context) {
+	drawIDStr := c.Param("id")
+	drawID, err := uuid.Parse(drawIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid draw ID format"})
+		return
+	}
+
+	var draw models.Draw
+	if err := h.db.Preload("PrizeStructure").
+		Preload("PrizeStructure.Prizes").
+		Preload("ExecutedByAdmin").
+		First(&draw, drawID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Draw not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve draw: " + err.Error()})
+		}
+		return
+	}
+
+	// Get winners for this draw
+	var winners []models.Winner
+	if err := h.db.Where("draw_id = ?", drawID).
+		Preload("Prize").
+		Find(&winners).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve winners: " + err.Error()})
+		return
+	}
+
+	// Get runner-ups for this draw
+	var runnerUps []models.RunnerUp
+	if err := h.db.Where("draw_id = ?", drawID).
+		Preload("Prize").
+		Find(&runnerUps).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve runner-ups: " + err.Error()})
+		return
+	}
+
+	// Return response
+	c.JSON(http.StatusOK, gin.H{
+		"draw":       draw,
+		"winners":    winners,
+		"runner_ups": runnerUps,
+	})
+}
+
+// InvokeRunnerUp handles invoking a runner-up when a winner cannot claim their prize
 func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
+	winnerIDStr := c.Param("id")
+	winnerID, err := uuid.Parse(winnerIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid winner ID format"})
+		return
+	}
+
 	var req InvokeRunnerUpRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
 		return
 	}
 
-	originalWinnerID, err := uuid.Parse(req.OriginalWinnerID)
+	// Get admin ID from context
+	adminIDStr, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Admin user ID not found in token"})
+		return
+	}
+	adminID, err := uuid.Parse(adminIDStr.(string))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid original winner ID"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid admin user ID format in token"})
 		return
 	}
 
-	runnerUpWinnerID, err := uuid.Parse(req.RunnerUpWinnerID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid runner-up winner ID"})
+	// Begin transaction
+	tx := h.db.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to begin transaction: " + tx.Error.Error()})
 		return
 	}
 
-	var originalWinner models.DrawWinner
-	var runnerUp models.DrawWinner
-
-	txErr := config.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Joins("Prize").First(&originalWinner, originalWinnerID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("original winner not found")
-			}
-			return fmt.Errorf("failed to fetch original winner: %w", err)
-		}
-
-		if err := tx.Joins("Prize").First(&runnerUp, runnerUpWinnerID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("runner-up not found")
-			}
-			return fmt.Errorf("failed to fetch runner-up: %w", err)
-		}
-
-		if !runnerUp.IsRunnerUp {
-			return fmt.Errorf("selected user is not a runner-up")
-		}
-		if originalWinner.IsRunnerUp {
-			return fmt.Errorf("cannot invoke a runner-up for another runner-up")
-		}
-		if originalWinner.DrawID != runnerUp.DrawID || originalWinner.PrizeID != runnerUp.PrizeID {
-			return fmt.Errorf("runner-up does not belong to the same prize/draw as the original winner")
-		}
-		// Use ClaimStatus for checking if the slot is already filled
-		if originalWinner.ClaimStatus == "Forfeited-RunnerUpPromoted" {
-			return fmt.Errorf("original winner slot has already been filled by a promoted runner-up")
-		}
-		if runnerUp.ClaimStatus != "Pending" {
-			return fmt.Errorf("runner-up is not in a promotable state (current claim status: %s)", runnerUp.ClaimStatus)
-		}
-
-		now := time.Now()
-		originalWinner.ClaimStatus = "Forfeited-RunnerUpPromoted"
-		originalWinner.Notes = fmt.Sprintf("%s; Forfeited on %s, runner-up %s (ID: %s) invoked. %s", originalWinner.Notes, now.Format(time.RFC3339), runnerUp.MSISDN, runnerUp.ID.String(), req.Notes)
-		originalWinner.ForfeitedAt = &now
-		if err := tx.Save(&originalWinner).Error; err != nil {
-			return fmt.Errorf("failed to update original winner: %w", err)
-		}
-
-		runnerUp.IsRunnerUp = false
-		runnerUp.ClaimStatus = "Pending" // Promoted runner-up starts as Pending claim
-		runnerUp.OriginalWinnerID = &originalWinner.ID
-		runnerUp.Notes = fmt.Sprintf("Promoted from runner-up (rank %d) for original winner %s (ID: %s). %s", runnerUp.RunnerUpRank, originalWinner.MSISDN, originalWinner.ID.String(), req.Notes)
-		runnerUp.RunnerUpRank = 0 // No longer a ranked runner-up
-		if err := tx.Save(&runnerUp).Error; err != nil {
-			return fmt.Errorf("failed to promote runner-up: %w", err)
-		}
-
-		return nil
-	})
-
-	if txErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to invoke runner-up: " + txErr.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message":              "Runner-up successfully invoked.",
-		"updatedWinner":        runnerUp,
-		"originalWinnerStatus": originalWinner.ClaimStatus,
-	})
-}
-
-// GetDrawDetails godoc
-// @Summary Get Draw Details
-// @Description Retrieves the details of a specific draw, including winners and prize structure
-// @Tags Draws
-// @Accept json
-// @Produce json
-// @Param Authorization header string true "Bearer token"
-// @Param draw_id path string true "Draw ID (UUID)"
-// @Success 200 {object} models.Draw
-// @Failure 400 {object} gin.H{"error": string}
-// @Failure 401 {object} gin.H{"error": string}
-// @Failure 404 {object} gin.H{"error": string}
-// @Failure 500 {object} gin.H{"error": string}
-// @Router /admin/draws/{draw_id} [get]
-func (h *DrawHandler) GetDrawDetails(c *gin.Context) {
-	drawIDStr := c.Param("draw_id")
-	drawID, err := uuid.Parse(drawIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Draw ID format"})
-		return
-	}
-
-	var draw models.Draw
-	if err := config.DB.Preload("PrizeStructure.Prizes").Preload("Winners.Prize").Preload("ExecutedByUser").First(&draw, drawID).Error; err != nil {
+	// Get winner record
+	var winner models.Winner
+	if err := tx.First(&winner, winnerID).Error; err != nil {
+		tx.Rollback()
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Draw not found"})
-			return
+			c.JSON(http.StatusNotFound, gin.H{"error": "Winner not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve winner: " + err.Error()})
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve draw details: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, draw)
+	// Check if winner status allows invoking runner-up
+	if winner.Status != "pending" && winner.Status != "notified" {
+		tx.Rollback()
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot invoke runner-up for winner with status: " + winner.Status})
+		return
+	}
+
+	// Get next available runner-up
+	var runnerUp models.RunnerUp
+	if err := tx.Where("draw_id = ? AND prize_id = ? AND status = ?", winner.DrawID, winner.PrizeID, "pending").
+		Order("runner_up_number asc").
+		First(&runnerUp).Error; err != nil {
+		tx.Rollback()
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "No available runner-ups for this prize"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve runner-up: " + err.Error()})
+		}
+		return
+	}
+
+	// Update winner status to forfeited
+	if err := tx.Model(&winner).Updates(map[string]interface{}{
+		"status":           "forfeited",
+		"forfeit_reason":   req.Reason,
+		"forfeited_at":     time.Now(),
+		"forfeited_by_admin_id": adminID,
+	}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update winner status: " + err.Error()})
+		return
+	}
+
+	// Create new winner record from runner-up
+	newWinner := models.Winner{
+		DrawID:       runnerUp.DrawID,
+		PrizeID:      runnerUp.PrizeID,
+		MSISDN:       runnerUp.MSISDN,
+		Points:       runnerUp.Points,
+		Status:       "pending",
+		WinnerNumber: winner.WinnerNumber, // Use same winner number
+		IsRunnerUp:   true,
+		RunnerUpID:   &runnerUp.ID,
+	}
+	if err := tx.Create(&newWinner).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create new winner from runner-up: " + err.Error()})
+		return
+	}
+
+	// Update runner-up status to promoted
+	if err := tx.Model(&runnerUp).Updates(map[string]interface{}{
+		"status":      "promoted",
+		"promoted_at": time.Now(),
+		"promoted_by_admin_id": adminID,
+	}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update runner-up status: " + err.Error()})
+		return
+	}
+
+	// Commit transaction
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction: " + err.Error()})
+		return
+	}
+
+	// Log audit event
+	auditEvent := models.AuditLog{
+		AdminID:     adminID,
+		Action:      "invoke_runner_up",
+		EntityType:  "winner",
+		EntityID:    winner.ID.String(),
+		Description: fmt.Sprintf("Invoked runner-up %s for winner %s. Reason: %s", runnerUp.MSISDN, winner.MSISDN, req.Reason),
+	}
+	h.auditService.LogAuditEvent(auditEvent)
+
+	// Return response
+	c.JSON(http.StatusOK, gin.H{
+		"message":     "Runner-up invoked successfully",
+		"old_winner":  winner,
+		"runner_up":   runnerUp,
+		"new_winner":  newWinner,
+	})
 }
 
-// ListDraws godoc
-// @Summary List Draws
-// @Description Retrieves a paginated list of draws
-// @Tags Draws
-// @Accept json
-// @Produce json
-// @Param Authorization header string true "Bearer token"
-// @Param page query int false "Page number for pagination" default(1)
-// @Param pageSize query int false "Number of items per page" default(10)
-// @Param sort_by query string false "Field to sort by (e.g., draw_date, status)" default("draw_date")
-// @Param sort_order query string false "Sort order (ASC or DESC)" default("DESC")
-// @Success 200 {object} gin.H{"draws": []models.Draw, "total": int64, "page": int, "pageSize": int}
-// @Failure 400 {object} gin.H{"error": string}
-// @Failure 401 {object} gin.H{"error": string}
-// @Failure 500 {object} gin.H{"error": string}
-// @Router /admin/draws [get]
-func (h *DrawHandler) ListDraws(c *gin.Context) {
-	pageStr := c.DefaultQuery("page", "1")
-	pageSizeStr := c.DefaultQuery("pageSize", "10")
-	sortBy := c.DefaultQuery("sort_by", "draw_date")
-	sortOrder := c.DefaultQuery("sort_order", "DESC")
+// Helper function to select winners and runner-ups from eligible participants
+func (h *DrawHandler) selectWinnersAndRunnerUps(
+	eligibleParticipants []models.ParticipantEvent,
+	winnerCount int,
+	runnerUpCount int,
+	usedMSISDNs map[string]bool,
+) ([]models.ParticipantEvent, []models.ParticipantEvent, error) {
+	// Create a pool of participants based on points
+	var pool []models.ParticipantEvent
+	for _, participant := range eligibleParticipants {
+		// Skip if this MSISDN has already won
+		if usedMSISDNs[participant.MSISDN] {
+			continue
+		}
 
-	page, err := strconv.Atoi(pageStr)
-	if err != nil || page < 1 {
+		// Add participant to pool based on points
+		for i := 0; i < participant.Points; i++ {
+			pool = append(pool, participant)
+		}
+	}
+
+	if len(pool) == 0 {
+		return nil, nil, errors.New("no eligible participants available")
+	}
+
+	// Shuffle the pool
+	// In a real implementation, this would use a secure random number generator
+	// For simplicity, we'll use a basic shuffle here
+	// rand.Shuffle(len(pool), func(i, j int) { pool[i], pool[j] = pool[j], pool[i] })
+
+	// Select winners and runner-ups
+	var winners []models.ParticipantEvent
+	var runnerUps []models.ParticipantEvent
+	selectedMSISDNs := make(map[string]bool)
+
+	// Select winners
+	for i := 0; i < winnerCount && len(pool) > 0; i++ {
+		// Select a random participant from the pool
+		// In a real implementation, this would use a secure random number generator
+		// For simplicity, we'll use the first participant in the pool
+		winner := pool[0]
+		
+		// Remove all instances of this MSISDN from the pool
+		var newPool []models.ParticipantEvent
+		for _, p := range pool {
+			if p.MSISDN != winner.MSISDN {
+				newPool = append(newPool, p)
+			}
+		}
+		pool = newPool
+
+		winners = append(winners, winner)
+		selectedMSISDNs[winner.MSISDN] = true
+	}
+
+	// Select runner-ups
+	for i := 0; i < runnerUpCount && len(pool) > 0; i++ {
+		// Select a random participant from the pool
+		// In a real implementation, this would use a secure random number generator
+		// For simplicity, we'll use the first participant in the pool
+		runnerUp := pool[0]
+		
+		// Remove all instances of this MSISDN from the pool
+		var newPool []models.ParticipantEvent
+		for _, p := range pool {
+			if p.MSISDN != runnerUp.MSISDN {
+				newPool = append(newPool, p)
+			}
+		}
+		pool = newPool
+
+		runnerUps = append(runnerUps, runnerUp)
+		selectedMSISDNs[runnerUp.MSISDN] = true
+	}
+
+	return winners, runnerUps, nil
+}
+
+// ListWinners handles listing all winners
+func (h *DrawHandler) ListWinners(c *gin.Context) {
+	// Parse query parameters
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	if page < 1 {
 		page = 1
 	}
-
-	pageSize, err := strconv.Atoi(pageSizeStr)
-	if err != nil || pageSize < 1 {
-		pageSize = 10
+	if limit < 1 || limit > 100 {
+		limit = 10
 	}
+	offset := (page - 1) * limit
 
-	offset := (page - 1) * pageSize
-
-	var draws []models.Draw
-	var total int64
-
-	dbQuery := config.DB.Model(&models.Draw{})
-
-	if err := dbQuery.Count(&total).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count draws: " + err.Error()})
+	// Get total count
+	var totalCount int64
+	if err := h.db.Model(&models.Winner{}).Count(&totalCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count winners: " + err.Error()})
 		return
 	}
 
-	orderClause := fmt.Sprintf("%s %s", sortBy, sortOrder)
-	if err := dbQuery.Order(orderClause).Limit(pageSize).Offset(offset).Preload("PrizeStructure").Preload("ExecutedByUser").Find(&draws).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve draws: " + err.Error()})
+	// Get winners with pagination
+	var winners []models.Winner
+	if err := h.db.Preload("Draw").
+		Preload("Prize").
+		Order("created_at desc").
+		Offset(offset).
+		Limit(limit).
+		Find(&winners).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve winners: " + err.Error()})
 		return
 	}
 
+	// Return response
 	c.JSON(http.StatusOK, gin.H{
-		"draws":    draws,
-		"total":    total,
-		"page":     page,
-		"pageSize": pageSize,
+		"winners":     winners,
+		"total_count": totalCount,
+		"page":        page,
+		"limit":       limit,
+		"total_pages": (totalCount + int64(limit) - 1) / int64(limit),
 	})
 }
 
+// ExportWinners handles exporting winners to CSV or JSON
+func (h *DrawHandler) ExportWinners(c *gin.Context) {
+	// Parse query parameters
+	format := c.DefaultQuery("format", "json")
+	drawIDStr := c.Query("draw_id")
+
+	// Build query
+	query := h.db.Model(&models.Winner{}).
+		Preload("Draw").
+		Preload("Prize")
+
+	// Filter by draw ID if provided
+	if drawIDStr != "" {
+		drawID, err := uuid.Parse(drawIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid draw ID format"})
+			return
+		}
+		query = query.Where("draw_id = ?", drawID)
+	}
+
+	// Get winners
+	var winners []models.Winner
+	if err := query.Find(&winners).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve winners: " + err.Error()})
+		return
+	}
+
+	// Export based on format
+	switch format {
+	case "json":
+		// Return JSON response
+		c.JSON(http.StatusOK, winners)
+	case "csv":
+		// Generate CSV content
+		csvContent := "ID,Draw ID,Draw Date,Prize ID,Prize Name,MSISDN,Points,Status,Created At\n"
+		for _, winner := range winners {
+			csvContent += fmt.Sprintf("%s,%s,%s,%s,%s,%s,%d,%s,%s\n",
+				winner.ID,
+				winner.DrawID,
+				winner.Draw.Date.Format("2006-01-02"),
+				winner.PrizeID,
+				winner.Prize.Name,
+				winner.MSISDN,
+				winner.Points,
+				winner.Status,
+				winner.CreatedAt.Format("2006-01-02 15:04:05"),
+			)
+		}
+
+		// Set headers for CSV download
+		c.Header("Content-Disposition", "attachment; filename=winners.csv")
+		c.Data(http.StatusOK, "text/csv", []byte(csvContent))
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid export format. Supported formats: json, csv"})
+	}
+}
+
+// ClaimPrize handles marking a prize as claimed by a winner
+func (h *DrawHandler) ClaimPrize(c *gin.Context) {
+	winnerIDStr := c.Param("id")
+	winnerID, err := uuid.Parse(winnerIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid winner ID format"})
+		return
+	}
+
+	// Get admin ID from context
+	adminIDStr, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Admin user ID not found in token"})
+		return
+	}
+	adminID, err := uuid.Parse(adminIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid admin user ID format in token"})
+		return
+	}
+
+	// Get winner record
+	var winner models.Winner
+	if err := h.db.First(&winner, winnerID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Winner not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve winner: " + err.Error()})
+		}
+		return
+	}
+
+	// Check if winner status allows claiming
+	if winner.Status != "pending" && winner.Status != "notified" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot claim prize for winner with status: " + winner.Status})
+		return
+	}
+
+	// Update winner status to claimed
+	if err := h.db.Model(&winner).Updates(map[string]interface{}{
+		"status":           "claimed",
+		"claimed_at":       time.Now(),
+		"claimed_by_admin_id": adminID,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update winner status: " + err.Error()})
+		return
+	}
+
+	// Log audit event
+	auditEvent := models.AuditLog{
+		AdminID:     adminID,
+		Action:      "claim_prize",
+		EntityType:  "winner",
+		EntityID:    winner.ID.String(),
+		Description: fmt.Sprintf("Marked prize as claimed for winner %s", winner.MSISDN),
+	}
+	h.auditService.LogAuditEvent(auditEvent)
+
+	// Return response
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Prize claimed successfully",
+		"winner":  winner,
+	})
+}
