@@ -4,11 +4,23 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ArowuTest/GP-Backend-Promo/internal/config" // Corrected to use config.DB
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid" // For UploadedByUserID
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
+
+// DataUploadAuditHandler handles operations related to data upload auditing
+type DataUploadAuditHandler struct {
+	db *gorm.DB
+}
+
+// NewDataUploadAuditHandler creates a new DataUploadAuditHandler with the provided database connection
+func NewDataUploadAuditHandler(db *gorm.DB) *DataUploadAuditHandler {
+	return &DataUploadAuditHandler{
+		db: db,
+	}
+}
 
 // CreateDataUploadAuditEntry godoc
 // @Summary Create a new data upload audit entry
@@ -21,7 +33,7 @@ import (
 // @Failure 400 {object} gin.H{"error": string}
 // @Failure 500 {object} gin.H{"error": string}
 // @Router /admin/audits/data-uploads [post]
-func CreateDataUploadAuditEntry(c *gin.Context) {
+func (h *DataUploadAuditHandler) CreateDataUploadAuditEntry(c *gin.Context) {
 	var newAuditEntry models.DataUploadAudit
 	var input struct {
 		UploadedByUserID uuid.UUID `json:"uploaded_by_user_id" binding:"required"`
@@ -45,7 +57,7 @@ func CreateDataUploadAuditEntry(c *gin.Context) {
 	newAuditEntry.OperationType = input.OperationType
 	newAuditEntry.UploadTimestamp = time.Now() // Set timestamp upon creation
 
-	if err := config.DB.Create(&newAuditEntry).Error; err != nil { // Corrected to use config.DB
+	if err := h.db.Create(&newAuditEntry).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create data upload audit entry: " + err.Error()})
 		return
 	}
@@ -60,13 +72,12 @@ func CreateDataUploadAuditEntry(c *gin.Context) {
 // @Success 200 {array} models.DataUploadAudit
 // @Failure 500 {object} gin.H{"error": string}
 // @Router /admin/audits/data-uploads [get]
-func ListDataUploadAuditEntries(c *gin.Context) {
+func (h *DataUploadAuditHandler) ListDataUploadAuditEntries(c *gin.Context) {
 	var auditEntries []models.DataUploadAudit
 	// Add pagination later if needed: e.g., c.Query("page"), c.Query("limit")
-	if err := config.DB.Order("upload_timestamp desc").Find(&auditEntries).Error; err != nil { // Corrected to use config.DB
+	if err := h.db.Order("upload_timestamp desc").Find(&auditEntries).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve data upload audit entries: " + err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, auditEntries)
 }
-

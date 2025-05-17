@@ -2,21 +2,31 @@ package handlers
 
 import (
 	"bytes"
-	"errors" // Added for errors.Is
-	"fmt"    // Added for fmt.Fprintf
+	"errors"
+	"fmt"
 	"io"
-	// "log" // Replaced with fmt.Fprintf(os.Stderr, ...)
 	"net/http"
-	"os"     // Added for os.Stderr
+	"os"
 
 	"github.com/ArowuTest/GP-Backend-Promo/internal/auth"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/config"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+// AdminUserHandler handles operations related to admin users
+type AdminUserHandler struct {
+	db *gorm.DB
+}
+
+// NewAdminUserHandler creates a new AdminUserHandler with the provided database connection
+func NewAdminUserHandler(db *gorm.DB) *AdminUserHandler {
+	return &AdminUserHandler{
+		db: db,
+	}
+}
 
 // CreateUser godoc
 // @Summary Create a new admin user
@@ -29,7 +39,7 @@ import (
 // @Failure 400 {object} gin.H{"error": string}
 // @Failure 500 {object} gin.H{"error": string}
 // @Router /admin/users [post]
-func CreateUser(c *gin.Context) {
+func (h *AdminUserHandler) CreateUser(c *gin.Context) {
 	var newUser models.AdminUser
 	var input struct {
 		Username string             `json:"username" binding:"required"`
@@ -73,7 +83,7 @@ func CreateUser(c *gin.Context) {
         newUser.Status = models.StatusActive // Default to Active
     }
 
-	if err := config.DB.Create(&newUser).Error; err != nil {
+	if err := h.db.Create(&newUser).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user: " + err.Error()})
 		return
 	}
@@ -90,7 +100,7 @@ func CreateUser(c *gin.Context) {
 // @Failure 400 {object} gin.H{"error": string}
 // @Failure 404 {object} gin.H{"error": string}
 // @Router /admin/users/{id} [get]
-func GetUser(c *gin.Context) {
+func (h *AdminUserHandler) GetUser(c *gin.Context) {
 	idStr := c.Param("id")
 	userID, err := uuid.Parse(idStr)
 	if err != nil {
@@ -99,8 +109,8 @@ func GetUser(c *gin.Context) {
 	}
 
 	var user models.AdminUser
-	if err := config.DB.First(&user, userID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) { // Use errors.Is
+	if err := h.db.First(&user, userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 		    c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		} else {
 		    c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user: " + err.Error()})
@@ -123,7 +133,7 @@ func GetUser(c *gin.Context) {
 // @Failure 404 {object} gin.H{"error": string}
 // @Failure 500 {object} gin.H{"error": string}
 // @Router /admin/users/{id} [put]
-func UpdateUser(c *gin.Context) {
+func (h *AdminUserHandler) UpdateUser(c *gin.Context) {
 	idStr := c.Param("id")
 	userID, err := uuid.Parse(idStr)
 	if err != nil {
@@ -132,8 +142,8 @@ func UpdateUser(c *gin.Context) {
 	}
 
 	var existingUser models.AdminUser
-	if err := config.DB.First(&existingUser, userID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) { // Use errors.Is
+	if err := h.db.First(&existingUser, userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 		    c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		} else {
 		    c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user for update: " + err.Error()})
@@ -192,7 +202,7 @@ func UpdateUser(c *gin.Context) {
         existingUser.PasswordHash = string(hashedPassword)
     }
 
-	if err := config.DB.Save(&existingUser).Error; err != nil {
+	if err := h.db.Save(&existingUser).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user: " + err.Error()})
 		return
 	}
@@ -210,7 +220,7 @@ func UpdateUser(c *gin.Context) {
 // @Failure 404 {object} gin.H{"error": string} "User not found or already deleted"
 // @Failure 500 {object} gin.H{"error": string}
 // @Router /admin/users/{id} [delete]
-func DeleteUser(c *gin.Context) {
+func (h *AdminUserHandler) DeleteUser(c *gin.Context) {
 	idStr := c.Param("id")
 	userID, err := uuid.Parse(idStr)
 	if err != nil {
@@ -219,8 +229,8 @@ func DeleteUser(c *gin.Context) {
 	}
 
     var user models.AdminUser
-    if err := config.DB.First(&user, userID).Error; err != nil {
-        if errors.Is(err, gorm.ErrRecordNotFound) { // Use errors.Is
+    if err := h.db.First(&user, userID).Error; err != nil {
+        if errors.Is(err, gorm.ErrRecordNotFound) {
             c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
         } else {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Error checking user existence: " + err.Error()})
@@ -228,7 +238,7 @@ func DeleteUser(c *gin.Context) {
         return
     }
 
-	if err := config.DB.Delete(&models.AdminUser{}, userID).Error; err != nil {
+	if err := h.db.Delete(&models.AdminUser{}, userID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user: " + err.Error()})
 		return
 	}
@@ -243,9 +253,9 @@ func DeleteUser(c *gin.Context) {
 // @Success 200 {array} models.AdminUser "List of users (PasswordHash and Salt excluded)"
 // @Failure 500 {object} gin.H{"error": string}
 // @Router /admin/users [get]
-func ListUsers(c *gin.Context) {
+func (h *AdminUserHandler) ListUsers(c *gin.Context) {
 	var users []models.AdminUser
-	if err := config.DB.Find(&users).Error; err != nil {
+	if err := h.db.Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve users: " + err.Error()})
 		return
 	}
@@ -264,7 +274,7 @@ func ListUsers(c *gin.Context) {
 // @Failure 401 {object} gin.H{"error": string}
 // @Failure 500 {object} gin.H{"error": string}
 // @Router /admin/login [post] // Ensure this matches the frontend API call path /api/v1/auth/login
-func Login(c *gin.Context) {
+func (h *AdminUserHandler) Login(c *gin.Context) {
 	fmt.Fprintf(os.Stderr, "DEBUG: LOGIN HANDLER ENTERED (v2 Error Test with Payload Fix)\n") // More reliable logging & version marker
 
 	bodyBytes, err := io.ReadAll(c.Request.Body)
@@ -301,7 +311,7 @@ func Login(c *gin.Context) {
 
 	var user models.AdminUser
 	// Query by username or email
-	if err := config.DB.Where("username = ? OR email = ?", loginIdentifier, loginIdentifier).First(&user).Error; err != nil {
+	if err := h.db.Where("username = ? OR email = ?", loginIdentifier, loginIdentifier).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			fmt.Fprintf(os.Stderr, "DEBUG: User not found for identifier (v2 Error Test with Payload Fix): %s\n", loginIdentifier)
 		    c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"}) // More generic error
@@ -330,4 +340,3 @@ func Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"token": token, "user_id": user.ID.String(), "username": user.Username, "role": user.Role})
 	fmt.Fprintf(os.Stderr, "DEBUG: Login handler finished (v2 Error Test with Payload Fix)\n")
 }
-

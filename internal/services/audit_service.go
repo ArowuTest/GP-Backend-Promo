@@ -49,8 +49,8 @@ const (
 
 // CreateAuditLog creates a new audit log entry
 func (s *AuditService) CreateAuditLog(log *models.AuditLog) error {
-	if log.ID == "" {
-		log.ID = uuid.New().String()
+	if log.ID == uuid.Nil {
+		log.ID = uuid.New()
 	}
 	
 	if log.CreatedAt.IsZero() {
@@ -81,19 +81,25 @@ func (s *AuditService) GetAuditLogs(
 	}
 	
 	if userID != "" {
-		query = query.Where("user_id = ?", userID)
+		userUUID, err := uuid.Parse(userID)
+		if err == nil {
+			query = query.Where("user_id = ?", userUUID)
+		}
 	}
 	
 	if actionType != "" {
-		query = query.Where("action_type = ?", actionType)
+		query = query.Where("action = ?", actionType)
 	}
 	
 	if resourceType != "" {
-		query = query.Where("resource_type = ?", resourceType)
+		query = query.Where("entity_type = ?", resourceType)
 	}
 	
 	if resourceID != "" {
-		query = query.Where("resource_id = ?", resourceID)
+		resourceUUID, err := uuid.Parse(resourceID)
+		if err == nil {
+			query = query.Where("entity_id = ?", resourceUUID)
+		}
 	}
 	
 	// Get total count
@@ -135,18 +141,32 @@ func (s *AuditService) LogUserAction(
 		detailsJSON = string(detailsBytes)
 	}
 	
+	// Parse UUIDs
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		return fmt.Errorf("invalid user ID: %w", err)
+	}
+	
+	var entityUUID uuid.UUID
+	if resourceID != "" {
+		entityUUID, err = uuid.Parse(resourceID)
+		if err != nil {
+			return fmt.Errorf("invalid entity ID: %w", err)
+		}
+	} else {
+		entityUUID = uuid.Nil
+	}
+	
 	// Create audit log
 	log := &models.AuditLog{
-		ID:           uuid.New().String(),
-		UserID:       userID,
-		ActionType:   string(actionType),
-		ResourceType: string(resourceType),
-		ResourceID:   resourceID,
-		Description:  description,
-		IPAddress:    ipAddress,
-		UserAgent:    userAgent,
-		ActionDetails: detailsJSON,
-		CreatedAt:    time.Now(),
+		ID:        uuid.New(),
+		UserID:    userUUID,
+		Action:    string(actionType),
+		EntityType: string(resourceType),
+		EntityID:  entityUUID,
+		Details:   detailsJSON,
+		IPAddress: ipAddress,
+		CreatedAt: time.Now(),
 	}
 	
 	return s.CreateAuditLog(log)
@@ -159,15 +179,15 @@ func (s *AuditService) GetAuditLogTypes() ([]string, []string, error) {
 	
 	// Get unique action types
 	if err := s.db.Model(&models.AuditLog{}).
-		Distinct("action_type").
-		Pluck("action_type", &actionTypes).Error; err != nil {
+		Distinct("action").
+		Pluck("action", &actionTypes).Error; err != nil {
 		return nil, nil, err
 	}
 	
 	// Get unique resource types
 	if err := s.db.Model(&models.AuditLog{}).
-		Distinct("resource_type").
-		Pluck("resource_type", &resourceTypes).Error; err != nil {
+		Distinct("entity_type").
+		Pluck("entity_type", &resourceTypes).Error; err != nil {
 		return nil, nil, err
 	}
 	
