@@ -104,6 +104,15 @@ func setupRouter() *gin.Engine {
 
 			// Reports
 			adminRoutes.GET("/reports/data-uploads/", admin.ListDataUploadAuditEntries)
+            
+            // Audit logs - New endpoints
+            auditLogHandler := admin.NewAuditLogHandler()
+            adminRoutes.GET("/audit-logs", middleware.RequireRole("SUPER_ADMIN", "ADMIN"), auditLogHandler.ListSystemAuditLogs)
+            adminRoutes.GET("/audit-logs/types", middleware.RequireRole("SUPER_ADMIN", "ADMIN"), auditLogHandler.GetAuditLogTypes)
+            
+            // Winners management - New endpoints
+            adminRoutes.GET("/winners", drawHandler.ListWinners)
+            adminRoutes.PUT("/winners/:id/payment-status", middleware.RequireRole("SUPER_ADMIN", "ADMIN"), drawHandler.UpdateWinnerPaymentStatus)
 		}
 	}
 
