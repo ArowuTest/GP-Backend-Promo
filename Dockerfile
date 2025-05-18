@@ -1,21 +1,34 @@
-# Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:1.19-alpine AS builder
+
 WORKDIR /app
+
+# Copy go mod and sum files
 COPY go.mod go.sum ./
+
+# Download all dependencies
 RUN go mod download
+
+# Copy the source code
 COPY . .
-# Ensure all paths are relative to the WORKDIR /app
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o mynuma_server ./cmd/server/main.go
 
-# Final stage
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o app ./cmd/server
+
+# Use a smaller image for the final stage
 FROM alpine:latest
+
 RUN apk --no-cache add ca-certificates
+
 WORKDIR /root/
-COPY --from=builder /app/mynuma_server .
-# If migrations are to be run by the container, they need to be copied.
-# For now, assuming migrations are run separately or as part of a deploy script.
-# COPY --from=builder /app/migrations ./migrations
 
+# Copy the binary from builder
+COPY --from=builder /app/app .
+
+# Copy any config files
+COPY --from=builder /app/.env* .
+
+# Expose the application port
 EXPOSE 8080
-CMD ["./mynuma_server"]
 
+# Command to run the executable
+CMD ["./app"]
