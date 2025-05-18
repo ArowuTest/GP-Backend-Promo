@@ -1,126 +1,116 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 	
 	"github.com/ArowuTest/GP-Backend-Promo/internal/infrastructure/config"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/infrastructure/persistence/gorm"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/api"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/api/handler"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/api/middleware"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/application/draw"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/application/participant"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/application/prize"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/application/audit"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/application/user"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/api/handler"
+	
+	// Application services
+	auditApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/audit"
+	drawApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/draw"
+	participantApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/participant"
+	prizeApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/prize"
+	userApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/user"
 )
 
 func main() {
-	// Load environment variables
-	err := godotenv.Load()
+	// Load configuration
+	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Println("Warning: .env file not found, using environment variables")
+		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	// Initialize configuration
-	cfg := config.NewConfig()
-
-	// Initialize database connection
-	db, err := initDB(cfg)
+	// Connect to database
+	db, err := config.NewDatabase(&cfg.Database)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	// Initialize repositories
-	drawRepo := infrastructure.NewGormDrawRepository(db)
-	participantRepo := infrastructure.NewGormParticipantRepository(db)
-	prizeRepo := infrastructure.NewGormPrizeRepository(db)
-	auditRepo := infrastructure.NewGormAuditRepository(db)
-	userRepo := infrastructure.NewGormUserRepository(db)
-	uploadAuditRepo := infrastructure.NewGormUploadAuditRepository(db)
+	// Set up repositories
+	auditRepo := gorm.NewGormAuditRepository(db.DB)
+	drawRepo := gorm.NewGormDrawRepository(db.DB)
+	participantRepo := gorm.NewGormParticipantRepository(db.DB)
+	prizeRepo := gorm.NewGormPrizeRepository(db.DB)
+	userRepo := gorm.NewGormUserRepository(db.DB)
 
-	// Initialize use cases
-	executeDraw := application.NewExecuteDrawUseCase(drawRepo, prizeRepo, participantRepo)
-	getDrawByID := application.NewGetDrawByIDUseCase(drawRepo)
-	listDraws := application.NewListDrawsUseCase(drawRepo)
-	getEligibilityStats := application.NewGetEligibilityStatsUseCase(drawRepo, participantRepo)
-	invokeRunnerUp := application.NewInvokeRunnerUpUseCase(drawRepo)
+	// Set up application services
+	logAuditService := auditApp.NewLogAuditService(auditRepo)
+	getAuditLogsService := auditApp.NewGetAuditLogsService(auditRepo)
 	
-	uploadParticipants := application.NewUploadParticipantsUseCase(participantRepo, uploadAuditRepo)
-	getParticipantStats := application.NewGetParticipantStatsUseCase(participantRepo)
-	listParticipants := application.NewListParticipantsUseCase(participantRepo)
-	deleteUpload := application.NewDeleteUploadUseCase(uploadAuditRepo, participantRepo, auditRepo)
+	// Draw services
+	executeDrawService := drawApp.NewDrawService(drawRepo, participantRepo, prizeRepo, logAuditService)
+	getDrawDetailsService := drawApp.NewGetDrawDetailsService(drawRepo)
+	listDrawsService := drawApp.NewListDrawsService(drawRepo)
+	getEligibilityStatsService := drawApp.NewGetEligibilityStatsService(drawRepo, participantRepo)
+	invokeRunnerUpService := drawApp.NewInvokeRunnerUpService(drawRepo, logAuditService)
 	
-	createPrizeStructure := application.NewCreatePrizeStructureUseCase(prizeRepo)
-	updatePrizeStructure := application.NewUpdatePrizeStructureUseCase(prizeRepo)
-	getPrizeStructure := application.NewGetPrizeStructureUseCase(prizeRepo)
-	listPrizeStructures := application.NewListPrizeStructuresUseCase(prizeRepo)
-	deletePrizeStructure := application.NewDeletePrizeStructureUseCase(prizeRepo)
+	// Participant services
+	uploadParticipantsService := participantApp.NewUploadParticipantsService(participantRepo, logAuditService)
+	getParticipantStatsService := participantApp.NewGetParticipantStatsService(participantRepo)
 	
-	logAudit := application.NewLogAuditUseCase(auditRepo)
-	getAuditLogs := application.NewGetAuditLogsUseCase(auditRepo)
-	getDataUploadAudits := application.NewGetDataUploadAuditsUseCase(uploadAuditRepo)
+	// Prize services
+	createPrizeStructureService := prizeApp.NewCreatePrizeStructureService(prizeRepo, logAuditService)
+	getPrizeStructureService := prizeApp.NewGetPrizeStructureService(prizeRepo)
+	listPrizeStructuresService := prizeApp.NewListPrizeStructuresService(prizeRepo)
+	updatePrizeStructureService := prizeApp.NewUpdatePrizeStructureService(prizeRepo, logAuditService)
 	
-	authenticateUser := application.NewAuthenticateUserUseCase(userRepo)
-	createUser := application.NewCreateUserUseCase(userRepo)
-	updateUser := application.NewUpdateUserUseCase(userRepo)
-	getUserByID := application.NewGetUserByIDUseCase(userRepo)
-	listUsers := application.NewListUsersUseCase(userRepo)
+	// User services
+	authenticateUserService := userApp.NewAuthenticateUserService(userRepo, logAuditService)
+	createUserService := userApp.NewCreateUserService(userRepo, logAuditService)
+	updateUserService := userApp.NewUpdateUserService(userRepo, logAuditService)
+	getUserService := userApp.NewGetUserService(userRepo)
+	listUsersService := userApp.NewListUsersService(userRepo)
 
-	// Initialize middleware
-	authMiddleware := middleware.NewAuthMiddleware(cfg.JWTSecret)
+	// Set up middleware
+	authMiddleware := middleware.NewAuthMiddleware(cfg.JWT.Secret)
 	corsMiddleware := middleware.Default()
-	errorMiddleware := middleware.NewErrorMiddleware(cfg.Environment == "development")
+	errorMiddleware := middleware.NewErrorMiddleware(true)
 
-	// Initialize handlers
+	// Set up gin engine
+	ginEngine := gin.Default()
+
+	// Set up handlers
+	auditHandler := handler.NewAuditHandler(getAuditLogsService)
 	drawHandler := handler.NewDrawHandler(
-		executeDraw,
-		getDrawByID,
-		listDraws,
-		getEligibilityStats,
-		invokeRunnerUp,
+		executeDrawService,
+		getDrawDetailsService,
+		listDrawsService,
+		getEligibilityStatsService,
+		invokeRunnerUpService,
 	)
-	
 	participantHandler := handler.NewParticipantHandler(
-		uploadParticipants,
-		listParticipants,
-		getParticipantStats,
-		deleteUpload,
+		uploadParticipantsService,
+		getParticipantStatsService,
 	)
-	
 	prizeHandler := handler.NewPrizeHandler(
-		createPrizeStructure,
-		updatePrizeStructure,
-		getPrizeStructure,
-		listPrizeStructures,
-		deletePrizeStructure,
+		createPrizeStructureService,
+		getPrizeStructureService,
+		listPrizeStructuresService,
+		updatePrizeStructureService,
 	)
-	
-	auditHandler := handler.NewAuditHandler(
-		logAudit,
-		getAuditLogs,
-		getDataUploadAudits,
-	)
-	
 	userHandler := handler.NewUserHandler(
-		authenticateUser,
-		createUser,
-		updateUser,
-		getUserByID,
-		listUsers,
+		authenticateUserService,
+		createUserService,
+		updateUserService,
+		getUserService,
+		listUsersService,
 	)
 
-	// Initialize router
-	engine := gin.Default()
+	// Set up router
 	router := api.NewRouter(
-		engine,
+		ginEngine,
 		authMiddleware,
 		corsMiddleware,
 		errorMiddleware,
@@ -134,35 +124,60 @@ func main() {
 	// Setup routes
 	router.Setup()
 
-	// Start server
-	port := os.Getenv("API_PORT")
-	if port == "" {
-		port = "8080"
+	// Set up server
+	server := &http.Server{
+		Addr:         ":" + cfg.Server.Port,
+		Handler:      ginEngine,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
+		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
-	
-	log.Printf("Server starting on port %s", port)
-	if err := router.Run(":" + port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
-	}
-}
 
-func initDB(cfg *config.Config) (*gorm.DB, error) {
-	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName,
-	)
-	
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		return nil, err
+	// Run migrations
+	if err := db.Migrate(
+		&gorm.AuditLogModel{},
+		&gorm.SystemAuditLogModel{},
+		&gorm.DrawModel{},
+		&gorm.WinnerModel{},
+		&gorm.ParticipantModel{},
+		&gorm.UploadAuditModel{},
+		&gorm.PrizeStructureModel{},
+		&gorm.PrizeTierModel{},
+		&gorm.PrizeModel{},
+		&gorm.UserModel{},
+	); err != nil {
+		log.Fatalf("Failed to run migrations: %v", err)
 	}
-	
-	// Auto migrate models
-	// This is for development only, production should use proper migrations
-	if cfg.Environment == "development" {
-		// Add auto-migration for all models
-		// db.AutoMigrate(&models.Draw{}, &models.Winner{}, ...)
+
+	// Start server in a goroutine
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	log.Printf("Server started on port %s", cfg.Server.Port)
+
+	// Wait for interrupt signal to gracefully shut down the server
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	// Create a deadline for server shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Shut down server
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
 	}
-	
-	return db, nil
+
+	// Close database connection
+	if err := db.Close(); err != nil {
+		log.Fatalf("Failed to close database connection: %v", err)
+	}
+
+	log.Println("Server exited properly")
 }

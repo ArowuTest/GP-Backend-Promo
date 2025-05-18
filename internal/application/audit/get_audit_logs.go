@@ -2,79 +2,88 @@ package audit
 
 import (
 	"context"
+	"fmt"
 	"time"
-
+	
+	"github.com/google/uuid"
+	
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/audit"
 )
 
-// GetAuditLogsInput represents the input for the GetAuditLogs use case
+// GetAuditLogsService provides functionality for retrieving audit logs
+type GetAuditLogsService struct {
+	auditRepository audit.AuditRepository
+}
+
+// NewGetAuditLogsService creates a new GetAuditLogsService
+func NewGetAuditLogsService(auditRepository audit.AuditRepository) *GetAuditLogsService {
+	return &GetAuditLogsService{
+		auditRepository: auditRepository,
+	}
+}
+
+// GetAuditLogsInput defines the input for the GetAuditLogs use case
 type GetAuditLogsInput struct {
-	StartDate  time.Time
-	EndDate    time.Time
-	ActionType string
-	UserID     string
-	Page       int
-	PageSize   int
+	Page     int
+	PageSize int
+	Filters  AuditLogFilters
 }
 
-// GetAuditLogsOutput represents the output from the GetAuditLogs use case
+// AuditLogFilters defines the filters for retrieving audit logs
+type AuditLogFilters struct {
+	Action      string
+	EntityType  string
+	EntityID    uuid.UUID
+	UserID      uuid.UUID
+	StartDate   time.Time
+	EndDate     time.Time
+}
+
+// GetAuditLogsOutput defines the output for the GetAuditLogs use case
 type GetAuditLogsOutput struct {
-	AuditLogs []audit.AuditLog
-	Total     int64
-	Page      int
-	PageSize  int
+	AuditLogs   []audit.AuditLog
+	TotalCount  int
+	Page        int
+	PageSize    int
+	TotalPages  int
 }
 
-// GetAuditLogsUseCase defines the use case for retrieving audit logs
-type GetAuditLogsUseCase struct {
-	auditRepo audit.Repository
-}
-
-// NewGetAuditLogsUseCase creates a new GetAuditLogsUseCase
-func NewGetAuditLogsUseCase(auditRepo audit.Repository) *GetAuditLogsUseCase {
-	return &GetAuditLogsUseCase{
-		auditRepo: auditRepo,
-	}
-}
-
-// Execute performs the get audit logs use case
-func (uc *GetAuditLogsUseCase) Execute(ctx context.Context, input GetAuditLogsInput) (GetAuditLogsOutput, error) {
-	// Set default page size if not provided
-	if input.PageSize <= 0 {
-		input.PageSize = 10
-	}
-
-	// Set default page if not provided
-	if input.Page <= 0 {
+// GetAuditLogs retrieves a paginated list of audit logs
+func (s *GetAuditLogsService) GetAuditLogs(ctx context.Context, input GetAuditLogsInput) (*GetAuditLogsOutput, error) {
+	if input.Page < 1 {
 		input.Page = 1
 	}
-
-	// Prepare filter criteria
-	filter := audit.AuditLogFilter{
-		StartDate:  input.StartDate,
-		EndDate:    input.EndDate,
-		ActionType: input.ActionType,
-		UserID:     input.UserID,
+	
+	if input.PageSize < 1 {
+		input.PageSize = 10
+	}
+	
+	// Convert to domain filters
+	filters := audit.AuditLogFilters{
+		Action:     input.Filters.Action,
+		EntityType: input.Filters.EntityType,
+		UserID:     input.Filters.UserID,
+		StartDate:  input.Filters.StartDate,
+		EndDate:    input.Filters.EndDate,
 		Page:       input.Page,
 		PageSize:   input.PageSize,
 	}
-
-	// Get audit logs from repository
-	auditLogs, err := uc.auditRepo.GetAuditLogs(ctx, filter)
+	
+	auditLogs, totalCount, err := s.auditRepository.List(filters, input.Page, input.PageSize)
 	if err != nil {
-		return GetAuditLogsOutput{}, err
+		return nil, fmt.Errorf("failed to list audit logs: %w", err)
 	}
-
-	// Get total count for pagination
-	total, err := uc.auditRepo.CountAuditLogs(ctx, filter)
-	if err != nil {
-		return GetAuditLogsOutput{}, err
+	
+	totalPages := totalCount / input.PageSize
+	if totalCount%input.PageSize > 0 {
+		totalPages++
 	}
-
-	return GetAuditLogsOutput{
-		AuditLogs: auditLogs,
-		Total:     total,
-		Page:      input.Page,
-		PageSize:  input.PageSize,
+	
+	return &GetAuditLogsOutput{
+		AuditLogs:  auditLogs,
+		TotalCount: totalCount,
+		Page:       input.Page,
+		PageSize:   input.PageSize,
+		TotalPages: totalPages,
 	}, nil
 }

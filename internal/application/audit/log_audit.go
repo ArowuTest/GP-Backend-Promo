@@ -1,71 +1,92 @@
-package application
+package audit
 
 import (
+	"fmt"
 	"time"
+	
 	"github.com/google/uuid"
+	
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/audit"
 )
 
-// LogAuditUseCase represents the use case for logging an audit event
-type LogAuditUseCase struct {
+// LogAuditService provides functionality for logging audit events
+type LogAuditService struct {
 	auditRepository audit.AuditRepository
 }
 
-// NewLogAuditUseCase creates a new LogAuditUseCase
-func NewLogAuditUseCase(
-	auditRepository audit.AuditRepository,
-) *LogAuditUseCase {
-	return &LogAuditUseCase{
+// NewLogAuditService creates a new LogAuditService
+func NewLogAuditService(auditRepository audit.AuditRepository) *LogAuditService {
+	return &LogAuditService{
 		auditRepository: auditRepository,
 	}
 }
 
-// LogAuditInput represents the input for the log audit use case
-type LogAuditInput struct {
-	UserID      uuid.UUID
-	Username    string
-	Action      string
-	EntityType  string
-	EntityID    string
-	Description string
-	IPAddress   string
-	UserAgent   string
-	Metadata    map[string]interface{}
-}
-
-// LogAuditOutput represents the output of the log audit use case
-type LogAuditOutput struct {
-	AuditLog *audit.AuditLog
-}
-
-// Execute logs an audit event
-func (uc *LogAuditUseCase) Execute(input LogAuditInput) (*LogAuditOutput, error) {
-	// Create audit log entity
+// LogAudit logs an audit event
+func (s *LogAuditService) LogAudit(
+	action string,
+	entityType string,
+	entityID uuid.UUID,
+	userID uuid.UUID,
+	summary string,
+	details string,
+) error {
+	if action == "" {
+		return fmt.Errorf("action is required")
+	}
+	
+	if entityType == "" {
+		return fmt.Errorf("entity type is required")
+	}
+	
+	if entityID == uuid.Nil {
+		return fmt.Errorf("entity ID is required")
+	}
+	
+	if userID == uuid.Nil {
+		return fmt.Errorf("user ID is required")
+	}
+	
 	auditLog := &audit.AuditLog{
-		ID:          uuid.New(),
-		UserID:      input.UserID,
-		Username:    input.Username,
-		Action:      input.Action,
-		EntityType:  input.EntityType,
-		EntityID:    input.EntityID,
-		Description: input.Description,
-		IPAddress:   input.IPAddress,
-		UserAgent:   input.UserAgent,
-		Metadata:    input.Metadata,
-		CreatedAt:   time.Now(),
+		ID:         uuid.New(),
+		Action:     action,
+		EntityType: entityType,
+		EntityID:   entityID.String(),
+		UserID:     userID,
+		Description: summary,
+		Metadata:    make(map[string]interface{}),
+		CreatedAt:  time.Now(),
 	}
-
-	// Validate audit log
-	if err := audit.ValidateAuditLog(auditLog); err != nil {
-		return nil, audit.NewAuditError(audit.ErrInvalidAuditLog, "Invalid audit log", err)
+	
+	// Add details to metadata
+	auditLog.Metadata["details"] = details
+	
+	if err := s.auditRepository.Create(auditLog); err != nil {
+		return fmt.Errorf("failed to create audit log: %w", err)
 	}
+	
+	return nil
+}
 
-	// Save audit log
-	if err := uc.auditRepository.CreateAuditLog(auditLog); err != nil {
-		return nil, audit.NewAuditError("AUDIT_LOG_CREATION_FAILED", "Failed to create audit log", err)
+// AuditService provides a simplified interface for logging audit events
+type AuditService struct {
+	logAuditService *LogAuditService
+}
+
+// NewAuditService creates a new AuditService
+func NewAuditService(logAuditService *LogAuditService) *AuditService {
+	return &AuditService{
+		logAuditService: logAuditService,
 	}
+}
 
-	return &LogAuditOutput{
-		AuditLog: auditLog,
-	}, nil
+// LogAudit logs an audit event
+func (s *AuditService) LogAudit(
+	action string,
+	entityType string,
+	entityID uuid.UUID,
+	userID uuid.UUID,
+	summary string,
+	details string,
+) error {
+	return s.logAuditService.LogAudit(action, entityType, entityID, userID, summary, details)
 }

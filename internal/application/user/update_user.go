@@ -3,92 +3,109 @@ package user
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
-
+	
+	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
+	
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/user"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/audit"
 )
 
-// UpdateUserInput represents the input for the UpdateUser use case
+// UpdateUserService provides functionality for updating users
+type UpdateUserService struct {
+	userRepository user.UserRepository
+	auditService   audit.AuditService
+}
+
+// NewUpdateUserService creates a new UpdateUserService
+func NewUpdateUserService(
+	userRepository user.UserRepository,
+	auditService audit.AuditService,
+) *UpdateUserService {
+	return &UpdateUserService{
+		userRepository: userRepository,
+		auditService:   auditService,
+	}
+}
+
+// UpdateUserInput defines the input for the UpdateUser use case
 type UpdateUserInput struct {
-	UserID    string
+	ID        uuid.UUID
 	Email     string
-	FullName  string
+	Password  string // Optional, if empty, password won't be updated
 	Role      string
-	Active    *bool
-	UpdatedBy string
+	UpdatedBy uuid.UUID
 }
 
-// UpdateUserOutput represents the output from the UpdateUser use case
+// UpdateUserOutput defines the output for the UpdateUser use case
 type UpdateUserOutput struct {
-	User user.User
+	ID        uuid.UUID
+	Username  string
+	Email     string
+	Role      string
+	UpdatedAt time.Time
 }
 
-// UpdateUserUseCase defines the use case for updating a user
-type UpdateUserUseCase struct {
-	userRepo user.Repository
-}
-
-// NewUpdateUserUseCase creates a new UpdateUserUseCase
-func NewUpdateUserUseCase(userRepo user.Repository) *UpdateUserUseCase {
-	return &UpdateUserUseCase{
-		userRepo: userRepo,
-	}
-}
-
-// Execute performs the update user use case
-func (uc *UpdateUserUseCase) Execute(ctx context.Context, input UpdateUserInput) (UpdateUserOutput, error) {
+// UpdateUser updates an existing user
+func (s *UpdateUserService) UpdateUser(ctx context.Context, input UpdateUserInput) (*UpdateUserOutput, error) {
 	// Validate input
-	if input.UserID == "" {
-		return UpdateUserOutput{}, errors.New("user ID is required")
+	if input.ID == uuid.Nil {
+		return nil, errors.New("user ID is required")
 	}
-	if input.UpdatedBy == "" {
-		return UpdateUserOutput{}, errors.New("updater information is required")
+	
+	if input.Email == "" {
+		return nil, errors.New("email is required")
 	}
-
+	
+	if input.Role == "" {
+		return nil, errors.New("role is required")
+	}
+	
 	// Get existing user
-	existingUser, err := uc.userRepo.GetUserByID(ctx, input.UserID)
+	user, err := s.userRepository.GetByID(input.ID)
 	if err != nil {
-		return UpdateUserOutput{}, err
+		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
-
-	// Update user fields if provided
-	if input.Email != "" {
-		// Check if email already exists for another user
-		if input.Email != existingUser.Email {
-			exists, err := uc.userRepo.EmailExists(ctx, input.Email)
-			if err != nil {
-				return UpdateUserOutput{}, err
-			}
-			if exists {
-				return UpdateUserOutput{}, errors.New("email already exists")
-			}
-			existingUser.Email = input.Email
+	
+	// Update user fields
+	user.Email = input.Email
+	user.Role = input.Role
+	user.UpdatedAt = time.Now()
+	
+	// Update password if provided
+	if input.Password != "" {
+		passwordHash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("failed to hash password: %w", err)
 		}
+		user.PasswordHash = string(passwordHash)
 	}
-
-	if input.FullName != "" {
-		existingUser.FullName = input.FullName
+	
+	// Save user
+	if err := s.userRepository.Update(user); err != nil {
+		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
-
-	if input.Role != "" {
-		existingUser.Role = input.Role
+	
+	// Log audit
+	if err := s.auditService.LogAudit(
+		"UPDATE_USER",
+		"User",
+		user.ID,
+		input.UpdatedBy,
+		fmt.Sprintf("User updated: %s", user.Username),
+		fmt.Sprintf("Role: %s", user.Role),
+	); err != nil {
+		// Log error but continue
+		fmt.Printf("Failed to log audit: %v\n", err)
 	}
-
-	if input.Active != nil {
-		existingUser.Active = *input.Active
-	}
-
-	// Update metadata
-	existingUser.UpdatedBy = input.UpdatedBy
-	existingUser.UpdatedAt = time.Now()
-
-	// Save user to repository
-	updatedUser, err := uc.userRepo.UpdateUser(ctx, existingUser)
-	if err != nil {
-		return UpdateUserOutput{}, err
-	}
-
-	return UpdateUserOutput{
-		User: updatedUser,
+	
+	return &UpdateUserOutput{
+		ID:        user.ID,
+		Username:  user.Username,
+		Email:     user.Email,
+		Role:      user.Role,
+		UpdatedAt: user.UpdatedAt,
 	}, nil
 }

@@ -1,4 +1,4 @@
-package infrastructure
+package gorm
 
 import (
 	"errors"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"golang.org/x/crypto/bcrypt"
 	
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/user"
 )
@@ -28,12 +29,11 @@ type UserModel struct {
 	ID           string     `gorm:"primaryKey;type:uuid"`
 	Email        string     `gorm:"uniqueIndex"`
 	Username     string
-	PasswordHash string
-	FirstName    string
-	LastName     string
+	FullName     string
 	Role         string
-	IsActive     bool
+	PasswordHash string
 	LastLogin    *time.Time
+	IsActive     bool
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -49,12 +49,11 @@ func toUserModel(u *user.User) *UserModel {
 		ID:           u.ID.String(),
 		Email:        u.Email,
 		Username:     u.Username,
-		PasswordHash: u.PasswordHash,
-		FirstName:    u.FirstName,
-		LastName:     u.LastName,
+		FullName:     u.FullName,
 		Role:         u.Role,
-		IsActive:     u.IsActive,
+		PasswordHash: u.PasswordHash,
 		LastLogin:    u.LastLogin,
+		IsActive:     u.IsActive,
 		CreatedAt:    u.CreatedAt,
 		UpdatedAt:    u.UpdatedAt,
 	}
@@ -71,12 +70,11 @@ func (m *UserModel) toDomain() (*user.User, error) {
 		ID:           id,
 		Email:        m.Email,
 		Username:     m.Username,
-		PasswordHash: m.PasswordHash,
-		FirstName:    m.FirstName,
-		LastName:     m.LastName,
+		FullName:     m.FullName,
 		Role:         m.Role,
-		IsActive:     m.IsActive,
+		PasswordHash: m.PasswordHash,
 		LastLogin:    m.LastLogin,
+		IsActive:     m.IsActive,
 		CreatedAt:    m.CreatedAt,
 		UpdatedAt:    m.UpdatedAt,
 	}, nil
@@ -87,6 +85,9 @@ func (r *GormUserRepository) Create(u *user.User) error {
 	model := toUserModel(u)
 	result := r.db.Create(model)
 	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrDuplicatedKey) {
+			return user.NewUserError(user.ErrEmailAlreadyExists, "Email already exists", result.Error)
+		}
 		return fmt.Errorf("failed to create user: %w", result.Error)
 	}
 	
@@ -204,20 +205,29 @@ func (r *GormUserRepository) Delete(id uuid.UUID) error {
 
 // VerifyCredentials implements the user.UserRepository interface
 func (r *GormUserRepository) VerifyCredentials(email, password string) (*user.User, error) {
-	// Get user by email
-	userEntity, err := r.GetByEmail(email)
-	if err != nil {
-		return nil, user.NewUserError(user.ErrInvalidCredentials, "Invalid email or password", err)
-	}
-	
-	// Verify password
-	if !user.VerifyPassword(userEntity.PasswordHash, password) {
-		return nil, user.NewUserError(user.ErrInvalidCredentials, "Invalid email or password", nil)
+	var model UserModel
+	result := r.db.Where("email = ?", email).First(&model)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, user.NewUserError(user.ErrInvalidCredentials, "Invalid credentials", result.Error)
+		}
+		return nil, fmt.Errorf("failed to get user: %w", result.Error)
 	}
 	
 	// Check if user is active
-	if !userEntity.IsActive {
-		return nil, user.NewUserError(user.ErrUserInactive, "User account is inactive", nil)
+	if !model.IsActive {
+		return nil, user.NewUserError(user.ErrInvalidCredentials, "User is inactive", nil)
+	}
+	
+	// Verify password
+	err := bcrypt.CompareHashAndPassword([]byte(model.PasswordHash), []byte(password))
+	if err != nil {
+		return nil, user.NewUserError(user.ErrInvalidCredentials, "Invalid credentials", err)
+	}
+	
+	userEntity, err := model.toDomain()
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert user model to domain: %w", err)
 	}
 	
 	return userEntity, nil

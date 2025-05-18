@@ -1,4 +1,4 @@
-package infrastructure
+package gorm
 
 import (
 	"errors"
@@ -321,14 +321,15 @@ func (r *GormDrawRepository) GetEligibilityStats(date time.Time) (int, int, erro
 	}
 	
 	// Sum points for the given date
-	result = r.db.Table("participants").
+	var err error
+	err = r.db.Table("participants").
 		Where("DATE(recharge_date) <= ?", formattedDate).
 		Select("SUM(points)").
 		Row().
 		Scan(&totalEntries)
 	
-	if result.Error != nil {
-		return 0, 0, fmt.Errorf("failed to sum points: %w", result.Error)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to sum points: %w", err)
 	}
 	
 	return int(totalEligibleMSISDNs), int(totalEntries), nil

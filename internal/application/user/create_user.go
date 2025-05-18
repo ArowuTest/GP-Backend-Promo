@@ -3,102 +3,116 @@ package user
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
-
-	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/user"
+	
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+	
+	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/user"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/audit"
 )
 
-// CreateUserInput represents the input for the CreateUser use case
+// CreateUserService provides functionality for creating users
+type CreateUserService struct {
+	userRepository user.UserRepository
+	auditService   audit.AuditService
+}
+
+// NewCreateUserService creates a new CreateUserService
+func NewCreateUserService(
+	userRepository user.UserRepository,
+	auditService audit.AuditService,
+) *CreateUserService {
+	return &CreateUserService{
+		userRepository: userRepository,
+		auditService:   auditService,
+	}
+}
+
+// CreateUserInput defines the input for the CreateUser use case
 type CreateUserInput struct {
 	Username  string
-	Password  string
 	Email     string
-	FullName  string
+	Password  string
 	Role      string
-	CreatedBy string
+	CreatedBy uuid.UUID
 }
 
-// CreateUserOutput represents the output from the CreateUser use case
+// CreateUserOutput defines the output for the CreateUser use case
 type CreateUserOutput struct {
-	User user.User
+	ID        uuid.UUID
+	Username  string
+	Email     string
+	Role      string
+	CreatedAt time.Time
 }
 
-// CreateUserUseCase defines the use case for creating a user
-type CreateUserUseCase struct {
-	userRepo user.Repository
-}
-
-// NewCreateUserUseCase creates a new CreateUserUseCase
-func NewCreateUserUseCase(userRepo user.Repository) *CreateUserUseCase {
-	return &CreateUserUseCase{
-		userRepo: userRepo,
-	}
-}
-
-// Execute performs the create user use case
-func (uc *CreateUserUseCase) Execute(ctx context.Context, input CreateUserInput) (CreateUserOutput, error) {
+// CreateUser creates a new user
+func (s *CreateUserService) CreateUser(ctx context.Context, input CreateUserInput) (*CreateUserOutput, error) {
 	// Validate input
 	if input.Username == "" {
-		return CreateUserOutput{}, errors.New("username is required")
+		return nil, errors.New("username is required")
 	}
-	if input.Password == "" {
-		return CreateUserOutput{}, errors.New("password is required")
-	}
+	
 	if input.Email == "" {
-		return CreateUserOutput{}, errors.New("email is required")
+		return nil, errors.New("email is required")
 	}
+	
+	if input.Password == "" {
+		return nil, errors.New("password is required")
+	}
+	
 	if input.Role == "" {
-		return CreateUserOutput{}, errors.New("role is required")
+		return nil, errors.New("role is required")
 	}
-	if input.CreatedBy == "" {
-		return CreateUserOutput{}, errors.New("creator information is required")
-	}
-
+	
 	// Check if username already exists
-	exists, err := uc.userRepo.UsernameExists(ctx, input.Username)
-	if err != nil {
-		return CreateUserOutput{}, err
+	existingUser, err := s.userRepository.GetByUsername(input.Username)
+	if err == nil && existingUser != nil {
+		return nil, errors.New("username already exists")
 	}
-	if exists {
-		return CreateUserOutput{}, errors.New("username already exists")
-	}
-
-	// Check if email already exists
-	exists, err = uc.userRepo.EmailExists(ctx, input.Email)
-	if err != nil {
-		return CreateUserOutput{}, err
-	}
-	if exists {
-		return CreateUserOutput{}, errors.New("email already exists")
-	}
-
+	
 	// Hash password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return CreateUserOutput{}, err
+		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
-
-	// Create user entity
-	newUser := user.User{
-		Username:    input.Username,
-		Password:    string(hashedPassword),
-		Email:       input.Email,
-		FullName:    input.FullName,
-		Role:        input.Role,
-		Active:      true,
-		CreatedBy:   input.CreatedBy,
-		CreatedAt:   time.Now(),
-		LastLoginAt: time.Time{},
+	
+	// Create user
+	now := time.Now()
+	user := &user.User{
+		ID:           uuid.New(),
+		Username:     input.Username,
+		Email:        input.Email,
+		PasswordHash: string(passwordHash),
+		Role:         input.Role,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
-
-	// Save user to repository
-	createdUser, err := uc.userRepo.CreateUser(ctx, newUser)
-	if err != nil {
-		return CreateUserOutput{}, err
+	
+	if err := s.userRepository.Create(user); err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
-
-	return CreateUserOutput{
-		User: createdUser,
+	
+	// Log audit
+	if err := s.auditService.LogAudit(
+		"CREATE_USER",
+		"User",
+		user.ID,
+		input.CreatedBy,
+		fmt.Sprintf("User created: %s", input.Username),
+		fmt.Sprintf("Role: %s", input.Role),
+	); err != nil {
+		// Log error but continue
+		fmt.Printf("Failed to log audit: %v\n", err)
+	}
+	
+	return &CreateUserOutput{
+		ID:        user.ID,
+		Username:  user.Username,
+		Email:     user.Email,
+		Role:      user.Role,
+		CreatedAt: user.CreatedAt,
 	}, nil
 }

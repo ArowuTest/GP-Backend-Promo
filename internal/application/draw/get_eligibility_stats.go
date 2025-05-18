@@ -2,73 +2,68 @@ package draw
 
 import (
 	"context"
+	"fmt"
 	"time"
-
+	
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/draw"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/participant"
 )
 
-// GetEligibilityStatsInput represents the input for the GetEligibilityStats use case
+// GetEligibilityStatsService provides functionality for retrieving eligibility statistics
+type GetEligibilityStatsService struct {
+	drawRepository draw.DrawRepository
+	participantRepository participant.ParticipantRepository
+}
+
+// NewGetEligibilityStatsService creates a new GetEligibilityStatsService
+func NewGetEligibilityStatsService(
+	drawRepository draw.DrawRepository,
+	participantRepository participant.ParticipantRepository,
+) *GetEligibilityStatsService {
+	return &GetEligibilityStatsService{
+		drawRepository: drawRepository,
+		participantRepository: participantRepository,
+	}
+}
+
+// GetEligibilityStatsInput defines the input for the GetEligibilityStats use case
 type GetEligibilityStatsInput struct {
-	DrawDate time.Time
+	Date string // Format: YYYY-MM-DD
 }
 
-// GetEligibilityStatsOutput represents the output from the GetEligibilityStats use case
+// GetEligibilityStatsOutput defines the output for the GetEligibilityStats use case
 type GetEligibilityStatsOutput struct {
-	TotalParticipants int64
-	TotalEntries      int64
-	DrawDate          time.Time
-	PointsDistribution map[int]int64 // Map of points to count of participants with that many points
+	TotalEligibleMSISDNs int
+	TotalEntries int
+	Date string
 }
 
-// GetEligibilityStatsUseCase defines the use case for retrieving eligibility statistics
-type GetEligibilityStatsUseCase struct {
-	drawRepo       draw.Repository
-	participantRepo participant.Repository
-}
-
-// NewGetEligibilityStatsUseCase creates a new GetEligibilityStatsUseCase
-func NewGetEligibilityStatsUseCase(drawRepo draw.Repository, participantRepo participant.Repository) *GetEligibilityStatsUseCase {
-	return &GetEligibilityStatsUseCase{
-		drawRepo:       drawRepo,
-		participantRepo: participantRepo,
-	}
-}
-
-// Execute performs the get eligibility statistics use case
-func (uc *GetEligibilityStatsUseCase) Execute(ctx context.Context, input GetEligibilityStatsInput) (GetEligibilityStatsOutput, error) {
-	// Validate input
-	if input.DrawDate.IsZero() {
-		return GetEligibilityStatsOutput{}, draw.ErrInvalidDrawDate
-	}
-
-	// Get eligible participants for the draw date
-	filter := participant.ParticipantFilter{
-		DrawDate: input.DrawDate,
+// GetEligibilityStats retrieves eligibility statistics for a specific date
+func (s *GetEligibilityStatsService) GetEligibilityStats(ctx context.Context, input GetEligibilityStatsInput) (*GetEligibilityStatsOutput, error) {
+	if input.Date == "" {
+		return nil, fmt.Errorf("date is required")
 	}
 	
-	// Get total eligible participants
-	totalParticipants, err := uc.participantRepo.CountParticipants(ctx, filter)
+	// Parse date
+	date, err := parseDate(input.Date)
 	if err != nil {
-		return GetEligibilityStatsOutput{}, err
+		return nil, fmt.Errorf("invalid date format: %w", err)
 	}
-
-	// Get total entries (sum of all points)
-	totalEntries, err := uc.participantRepo.CountTotalEntries(ctx, filter)
+	
+	// Get eligibility stats
+	totalEligibleMSISDNs, totalEntries, err := s.drawRepository.GetEligibilityStats(date)
 	if err != nil {
-		return GetEligibilityStatsOutput{}, err
+		return nil, fmt.Errorf("failed to get eligibility stats: %w", err)
 	}
-
-	// Get points distribution
-	pointsDistribution, err := uc.participantRepo.GetPointsDistribution(ctx, filter)
-	if err != nil {
-		return GetEligibilityStatsOutput{}, err
-	}
-
-	return GetEligibilityStatsOutput{
-		TotalParticipants: totalParticipants,
-		TotalEntries:      totalEntries,
-		DrawDate:          input.DrawDate,
-		PointsDistribution: pointsDistribution,
+	
+	return &GetEligibilityStatsOutput{
+		TotalEligibleMSISDNs: totalEligibleMSISDNs,
+		TotalEntries: totalEntries,
+		Date: input.Date,
 	}, nil
+}
+
+// Helper function to parse date string
+func parseDate(dateStr string) (time.Time, error) {
+	return time.Parse("2006-01-02", dateStr)
 }

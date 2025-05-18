@@ -2,73 +2,63 @@ package prize
 
 import (
 	"context"
-	"time"
-
+	"fmt"
+	
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/prize"
 )
 
-// ListPrizeStructuresInput represents the input for the ListPrizeStructures use case
+// ListPrizeStructuresService provides functionality for listing prize structures
+type ListPrizeStructuresService struct {
+	prizeRepository prize.PrizeRepository
+}
+
+// NewListPrizeStructuresService creates a new ListPrizeStructuresService
+func NewListPrizeStructuresService(prizeRepository prize.PrizeRepository) *ListPrizeStructuresService {
+	return &ListPrizeStructuresService{
+		prizeRepository: prizeRepository,
+	}
+}
+
+// ListPrizeStructuresInput defines the input for the ListPrizeStructures use case
 type ListPrizeStructuresInput struct {
-	Active   *bool
 	Page     int
 	PageSize int
 }
 
-// ListPrizeStructuresOutput represents the output from the ListPrizeStructures use case
+// ListPrizeStructuresOutput defines the output for the ListPrizeStructures use case
 type ListPrizeStructuresOutput struct {
 	PrizeStructures []prize.PrizeStructure
-	Total           int64
+	TotalCount      int
 	Page            int
 	PageSize        int
+	TotalPages      int
 }
 
-// ListPrizeStructuresUseCase defines the use case for listing prize structures
-type ListPrizeStructuresUseCase struct {
-	prizeRepo prize.Repository
-}
-
-// NewListPrizeStructuresUseCase creates a new ListPrizeStructuresUseCase
-func NewListPrizeStructuresUseCase(prizeRepo prize.Repository) *ListPrizeStructuresUseCase {
-	return &ListPrizeStructuresUseCase{
-		prizeRepo: prizeRepo,
-	}
-}
-
-// Execute performs the list prize structures use case
-func (uc *ListPrizeStructuresUseCase) Execute(ctx context.Context, input ListPrizeStructuresInput) (ListPrizeStructuresOutput, error) {
-	// Set default page size if not provided
-	if input.PageSize <= 0 {
-		input.PageSize = 10
-	}
-
-	// Set default page if not provided
-	if input.Page <= 0 {
+// ListPrizeStructures retrieves a paginated list of prize structures
+func (s *ListPrizeStructuresService) ListPrizeStructures(ctx context.Context, input ListPrizeStructuresInput) (*ListPrizeStructuresOutput, error) {
+	if input.Page < 1 {
 		input.Page = 1
 	}
-
-	// Prepare filter criteria
-	filter := prize.PrizeStructureFilter{
-		Active:   input.Active,
-		Page:     input.Page,
-		PageSize: input.PageSize,
+	
+	if input.PageSize < 1 {
+		input.PageSize = 10
 	}
-
-	// Get prize structures from repository
-	prizeStructures, err := uc.prizeRepo.ListPrizeStructures(ctx, filter)
+	
+	prizeStructures, totalCount, err := s.prizeRepository.ListPrizeStructures(input.Page, input.PageSize)
 	if err != nil {
-		return ListPrizeStructuresOutput{}, err
+		return nil, fmt.Errorf("failed to list prize structures: %w", err)
 	}
-
-	// Get total count for pagination
-	total, err := uc.prizeRepo.CountPrizeStructures(ctx, filter)
-	if err != nil {
-		return ListPrizeStructuresOutput{}, err
+	
+	totalPages := totalCount / input.PageSize
+	if totalCount%input.PageSize > 0 {
+		totalPages++
 	}
-
-	return ListPrizeStructuresOutput{
+	
+	return &ListPrizeStructuresOutput{
 		PrizeStructures: prizeStructures,
-		Total:           total,
+		TotalCount:      totalCount,
 		Page:            input.Page,
 		PageSize:        input.PageSize,
+		TotalPages:      totalPages,
 	}, nil
 }

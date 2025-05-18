@@ -1,7 +1,7 @@
 package response
 
 import (
-	"time"
+	// No imports needed
 )
 
 // SuccessResponse represents a generic success response
@@ -26,51 +26,57 @@ type PaginatedResponse struct {
 
 // Pagination represents pagination metadata
 type Pagination struct {
-	Page       int `json:"page"`
-	PageSize   int `json:"page_size"`
-	TotalRows  int `json:"total_rows"`
-	TotalPages int `json:"total_pages"`
+	Page       int   `json:"page"`
+	PageSize   int   `json:"page_size"`
+	TotalRows  int   `json:"total_rows"`
+	TotalPages int   `json:"total_pages"`
+	TotalItems int64 `json:"total_items"`
 }
 
 // DrawResponse represents a draw response
 type DrawResponse struct {
 	ID                   string           `json:"id"`
-	DrawDate             string           `json:"draw_date"`
-	PrizeStructureID     string           `json:"prize_structure_id"`
+	DrawDate             string           `json:"drawDate"`
+	PrizeStructureID     string           `json:"prizeStructureID"`
 	Status               string           `json:"status"`
-	TotalEligibleMSISDNs int              `json:"total_eligible_msisdns"`
-	TotalEntries         int              `json:"total_entries"`
-	ExecutedByAdminID    string           `json:"executed_by_admin_id"`
+	TotalEligibleMSISDNs int              `json:"totalEligibleMSISDNs"`
+	TotalEntries         int              `json:"totalEntries"`
+	ExecutedByAdminID    string           `json:"executedByAdminID"`
 	Winners              []WinnerResponse `json:"winners,omitempty"`
-	CreatedAt            string           `json:"created_at"`
+	CreatedAt            string           `json:"createdAt"`
+	UpdatedAt            string           `json:"updatedAt,omitempty"`
 }
 
 // WinnerResponse represents a winner response
 type WinnerResponse struct {
 	ID            string `json:"id"`
+	DrawID        string `json:"drawID,omitempty"`
 	MSISDN        string `json:"msisdn"`
-	PrizeTierID   string `json:"prize_tier_id"`
-	PrizeTierName string `json:"prize_tier_name,omitempty"`
-	PrizeValue    string `json:"prize_value,omitempty"`
+	PrizeTierID   string `json:"prizeTierID"`
+	PrizeTierName string `json:"prizeTierName,omitempty"`
+	PrizeValue    string `json:"prizeValue,omitempty"`
 	Status        string `json:"status"`
-	PaymentStatus string `json:"payment_status,omitempty"`
-	PaymentNotes  string `json:"payment_notes,omitempty"`
-	PaidAt        string `json:"paid_at,omitempty"`
-	IsRunnerUp    bool   `json:"is_runner_up"`
-	RunnerUpRank  int    `json:"runner_up_rank"`
+	PaymentStatus string `json:"paymentStatus,omitempty"`
+	PaymentNotes  string `json:"paymentNotes,omitempty"`
+	PaidAt        string `json:"paidAt,omitempty"`
+	IsRunnerUp    bool   `json:"isRunnerUp"`
+	RunnerUpRank  int    `json:"runnerUpRank"`
+	CreatedAt     string `json:"createdAt,omitempty"`
+	UpdatedAt     string `json:"updatedAt,omitempty"`
 }
 
 // RunnerUpResponse represents a runner-up invocation response
 type RunnerUpResponse struct {
-	OriginalWinner WinnerResponse `json:"original_winner"`
-	NewWinner      WinnerResponse `json:"new_winner"`
+	Message         string        `json:"message"`
+	OriginalWinner  WinnerResponse `json:"forfeited_winner"`
+	NewWinner       WinnerResponse `json:"promoted_runner_up"`
 }
 
 // EligibilityStatsResponse represents eligibility statistics response
 type EligibilityStatsResponse struct {
-	Date                 string `json:"date"`
-	TotalEligibleMSISDNs int    `json:"total_eligible_msisdns"`
-	TotalEntries         int    `json:"total_entries"`
+	Date                 string `json:"date,omitempty"`
+	TotalEligibleMSISDNs int    `json:"totalEligibleMSISDNs"`
+	TotalEntries         int    `json:"totalEntries"`
 }
 
 // PrizeStructureResponse represents a prize structure response
@@ -78,21 +84,21 @@ type PrizeStructureResponse struct {
 	ID             string                `json:"id"`
 	Name           string                `json:"name"`
 	Description    string                `json:"description"`
-	IsActive       bool                  `json:"is_active"`
-	ValidFrom      string                `json:"valid_from"`
-	ValidTo        string                `json:"valid_to,omitempty"`
-	ApplicableDays []string              `json:"applicable_days,omitempty"`
-	DayType        string                `json:"day_type,omitempty"`
+	IsActive       bool                  `json:"isActive"`
+	ValidFrom      string                `json:"validFrom"`
+	ValidTo        string                `json:"validTo,omitempty"`
+	ApplicableDays []string              `json:"applicableDays,omitempty"`
+	DayType        string                `json:"dayType,omitempty"`
 	Prizes         []PrizeTierResponse   `json:"prizes"`
-	CreatedAt      string                `json:"created_at,omitempty"`
-	UpdatedAt      string                `json:"updated_at,omitempty"`
+	CreatedAt      string                `json:"createdAt,omitempty"`
+	UpdatedAt      string                `json:"updatedAt,omitempty"`
 }
 
 // PrizeTierResponse represents a prize tier response
 type PrizeTierResponse struct {
 	ID                string `json:"id,omitempty"`
 	Name              string `json:"name"`
-	PrizeType         string `json:"prize_type"`
+	PrizeType         string `json:"prizeType"`
 	Value             string `json:"value"`
 	ValueNGN          int    `json:"valueNGN,omitempty"`
 	Quantity          int    `json:"quantity"`
@@ -102,69 +108,93 @@ type PrizeTierResponse struct {
 
 // ParticipantResponse represents a participant response
 type ParticipantResponse struct {
-	ID             string `json:"id"`
-	MSISDN         string `json:"msisdn"`
-	Points         int    `json:"points"`
-	RechargeAmount float64 `json:"recharge_amount"`
-	RechargeDate   string `json:"recharge_date"`
-	CreatedAt      string `json:"created_at"`
+	ID             string  `json:"id"`
+	MSISDN         string  `json:"msisdn"`
+	Points         int     `json:"points"`
+	RechargeAmount float64 `json:"rechargeAmount"`
+	RechargeDate   string  `json:"rechargeDate"`
+	CreatedAt      string  `json:"createdAt"`
+	UploadID       string  `json:"uploadID,omitempty"`
+	UploadedAt     string  `json:"uploadedAt,omitempty"`
 }
 
 // ParticipantStatsResponse represents participant statistics response
 type ParticipantStatsResponse struct {
 	Date              string `json:"date"`
-	TotalParticipants int    `json:"total_participants"`
-	TotalPoints       int    `json:"total_points"`
+	TotalParticipants int    `json:"totalParticipants"`
+	TotalPoints       int    `json:"totalPoints"`
 }
 
 // UploadResponse represents a participant data upload response
 type UploadResponse struct {
-	AuditID           string   `json:"audit_id"`
+	AuditID           string   `json:"auditID"`
 	Status            string   `json:"status"`
-	TotalRowsProcessed int      `json:"total_data_rows_processed"`
-	SuccessfulRows    int      `json:"successful_rows_imported"`
-	ErrorCount        int      `json:"errors_count"`
+	TotalRowsProcessed int      `json:"totalDataRowsProcessed"`
+	SuccessfulRows    int      `json:"successfulRowsImported"`
+	ErrorCount        int      `json:"errorsCount"`
 	ErrorDetails      []string `json:"errors"`
-	DuplicatesSkipped int      `json:"duplicates_skipped_count,omitempty"`
+	DuplicatesSkipped int      `json:"duplicatesSkippedCount,omitempty"`
 }
 
 // UploadAuditResponse represents an upload audit response
 type UploadAuditResponse struct {
 	ID              string   `json:"id"`
-	UploadedBy      string   `json:"uploaded_by"`
-	UploadDate      string   `json:"upload_date"`
-	FileName        string   `json:"file_name"`
+	UploadedBy      string   `json:"uploadedBy"`
+	UploadDate      string   `json:"uploadDate"`
+	FileName        string   `json:"fileName"`
 	Status          string   `json:"status"`
-	TotalRows       int      `json:"total_rows"`
-	SuccessfulRows  int      `json:"successful_rows"`
-	ErrorCount      int      `json:"error_count"`
-	ErrorDetails    []string `json:"error_details,omitempty"`
+	TotalRows       int      `json:"totalRows"`
+	SuccessfulRows  int      `json:"successfulRows"`
+	ErrorCount      int      `json:"errorCount"`
+	ErrorDetails    []string `json:"errorDetails,omitempty"`
+	UploadedAt      string   `json:"uploadedAt,omitempty"`
+	TotalUploaded   int      `json:"totalUploaded,omitempty"`
+}
+
+// DataUploadAuditResponse represents a data upload audit response for reports
+type DataUploadAuditResponse struct {
+	ID            string `json:"id"`
+	UploadedBy    string `json:"uploadedBy"`
+	UploadedAt    string `json:"uploadedAt"`
+	TotalUploaded int    `json:"totalUploaded"`
+	Status        string `json:"status"`
+	Details       string `json:"details,omitempty"`
 }
 
 // AuditLogResponse represents an audit log response
 type AuditLogResponse struct {
-	ID        string `json:"id"`
-	UserID    string `json:"user_id"`
-	Username  string `json:"username"`
-	Action    string `json:"action"`
-	Details   string `json:"details"`
-	Timestamp string `json:"timestamp"`
+	ID         string `json:"id"`
+	UserID     string `json:"userID"`
+	Username   string `json:"username"`
+	Action     string `json:"action"`
+	EntityType string `json:"entityType"`
+	EntityID   string `json:"entityID"`
+	Summary    string `json:"summary"`
+	Details    string `json:"details"`
+	CreatedAt  string `json:"createdAt"`
 }
 
 // UserResponse represents a user response
 type UserResponse struct {
 	ID        string `json:"id"`
 	Username  string `json:"username"`
-	FullName  string `json:"full_name"`
+	FullName  string `json:"fullName"`
 	Email     string `json:"email"`
 	Role      string `json:"role"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
 }
 
 // LoginResponse represents a login response
 type LoginResponse struct {
 	Token     string       `json:"token"`
-	ExpiresAt string       `json:"expires_at"`
+	ExpiresAt string       `json:"expiresAt"`
 	User      UserResponse `json:"user"`
+}
+
+// UploadParticipantsResponse represents a participant upload response
+type UploadParticipantsResponse struct {
+	TotalUploaded int    `json:"totalUploaded"`
+	UploadID      string `json:"uploadID"`
+	UploadedAt    string `json:"uploadedAt"`
 }

@@ -3,81 +3,79 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	
-	"github.com/ArowuTest/GP-Backend-Promo/internal/application/user"
+	userApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/user"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/request"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
 )
 
 // UserHandler handles user-related HTTP requests
 type UserHandler struct {
-	authenticateUserUseCase *user.AuthenticateUserUseCase
-	createUserUseCase       *user.CreateUserUseCase
-	updateUserUseCase       *user.UpdateUserUseCase
-	getUserByIDUseCase      *user.GetUserUseCase
-	listUsersUseCase        *user.ListUsersUseCase
+	authenticateUserService *userApp.AuthenticateUserService
+	createUserService       *userApp.CreateUserService
+	updateUserService       *userApp.UpdateUserService
+	getUserByIDService      *userApp.GetUserService
+	listUsersService        *userApp.ListUsersService
 }
 
 // NewUserHandler creates a new UserHandler
 func NewUserHandler(
-	authenticateUserUseCase *user.AuthenticateUserUseCase,
-	createUserUseCase *user.CreateUserUseCase,
-	updateUserUseCase *user.UpdateUserUseCase,
-	getUserByIDUseCase *user.GetUserUseCase,
-	listUsersUseCase *user.ListUsersUseCase,
+	authenticateUserService *userApp.AuthenticateUserService,
+	createUserService *userApp.CreateUserService,
+	updateUserService *userApp.UpdateUserService,
+	getUserByIDService *userApp.GetUserService,
+	listUsersService *userApp.ListUsersService,
 ) *UserHandler {
 	return &UserHandler{
-		authenticateUserUseCase: authenticateUserUseCase,
-		createUserUseCase:       createUserUseCase,
-		updateUserUseCase:       updateUserUseCase,
-		getUserByIDUseCase:      getUserByIDUseCase,
-		listUsersUseCase:        listUsersUseCase,
+		authenticateUserService: authenticateUserService,
+		createUserService:       createUserService,
+		updateUserService:       updateUserService,
+		getUserByIDService:      getUserByIDService,
+		listUsersService:        listUsersService,
 	}
 }
 
 // Login handles user authentication
 func (h *UserHandler) Login(c *gin.Context) {
-	var request struct {
-		Username string `json:"username" binding:"required"`
-		Password string `json:"password" binding:"required"`
-	}
-
-	if err := c.ShouldBindJSON(&request); err != nil {
+	var req request.LoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid request",
-			Details: err.Error(),
+			Error:   "Invalid request: " + err.Error(),
 		})
 		return
 	}
 
-	input := user.AuthenticateUserInput{
-		Username: request.Username,
-		Password: request.Password,
+	input := userApp.AuthenticateUserInput{
+		Username: req.Username,
+		Password: req.Password,
 	}
 
-	output, err := h.authenticateUserUseCase.Execute(c.Request.Context(), input)
+	output, err := h.authenticateUserService.AuthenticateUser(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
 			Success: false,
-			Error:   "Authentication failed",
-			Details: err.Error(),
+			Error:   "Authentication failed: " + err.Error(),
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
-		Data: gin.H{
-			"token":      output.Token,
-			"expires_at": output.ExpiresAt,
-			"user": gin.H{
-				"id":        output.User.ID,
-				"username":  output.User.Username,
-				"email":     output.User.Email,
-				"full_name": output.User.FullName,
-				"role":      output.User.Role,
+		Data: response.LoginResponse{
+			Token:     output.Token,
+			ExpiresAt: output.ExpiresAt.Format(time.RFC3339),
+			User: response.UserResponse{
+				ID:        output.ID.String(),
+				Username:  output.Username,
+				Email:     output.Email,
+				Role:      output.Role,
+				CreatedAt: time.Now().Format(time.RFC3339),
+				UpdatedAt: time.Now().Format(time.RFC3339),
 			},
 		},
 	})
@@ -85,19 +83,11 @@ func (h *UserHandler) Login(c *gin.Context) {
 
 // CreateUser handles user creation
 func (h *UserHandler) CreateUser(c *gin.Context) {
-	var request struct {
-		Username string `json:"username" binding:"required"`
-		Password string `json:"password" binding:"required"`
-		Email    string `json:"email" binding:"required,email"`
-		FullName string `json:"full_name" binding:"required"`
-		Role     string `json:"role" binding:"required"`
-	}
-
-	if err := c.ShouldBindJSON(&request); err != nil {
+	var req request.CreateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid request",
-			Details: err.Error(),
+			Error:   "Invalid request: " + err.Error(),
 		})
 		return
 	}
@@ -107,68 +97,58 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	if !exists {
 		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
 			Success: false,
-			Error:   "Unauthorized",
-			Details: "User information not found",
+			Error:   "User not authenticated",
 		})
 		return
 	}
 
-	input := user.CreateUserInput{
-		Username:  request.Username,
-		Password:  request.Password,
-		Email:     request.Email,
-		FullName:  request.FullName,
-		Role:      request.Role,
-		CreatedBy: creatorID.(string),
+	input := userApp.CreateUserInput{
+		Username:  req.Username,
+		Password:  req.Password,
+		Email:     req.Email,
+		Role:      req.Role,
+		CreatedBy: creatorID.(uuid.UUID),
 	}
 
-	output, err := h.createUserUseCase.Execute(c.Request.Context(), input)
+	output, err := h.createUserService.CreateUser(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Failed to create user",
-			Details: err.Error(),
+			Error:   "Failed to create user: " + err.Error(),
 		})
 		return
 	}
 
 	c.JSON(http.StatusCreated, response.SuccessResponse{
 		Success: true,
-		Data: gin.H{
-			"id":        output.User.ID,
-			"username":  output.User.Username,
-			"email":     output.User.Email,
-			"full_name": output.User.FullName,
-			"role":      output.User.Role,
-			"active":    output.User.Active,
+		Data: response.UserResponse{
+			ID:        output.ID.String(),
+			Username:  output.Username,
+			Email:     output.Email,
+			FullName:  req.FullName, // Use from request since it might not be in output
+			Role:      output.Role,
+			CreatedAt: time.Now().Format(time.RFC3339),
+			UpdatedAt: time.Now().Format(time.RFC3339),
 		},
 	})
 }
 
 // UpdateUser handles user updates
 func (h *UserHandler) UpdateUser(c *gin.Context) {
-	userID := c.Param("id")
-	if userID == "" {
+	userID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid request",
-			Details: "User ID is required",
+			Error:   "Invalid user ID format",
 		})
 		return
 	}
 
-	var request struct {
-		Email    string `json:"email" binding:"omitempty,email"`
-		FullName string `json:"full_name"`
-		Role     string `json:"role"`
-		Active   *bool  `json:"active"`
-	}
-
-	if err := c.ShouldBindJSON(&request); err != nil {
+	var req request.UpdateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid request",
-			Details: err.Error(),
+			Error:   "Invalid request: " + err.Error(),
 		})
 		return
 	}
@@ -178,79 +158,76 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	if !exists {
 		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
 			Success: false,
-			Error:   "Unauthorized",
-			Details: "User information not found",
+			Error:   "User not authenticated",
 		})
 		return
 	}
 
-	input := user.UpdateUserInput{
-		UserID:    userID,
-		Email:     request.Email,
-		FullName:  request.FullName,
-		Role:      request.Role,
-		Active:    request.Active,
-		UpdatedBy: updaterID.(string),
+	input := userApp.UpdateUserInput{
+		ID:        userID,
+		Email:     req.Email,
+		Role:      req.Role,
+		Password:  req.Password,
+		UpdatedBy: updaterID.(uuid.UUID),
 	}
 
-	output, err := h.updateUserUseCase.Execute(c.Request.Context(), input)
+	output, err := h.updateUserService.UpdateUser(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Failed to update user",
-			Details: err.Error(),
+			Error:   "Failed to update user: " + err.Error(),
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
-		Data: gin.H{
-			"id":        output.User.ID,
-			"username":  output.User.Username,
-			"email":     output.User.Email,
-			"full_name": output.User.FullName,
-			"role":      output.User.Role,
-			"active":    output.User.Active,
+		Data: response.UserResponse{
+			ID:        output.ID.String(),
+			Username:  output.Username,
+			Email:     output.Email,
+			FullName:  req.FullName, // Use from request since it might not be in output
+			Role:      output.Role,
+			CreatedAt: time.Now().Format(time.RFC3339),
+			UpdatedAt: time.Now().Format(time.RFC3339),
 		},
 	})
 }
 
 // GetUserByID handles retrieving a user by ID
 func (h *UserHandler) GetUserByID(c *gin.Context) {
-	userID := c.Param("id")
-	if userID == "" {
+	userID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid request",
-			Details: "User ID is required",
+			Error:   "Invalid user ID format",
 		})
 		return
 	}
 
-	input := user.GetUserInput{
-		UserID: userID,
+	input := userApp.GetUserInput{
+		ID: userID,
 	}
 
-	output, err := h.getUserByIDUseCase.Execute(c.Request.Context(), input)
+	output, err := h.getUserByIDService.GetUser(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusNotFound, response.ErrorResponse{
 			Success: false,
-			Error:   "User not found",
-			Details: err.Error(),
+			Error:   "User not found: " + err.Error(),
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
-		Data: gin.H{
-			"id":        output.User.ID,
-			"username":  output.User.Username,
-			"email":     output.User.Email,
-			"full_name": output.User.FullName,
-			"role":      output.User.Role,
-			"active":    output.User.Active,
+		Data: response.UserResponse{
+			ID:        output.ID.String(),
+			Username:  output.Username,
+			Email:     output.Email,
+			FullName:  "", // Not available in output
+			Role:      output.Role,
+			CreatedAt: time.Now().Format(time.RFC3339),
+			UpdatedAt: time.Now().Format(time.RFC3339),
 		},
 	})
 }
@@ -261,42 +238,43 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 
-	input := user.ListUsersInput{
+	input := userApp.ListUsersInput{
 		Page:     page,
 		PageSize: pageSize,
 	}
 
-	output, err := h.listUsersUseCase.Execute(c.Request.Context(), input)
+	output, err := h.listUsersService.ListUsers(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
-			Error:   "Failed to list users",
-			Details: err.Error(),
+			Error:   "Failed to list users: " + err.Error(),
 		})
 		return
 	}
 
 	// Convert users to response format
-	users := make([]gin.H, len(output.Users))
-	for i, u := range output.Users {
-		users[i] = gin.H{
-			"id":        u.ID,
-			"username":  u.Username,
-			"email":     u.Email,
-			"full_name": u.FullName,
-			"role":      u.Role,
-			"active":    u.Active,
-		}
+	users := make([]response.UserResponse, 0, len(output.Users))
+	for _, u := range output.Users {
+		users = append(users, response.UserResponse{
+			ID:        u.ID.String(),
+			Username:  u.Username,
+			Email:     u.Email,
+			FullName:  "", // Not available in output
+			Role:      u.Role,
+			CreatedAt: time.Now().Format(time.RFC3339),
+			UpdatedAt: time.Now().Format(time.RFC3339),
+		})
 	}
 
-	c.JSON(http.StatusOK, response.SuccessResponse{
+	c.JSON(http.StatusOK, response.PaginatedResponse{
 		Success: true,
-		Data: gin.H{
-			"users":      users,
-			"total":      output.Total,
-			"page":       output.Page,
-			"page_size":  output.PageSize,
-			"total_pages": (output.Total + int64(output.PageSize) - 1) / int64(output.PageSize),
+		Data:    users,
+		Pagination: response.Pagination{
+			Page:       output.Page,
+			PageSize:   output.PageSize,
+			TotalRows:  int(output.TotalCount),
+			TotalPages: output.TotalPages,
+			TotalItems: int64(output.TotalCount),
 		},
 	})
 }

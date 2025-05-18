@@ -1,97 +1,131 @@
 package draw
 
 import (
-	"context"
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+	
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/draw"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/audit"
 )
 
-// InvokeRunnerUpInput represents the input for the InvokeRunnerUp use case
+// InvokeRunnerUpService provides functionality for invoking runner-ups
+type InvokeRunnerUpService struct {
+	drawRepository draw.DrawRepository
+	auditService   audit.AuditService
+}
+
+// NewInvokeRunnerUpService creates a new InvokeRunnerUpService
+func NewInvokeRunnerUpService(
+	drawRepository draw.DrawRepository,
+	auditService audit.AuditService,
+) *InvokeRunnerUpService {
+	return &InvokeRunnerUpService{
+		drawRepository: drawRepository,
+		auditService:   auditService,
+	}
+}
+
+// InvokeRunnerUpInput defines the input for the InvokeRunnerUp use case
 type InvokeRunnerUpInput struct {
-	WinnerID  string
-	Reason    string
-	InvokedBy string
+	WinnerID      uuid.UUID
+	AdminUserID   uuid.UUID
+	Reason        string
 }
 
-// InvokeRunnerUpOutput represents the output from the InvokeRunnerUp use case
+// InvokeRunnerUpOutput defines the output for the InvokeRunnerUp use case
 type InvokeRunnerUpOutput struct {
-	NewWinner draw.Winner
-	OldWinner draw.Winner
+	OriginalWinner RunnerUpWinnerOutput
+	NewWinner      RunnerUpWinnerOutput
 }
 
-// InvokeRunnerUpUseCase defines the use case for invoking a runner-up
-type InvokeRunnerUpUseCase struct {
-	drawRepo draw.Repository
+// RunnerUpWinnerOutput defines the winner output structure for runner-up invocation
+type RunnerUpWinnerOutput struct {
+	ID          uuid.UUID
+	MSISDN      string
+	PrizeTierID uuid.UUID
+	Status      string
 }
 
-// NewInvokeRunnerUpUseCase creates a new InvokeRunnerUpUseCase
-func NewInvokeRunnerUpUseCase(drawRepo draw.Repository) *InvokeRunnerUpUseCase {
-	return &InvokeRunnerUpUseCase{
-		drawRepo: drawRepo,
-	}
-}
-
-// Execute performs the invoke runner-up use case
-func (uc *InvokeRunnerUpUseCase) Execute(ctx context.Context, input InvokeRunnerUpInput) (InvokeRunnerUpOutput, error) {
+// InvokeRunnerUp invokes a runner-up to replace a winner
+func (uc *InvokeRunnerUpService) InvokeRunnerUp(input InvokeRunnerUpInput) (*InvokeRunnerUpOutput, error) {
 	// Validate input
-	if input.WinnerID == "" {
-		return InvokeRunnerUpOutput{}, draw.ErrInvalidWinnerID
+	if input.WinnerID == uuid.Nil {
+		return nil, errors.New("winner ID is required")
 	}
-	if input.Reason == "" {
-		return InvokeRunnerUpOutput{}, errors.New("reason is required")
+	
+	if input.AdminUserID == uuid.Nil {
+		return nil, errors.New("admin user ID is required")
 	}
-	if input.InvokedBy == "" {
-		return InvokeRunnerUpOutput{}, errors.New("invoker information is required")
-	}
-
-	// Get the winner
-	winner, err := uc.drawRepo.GetWinnerByID(ctx, input.WinnerID)
+	
+	// Get the original winner
+	originalWinner, err := uc.drawRepository.GetWinnerByID(input.WinnerID)
 	if err != nil {
-		return InvokeRunnerUpOutput{}, err
+		return nil, fmt.Errorf("failed to get winner: %w", err)
 	}
-
-	// Check if winner is already replaced
-	if winner.Status == draw.WinnerStatusReplaced {
-		return InvokeRunnerUpOutput{}, errors.New("winner has already been replaced")
+	
+	// Check if winner is eligible for replacement
+	if originalWinner.IsRunnerUp {
+		return nil, errors.New("cannot replace a runner-up")
 	}
-
-	// Get the next runner-up for this prize
-	runnerUp, err := uc.drawRepo.GetNextRunnerUp(ctx, winner.DrawID, winner.PrizeID)
+	
+	// Get available runner-ups
+	runnerUps, err := uc.drawRepository.GetRunnerUps(originalWinner.DrawID, originalWinner.PrizeTierID, 1)
 	if err != nil {
-		return InvokeRunnerUpOutput{}, err
+		return nil, fmt.Errorf("failed to get runner-ups: %w", err)
 	}
-
-	// Create a new winner from the runner-up
-	newWinner := draw.Winner{
-		DrawID:       winner.DrawID,
-		PrizeID:      winner.PrizeID,
-		MSISDN:       runnerUp.MSISDN,
-		PrizeName:    winner.PrizeName,
-		PrizeAmount:  winner.PrizeAmount,
-		Status:       draw.WinnerStatusPending,
-		SelectedAt:   time.Now(),
-		PaymentStatus: draw.PaymentStatusPending,
+	
+	if len(runnerUps) == 0 {
+		return nil, draw.NewDrawError(draw.ErrNoRunnerUpsAvailable, "No runner-ups available", nil)
 	}
-
-	// Update the old winner status
-	winner.Status = draw.WinnerStatusReplaced
-	winner.ReplacementReason = input.Reason
-	winner.ReplacedBy = input.InvokedBy
-	winner.ReplacedAt = time.Now()
-
-	// Update the runner-up status
-	runnerUp.Status = draw.RunnerUpStatusSelected
-
-	// Perform the transaction
-	err = uc.drawRepo.InvokeRunnerUp(ctx, winner, newWinner, runnerUp)
-	if err != nil {
-		return InvokeRunnerUpOutput{}, err
+	
+	// Select the first runner-up
+	newWinner := runnerUps[0]
+	
+	// Update original winner status
+	originalWinner.Status = "Replaced"
+	originalWinner.UpdatedAt = time.Now()
+	
+	if err := uc.drawRepository.UpdateWinner(originalWinner); err != nil {
+		return nil, fmt.Errorf("failed to update original winner: %w", err)
 	}
-
-	return InvokeRunnerUpOutput{
-		NewWinner: newWinner,
-		OldWinner: winner,
+	
+	// Update runner-up status
+	newWinner.IsRunnerUp = false
+	newWinner.Status = "PendingNotification"
+	newWinner.UpdatedAt = time.Now()
+	
+	if err := uc.drawRepository.UpdateWinner(&newWinner); err != nil {
+		return nil, fmt.Errorf("failed to update runner-up: %w", err)
+	}
+	
+	// Log audit
+	if err := uc.auditService.LogAudit(
+		"INVOKE_RUNNER_UP",
+		"Winner",
+		originalWinner.ID,
+		input.AdminUserID,
+		fmt.Sprintf("Runner-up invoked to replace winner %s", originalWinner.MSISDN),
+		fmt.Sprintf("Reason: %s, New winner: %s", input.Reason, newWinner.MSISDN),
+	); err != nil {
+		// Log error but continue
+		fmt.Printf("Failed to log audit: %v\n", err)
+	}
+	
+	return &InvokeRunnerUpOutput{
+		OriginalWinner: RunnerUpWinnerOutput{
+			ID:          originalWinner.ID,
+			MSISDN:      originalWinner.MSISDN,
+			PrizeTierID: originalWinner.PrizeTierID,
+			Status:      originalWinner.Status,
+		},
+		NewWinner: RunnerUpWinnerOutput{
+			ID:          newWinner.ID,
+			MSISDN:      newWinner.MSISDN,
+			PrizeTierID: newWinner.PrizeTierID,
+			Status:      newWinner.Status,
+		},
 	}, nil
 }

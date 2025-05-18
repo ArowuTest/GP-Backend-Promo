@@ -1,296 +1,195 @@
-package interface
+package handler
 
 import (
 	"net/http"
-	"time"
 	"strconv"
-
+	"time"
+	
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	
-	"github.com/ArowuTest/GP-Backend-Promo/internal/application/audit"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/audit/entity"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/request"
+	auditApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/audit"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
 )
 
-// AuditHandler handles HTTP requests related to audit logs
+// AuditHandler handles audit-related HTTP requests
 type AuditHandler struct {
-	createAuditLog *audit.CreateAuditLogUseCase
-	listAuditLogs  *audit.ListAuditLogsUseCase
-	getAuditLog    *audit.GetAuditLogUseCase
+	getAuditLogsService *auditApp.GetAuditLogsService
 }
 
 // NewAuditHandler creates a new AuditHandler
-func NewAuditHandler(
-	createAuditLog *audit.CreateAuditLogUseCase,
-	listAuditLogs *audit.ListAuditLogsUseCase,
-	getAuditLog *audit.GetAuditLogUseCase,
-) *AuditHandler {
+func NewAuditHandler(getAuditLogsService *auditApp.GetAuditLogsService) *AuditHandler {
 	return &AuditHandler{
-		createAuditLog: createAuditLog,
-		listAuditLogs:  listAuditLogs,
-		getAuditLog:    getAuditLog,
+		getAuditLogsService: getAuditLogsService,
 	}
 }
 
-// CreateAuditLog handles the request to create an audit log
-func (h *AuditHandler) CreateAuditLog(c *gin.Context) {
-	var req request.CreateAuditLogRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
-			Success: false,
-			Error:   "Invalid request format",
-			Details: err.Error(),
-		})
-		return
-	}
-
-	// Parse user ID
-	var userID *uuid.UUID
-	if req.UserID != "" {
-		parsedUserID, err := uuid.Parse(req.UserID)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, response.ErrorResponse{
-				Success: false,
-				Error:   "Invalid user ID",
-				Details: err.Error(),
-			})
-			return
-		}
-		userID = &parsedUserID
-	}
-
-	// Create audit log
-	input := audit.CreateAuditLogInput{
-		Action:      req.Action,
-		Module:      req.Module,
-		Description: req.Description,
-		UserID:      userID,
-		Metadata:    req.Metadata,
-	}
-
-	output, err := h.createAuditLog.Execute(input)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
-			Success: false,
-			Error:   "Failed to create audit log",
-			Details: err.Error(),
-		})
-		return
-	}
-
-	// Format user ID for response
-	var userIDStr string
-	if output.AuditLog.UserID != nil {
-		userIDStr = output.AuditLog.UserID.String()
-	}
-
-	// Prepare response
-	resp := response.AuditLogResponse{
-		ID:          output.AuditLog.ID.String(),
-		Action:      output.AuditLog.Action,
-		Module:      output.AuditLog.Module,
-		Description: output.AuditLog.Description,
-		UserID:      userIDStr,
-		Metadata:    output.AuditLog.Metadata,
-		CreatedAt:   output.AuditLog.CreatedAt.Format(time.RFC3339),
-	}
-
-	c.JSON(http.StatusCreated, response.SuccessResponse{
-		Success: true,
-		Data:    resp,
-	})
-}
-
-// ListAuditLogs handles the request to list audit logs
-func (h *AuditHandler) ListAuditLogs(c *gin.Context) {
+// GetAuditLogs handles GET /api/admin/audit-logs
+func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 	// Parse pagination parameters
 	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if err != nil || page < 1 {
 		page = 1
 	}
-
+	
 	pageSize, err := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
-	if err != nil || pageSize < 1 || pageSize > 100 {
+	if err != nil || pageSize < 1 {
 		pageSize = 10
 	}
-
-	// Parse filters
-	module := c.Query("module")
+	
+	// Parse filter parameters
 	action := c.Query("action")
+	entityType := c.Query("entityType")
 	
-	var userID *uuid.UUID
-	userIDStr := c.Query("userId")
-	if userIDStr != "" {
-		parsedUserID, err := uuid.Parse(userIDStr)
+	var entityID uuid.UUID
+	if entityIDStr := c.Query("entityId"); entityIDStr != "" {
+		entityID, err = uuid.Parse(entityIDStr)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse{
 				Success: false,
-				Error:   "Invalid user ID",
-				Details: err.Error(),
+				Error:   "Invalid entity ID format",
 			})
 			return
 		}
-		userID = &parsedUserID
 	}
 	
-	var startDate *time.Time
-	startDateStr := c.Query("startDate")
-	if startDateStr != "" {
-		parsedStartDate, err := time.Parse("2006-01-02", startDateStr)
+	var userID uuid.UUID
+	if userIDStr := c.Query("userId"); userIDStr != "" {
+		userID, err = uuid.Parse(userIDStr)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse{
 				Success: false,
-				Error:   "Invalid start date format",
-				Details: "Date must be in YYYY-MM-DD format",
+				Error:   "Invalid user ID format",
 			})
 			return
 		}
-		startDate = &parsedStartDate
 	}
 	
-	var endDate *time.Time
-	endDateStr := c.Query("endDate")
-	if endDateStr != "" {
-		parsedEndDate, err := time.Parse("2006-01-02", endDateStr)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, response.ErrorResponse{
-				Success: false,
-				Error:   "Invalid end date format",
-				Details: "Date must be in YYYY-MM-DD format",
-			})
-			return
-		}
-		// Set to end of day
-		parsedEndDate = parsedEndDate.Add(24*time.Hour - 1*time.Second)
-		endDate = &parsedEndDate
+	// Parse date range
+	startDate, _ := parseDate(c.Query("startDate"))
+	endDate, _ := parseDate(c.Query("endDate"))
+	
+	// Prepare input
+	input := auditApp.GetAuditLogsInput{
+		Page:     page,
+		PageSize: pageSize,
+		Filters: auditApp.AuditLogFilters{
+			Action:     action,
+			EntityType: entityType,
+			EntityID:   entityID,
+			UserID:     userID,
+			StartDate:  startDate,
+			EndDate:    endDate,
+		},
 	}
-
-	// List audit logs
-	input := audit.ListAuditLogsInput{
-		Page:      page,
-		PageSize:  pageSize,
-		Module:    module,
-		Action:    action,
-		UserID:    userID,
-		StartDate: startDate,
-		EndDate:   endDate,
-	}
-
-	output, err := h.listAuditLogs.Execute(input)
+	
+	// Get audit logs
+	output, err := h.getAuditLogsService.GetAuditLogs(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
-			Error:   "Failed to list audit logs",
-			Details: err.Error(),
+			Error:   "Failed to get audit logs: " + err.Error(),
 		})
 		return
 	}
-
-	// Convert audit logs to response format
-	auditLogs := make([]response.AuditLogResponse, 0, len(output.AuditLogs))
-	for _, al := range output.AuditLogs {
-		// Format user ID for response
-		var userIDStr string
-		if al.UserID != nil {
-			userIDStr = al.UserID.String()
-		}
-
-		auditLog := response.AuditLogResponse{
-			ID:          al.ID.String(),
-			Action:      al.Action,
-			Module:      al.Module,
-			Description: al.Description,
-			UserID:      userIDStr,
-			Metadata:    al.Metadata,
-			CreatedAt:   al.CreatedAt.Format(time.RFC3339),
-		}
-		auditLogs = append(auditLogs, auditLog)
-	}
-
+	
 	// Prepare response
-	resp := response.PaginatedResponse{
+	auditLogs := make([]response.AuditLogResponse, 0, len(output.AuditLogs))
+	for _, auditLog := range output.AuditLogs {
+		auditLogs = append(auditLogs, response.AuditLogResponse{
+			ID:         auditLog.ID.String(),
+			Action:     auditLog.Action,
+			EntityType: auditLog.EntityType,
+			EntityID:   auditLog.EntityID,
+			UserID:     auditLog.UserID.String(),
+			Summary:    auditLog.Description,
+			Details:    auditLog.Description,
+			CreatedAt:  auditLog.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
+	
+	c.JSON(http.StatusOK, response.PaginatedResponse{
 		Success: true,
 		Data:    auditLogs,
 		Pagination: response.Pagination{
-			Page:      page,
-			PageSize:  pageSize,
-			TotalRows: output.Total,
-			TotalPages: (output.Total + pageSize - 1) / pageSize,
+			Page:       output.Page,
+			PageSize:   output.PageSize,
+			TotalRows:  int(output.TotalCount),
+			TotalPages: output.TotalPages,
+			TotalItems: int64(output.TotalCount),
 		},
-	}
-
-	c.JSON(http.StatusOK, resp)
+	})
 }
 
-// GetAuditLog handles the request to get an audit log by ID
-func (h *AuditHandler) GetAuditLog(c *gin.Context) {
-	// Parse audit log ID
-	auditLogIDStr := c.Param("id")
-	auditLogID, err := uuid.Parse(auditLogIDStr)
+// GetDataUploadAudits handles GET /api/admin/reports/data-uploads
+func (h *AuditHandler) GetDataUploadAudits(c *gin.Context) {
+	// Parse pagination parameters
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+	
+	pageSize, err := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	if err != nil || pageSize < 1 {
+		pageSize = 10
+	}
+	
+	// Parse date range
+	startDate, _ := parseDate(c.Query("startDate"))
+	endDate, _ := parseDate(c.Query("endDate"))
+	
+	// Prepare input - using the same GetAuditLogsInput but with specific filters for data uploads
+	input := auditApp.GetAuditLogsInput{
+		Page:     page,
+		PageSize: pageSize,
+		Filters: auditApp.AuditLogFilters{
+			Action:     "UPLOAD_PARTICIPANTS", // Filter for participant upload actions
+			EntityType: "Participant",
+			StartDate:  startDate,
+			EndDate:    endDate,
+		},
+	}
+	
+	// Get audit logs
+	output, err := h.getAuditLogsService.GetAuditLogs(c.Request.Context(), input)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid audit log ID",
-			Details: err.Error(),
+			Error:   "Failed to get data upload audits: " + err.Error(),
 		})
 		return
 	}
-
-	// Get audit log
-	input := audit.GetAuditLogInput{
-		AuditLogID: auditLogID,
-	}
-
-	output, err := h.getAuditLog.Execute(input)
-	if err != nil {
-		var statusCode int
-		var errorMessage string
-
-		// Handle domain-specific errors
-		switch err.(type) {
-		case *entity.AuditError:
-			auditErr := err.(*entity.AuditError)
-			if auditErr.Code() == entity.ErrAuditLogNotFound {
-				statusCode = http.StatusNotFound
-				errorMessage = "Audit log not found"
-			} else {
-				statusCode = http.StatusInternalServerError
-				errorMessage = "Failed to get audit log"
-			}
-		default:
-			statusCode = http.StatusInternalServerError
-			errorMessage = "Failed to get audit log"
-		}
-
-		c.JSON(statusCode, response.ErrorResponse{
-			Success: false,
-			Error:   errorMessage,
-			Details: err.Error(),
+	
+	// Prepare response - transform audit logs to data upload format
+	dataUploads := make([]response.DataUploadAuditResponse, 0, len(output.AuditLogs))
+	for _, auditLog := range output.AuditLogs {
+		dataUploads = append(dataUploads, response.DataUploadAuditResponse{
+			ID:            auditLog.ID.String(),
+			UploadedBy:    auditLog.UserID.String(),
+			UploadedAt:    auditLog.CreatedAt.Format("2006-01-02 15:04:05"),
+			TotalUploaded: 0, // This would be extracted from the audit log details in a real implementation
+			Status:        "Completed",
+			Details:       auditLog.Description,
 		})
-		return
 	}
-
-	// Format user ID for response
-	var userIDStr string
-	if output.AuditLog.UserID != nil {
-		userIDStr = output.AuditLog.UserID.String()
-	}
-
-	// Prepare response
-	resp := response.AuditLogResponse{
-		ID:          output.AuditLog.ID.String(),
-		Action:      output.AuditLog.Action,
-		Module:      output.AuditLog.Module,
-		Description: output.AuditLog.Description,
-		UserID:      userIDStr,
-		Metadata:    output.AuditLog.Metadata,
-		CreatedAt:   output.AuditLog.CreatedAt.Format(time.RFC3339),
-	}
-
-	c.JSON(http.StatusOK, response.SuccessResponse{
+	
+	c.JSON(http.StatusOK, response.PaginatedResponse{
 		Success: true,
-		Data:    resp,
+		Data:    dataUploads,
+		Pagination: response.Pagination{
+			Page:       output.Page,
+			PageSize:   output.PageSize,
+			TotalRows:  int(output.TotalCount),
+			TotalPages: output.TotalPages,
+			TotalItems: int64(output.TotalCount),
+		},
 	})
+}
+
+// Helper function to parse date string
+func parseDate(dateStr string) (time.Time, error) {
+	if dateStr == "" {
+		return time.Time{}, nil
+	}
+	return time.Parse("2006-01-02", dateStr)
 }

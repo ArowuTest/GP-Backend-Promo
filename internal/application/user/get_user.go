@@ -2,47 +2,57 @@ package user
 
 import (
 	"context"
-	"errors"
-
-	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/user"
+	"fmt"
+	
+	"github.com/google/uuid"
+	
+	userDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/user"
 )
 
-// GetUserInput represents the input for the GetUser use case
+// GetUserService provides functionality for retrieving users
+type GetUserService struct {
+	userRepository userDomain.UserRepository
+}
+
+// NewGetUserService creates a new GetUserService
+func NewGetUserService(userRepository userDomain.UserRepository) *GetUserService {
+	return &GetUserService{
+		userRepository: userRepository,
+	}
+}
+
+// GetUserInput defines the input for the GetUser use case
 type GetUserInput struct {
-	UserID string
+	ID uuid.UUID
 }
 
-// GetUserOutput represents the output from the GetUser use case
+// GetUserOutput defines the output for the GetUser use case
 type GetUserOutput struct {
-	User user.User
+	ID        uuid.UUID
+	Username  string
+	Email     string
+	Role      string
+	CreatedAt string
+	UpdatedAt string
 }
 
-// GetUserUseCase defines the use case for retrieving a user
-type GetUserUseCase struct {
-	userRepo user.Repository
-}
-
-// NewGetUserUseCase creates a new GetUserUseCase
-func NewGetUserUseCase(userRepo user.Repository) *GetUserUseCase {
-	return &GetUserUseCase{
-		userRepo: userRepo,
+// GetUser retrieves a user by ID
+func (s *GetUserService) GetUser(ctx context.Context, input GetUserInput) (*GetUserOutput, error) {
+	if input.ID == uuid.Nil {
+		return nil, fmt.Errorf("user ID is required")
 	}
-}
-
-// Execute performs the get user use case
-func (uc *GetUserUseCase) Execute(ctx context.Context, input GetUserInput) (GetUserOutput, error) {
-	// Validate input
-	if input.UserID == "" {
-		return GetUserOutput{}, errors.New("user ID is required")
-	}
-
-	// Get user from repository
-	user, err := uc.userRepo.GetUserByID(ctx, input.UserID)
+	
+	user, err := s.userRepository.GetByID(input.ID)
 	if err != nil {
-		return GetUserOutput{}, err
+		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
-
-	return GetUserOutput{
-		User: user,
+	
+	return &GetUserOutput{
+		ID:        user.ID,
+		Username:  user.Username,
+		Email:     user.Email,
+		Role:      user.Role,
+		CreatedAt: user.CreatedAt.Format("2006-01-02 15:04:05"),
+		UpdatedAt: user.UpdatedAt.Format("2006-01-02 15:04:05"),
 	}, nil
 }

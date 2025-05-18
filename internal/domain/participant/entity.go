@@ -1,4 +1,4 @@
-package domain
+package participant
 
 import (
 	"errors"
@@ -14,6 +14,7 @@ type Participant struct {
 	Points         int
 	RechargeAmount float64
 	RechargeDate   time.Time
+	UploadID       uuid.UUID
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
@@ -26,7 +27,9 @@ type ParticipantRepository interface {
 	List(page, pageSize int) ([]Participant, int, error)
 	ListByDate(date time.Time, page, pageSize int) ([]Participant, int, error)
 	GetStatsByDate(date time.Time) (int, int, error)
+	GetStats(date time.Time) (int, int, float64, error)
 	BulkCreate(participants []*Participant) (int, []string, error)
+	CreateBatch(participants []*Participant) (int, []string, error)
 	DeleteByUploadID(uploadID uuid.UUID) error
 }
 

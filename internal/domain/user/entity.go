@@ -1,4 +1,4 @@
-package domain
+package user
 
 import (
 	"errors"
@@ -9,15 +9,16 @@ import (
 
 // User represents a user entity in the domain
 type User struct {
-	ID        uuid.UUID
-	Email     string
-	Name      string
-	Role      string // "SuperAdmin", "Admin", "SeniorUser", "WinnersReportUser", "AllReportUser"
-	Password  string // Hashed password
-	LastLogin *time.Time
-	IsActive  bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID           uuid.UUID
+	Email        string
+	Username     string
+	FullName     string
+	Role         string // "SuperAdmin", "Admin", "SeniorUser", "WinnersReportUser", "AllReportUser"
+	PasswordHash string // Hashed password
+	LastLogin    *time.Time
+	IsActive     bool
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // UserRepository defines the interface for user data access
@@ -25,6 +26,7 @@ type UserRepository interface {
 	Create(user *User) error
 	GetByID(id uuid.UUID) (*User, error)
 	GetByEmail(email string) (*User, error)
+	GetByUsername(username string) (*User, error)
 	List(page, pageSize int) ([]User, int, error)
 	Update(user *User) error
 	Delete(id uuid.UUID) error
@@ -76,8 +78,8 @@ func ValidateUser(user *User) error {
 		return errors.New("email cannot be empty")
 	}
 	
-	if user.Name == "" {
-		return errors.New("name cannot be empty")
+	if user.FullName == "" {
+		return errors.New("full name cannot be empty")
 	}
 	
 	if user.Role == "" {

@@ -1,131 +1,115 @@
-package application
+package participant
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"time"
+	
 	"github.com/google/uuid"
+	
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/participant"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/audit"
 )
 
-// UploadParticipantsUseCase represents the use case for uploading participant data
-type UploadParticipantsUseCase struct {
+// UploadParticipantsService provides functionality for uploading participants
+type UploadParticipantsService struct {
 	participantRepository participant.ParticipantRepository
-	uploadAuditRepository participant.UploadAuditRepository
+	auditService          audit.AuditService
 }
 
-// NewUploadParticipantsUseCase creates a new UploadParticipantsUseCase
-func NewUploadParticipantsUseCase(
+// NewUploadParticipantsService creates a new UploadParticipantsService
+func NewUploadParticipantsService(
 	participantRepository participant.ParticipantRepository,
-	uploadAuditRepository participant.UploadAuditRepository,
-) *UploadParticipantsUseCase {
-	return &UploadParticipantsUseCase{
-		participantRepository:  participantRepository,
-		uploadAuditRepository: uploadAuditRepository,
+	auditService audit.AuditService,
+) *UploadParticipantsService {
+	return &UploadParticipantsService{
+		participantRepository: participantRepository,
+		auditService:          auditService,
 	}
 }
 
-// UploadParticipantsInput represents the input for the upload participants use case
+// UploadParticipantsInput defines the input for the UploadParticipants use case
 type UploadParticipantsInput struct {
-	FileName    string
-	UploadedBy  uuid.UUID
-	Participants []ParticipantData
+	Participants []ParticipantInput `json:"participants"`
+	UploadedBy   uuid.UUID          `json:"uploadedBy"`
 }
 
-// ParticipantData represents a single participant record from the CSV
-type ParticipantData struct {
-	MSISDN         string
-	RechargeAmount float64
-	RechargeDate   time.Time
+// ParticipantInput defines the input for a participant
+type ParticipantInput struct {
+	MSISDN      string    `json:"msisdn"`
+	RechargeAmount float64   `json:"rechargeAmount"`
+	RechargeDate string    `json:"rechargeDate"`
 }
 
-// UploadParticipantsOutput represents the output of the upload participants use case
+// UploadParticipantsOutput defines the output for the UploadParticipants use case
 type UploadParticipantsOutput struct {
-	AuditID            uuid.UUID
-	Status             string
-	TotalRowsProcessed int
-	SuccessfulRows     int
-	ErrorCount         int
-	ErrorDetails       []string
-	DuplicatesSkipped  int
+	TotalUploaded int       `json:"totalUploaded"`
+	UploadID      uuid.UUID `json:"uploadId"`
+	UploadedAt    time.Time `json:"uploadedAt"`
 }
 
-// Execute processes the participant data upload
-func (uc *UploadParticipantsUseCase) Execute(input UploadParticipantsInput) (*UploadParticipantsOutput, error) {
-	// Create audit record
-	audit := &participant.UploadAudit{
-		ID:              uuid.New(),
-		UploadedBy:      input.UploadedBy,
-		UploadDate:      time.Now(),
-		FileName:        input.FileName,
-		Status:          "Processing",
-		TotalRows:       len(input.Participants),
-		SuccessfulRows:  0,
-		ErrorCount:      0,
-		ErrorDetails:    []string{},
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
+// UploadParticipants uploads a batch of participants
+func (s *UploadParticipantsService) UploadParticipants(ctx context.Context, input UploadParticipantsInput) (*UploadParticipantsOutput, error) {
+	if len(input.Participants) == 0 {
+		return nil, errors.New("at least one participant is required")
 	}
-
-	// Save initial audit record
-	if err := uc.uploadAuditRepository.Create(audit); err != nil {
-		return nil, participant.NewParticipantError("AUDIT_CREATION_FAILED", "Failed to create upload audit record", err)
+	
+	if input.UploadedBy == uuid.Nil {
+		return nil, errors.New("uploaded by is required")
 	}
-
+	
+	// Create upload record
+	uploadID := uuid.New()
+	now := time.Now()
+	
 	// Process participants
-	participantsToCreate := make([]*participant.Participant, 0)
-	errorDetails := make([]string, 0)
-	duplicatesSkipped := 0
-
-	for _, data := range input.Participants {
-		// Validate MSISDN
-		if err := participant.ValidateMSISDN(data.MSISDN); err != nil {
-			errorDetails = append(errorDetails, "Invalid MSISDN: "+data.MSISDN+": "+err.Error())
-			continue
+	participants := make([]*participant.Participant, 0, len(input.Participants))
+	for _, p := range input.Participants {
+		// Parse recharge date
+		rechargeDate, err := time.Parse("2006-01-02", p.RechargeDate)
+		if err != nil {
+			return nil, fmt.Errorf("invalid recharge date for MSISDN %s: %w", p.MSISDN, err)
 		}
-
-		// Calculate points
-		points := participant.CalculatePoints(data.RechargeAmount)
-
-		// Create participant entity
-		newParticipant := &participant.Participant{
+		
+		// Calculate points (1 point per N100)
+		points := int(p.RechargeAmount / 100)
+		
+		participant := &participant.Participant{
 			ID:             uuid.New(),
-			MSISDN:         data.MSISDN,
+			MSISDN:         p.MSISDN,
+			RechargeAmount: p.RechargeAmount,
+			RechargeDate:   rechargeDate,
 			Points:         points,
-			RechargeAmount: data.RechargeAmount,
-			RechargeDate:   data.RechargeDate,
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
+			UploadID:       uploadID,
+			CreatedAt:      now,
 		}
-
-		participantsToCreate = append(participantsToCreate, newParticipant)
+		
+		participants = append(participants, participant)
 	}
-
-	// Bulk create participants
-	successfulRows, errors, err := uc.participantRepository.BulkCreate(participantsToCreate)
+	
+	// Save participants
+	successCount, _, err := s.participantRepository.CreateBatch(participants)
 	if err != nil {
-		audit.Status = "Failed"
-		audit.ErrorCount = len(input.Participants)
-		audit.ErrorDetails = append(audit.ErrorDetails, "Bulk creation failed: "+err.Error())
-		uc.uploadAuditRepository.Update(audit)
-		return nil, participant.NewParticipantError("BULK_CREATE_FAILED", "Failed to create participants", err)
+		return nil, fmt.Errorf("failed to create participants: %w", err)
 	}
-
-	// Update audit record
-	audit.Status = "Completed"
-	audit.SuccessfulRows = successfulRows
-	audit.ErrorCount = len(errors)
-	audit.ErrorDetails = append(audit.ErrorDetails, errors...)
-	uc.uploadAuditRepository.Update(audit)
-
-	// Prepare output
-	output := &UploadParticipantsOutput{
-		AuditID:            audit.ID,
-		Status:             audit.Status,
-		TotalRowsProcessed: len(input.Participants),
-		SuccessfulRows:     successfulRows,
-		ErrorCount:         len(errors),
-		ErrorDetails:       errors,
-		DuplicatesSkipped:  duplicatesSkipped,
+	
+	// Log audit
+	if err := s.auditService.LogAudit(
+		"UPLOAD_PARTICIPANTS",
+		"Participant",
+		uploadID,
+		input.UploadedBy,
+		fmt.Sprintf("Participants uploaded: %d", len(participants)),
+		"",
+	); err != nil {
+		// Log error but continue
+		fmt.Printf("Failed to log audit: %v\n", err)
 	}
-
-	return output, nil
+	
+	return &UploadParticipantsOutput{
+		TotalUploaded: successCount,
+		UploadID:      uploadID,
+		UploadedAt:    now,
+	}, nil
 }

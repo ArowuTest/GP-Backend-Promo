@@ -1,4 +1,4 @@
-package infrastructure
+package gorm
 
 import (
 	"errors"
@@ -27,14 +27,24 @@ func NewGormAuditRepository(db *gorm.DB) *GormAuditRepository {
 type AuditLogModel struct {
 	ID          string    `gorm:"primaryKey;type:uuid"`
 	UserID      string    `gorm:"type:uuid;index"`
-	Username    string
-	Action      string    `gorm:"index"`
-	EntityType  string    `gorm:"index"`
-	EntityID    string    `gorm:"index"`
+	Action      string
+	EntityType  string
+	EntityID    string    `gorm:"type:uuid"`
 	Description string
+	Metadata    string    `gorm:"type:text"`
 	IPAddress   string
 	UserAgent   string
-	MetadataJSON string   `gorm:"column:metadata"`
+	CreatedAt   time.Time `gorm:"index"`
+}
+
+// SystemAuditLogModel is the GORM model for system audit logs
+type SystemAuditLogModel struct {
+	ID          string    `gorm:"primaryKey;type:uuid"`
+	Action      string
+	Description string
+	Severity    string
+	Source      string
+	Metadata    string    `gorm:"type:text"`
 	CreatedAt   time.Time `gorm:"index"`
 }
 
@@ -43,22 +53,36 @@ func (AuditLogModel) TableName() string {
 	return "audit_logs"
 }
 
+// TableName returns the table name for the SystemAuditLogModel
+func (SystemAuditLogModel) TableName() string {
+	return "system_audit_logs"
+}
+
 // toModel converts a domain audit log entity to a GORM model
 func toAuditLogModel(a *audit.AuditLog) *AuditLogModel {
-	// In a real implementation, we would convert the Metadata map to JSON
-	metadataJSON := "{}" // Simplified for this example
-	
 	return &AuditLogModel{
 		ID:          a.ID.String(),
 		UserID:      a.UserID.String(),
-		Username:    a.Username,
 		Action:      a.Action,
 		EntityType:  a.EntityType,
 		EntityID:    a.EntityID,
 		Description: a.Description,
+		Metadata:    fmt.Sprintf("%v", a.Metadata),
 		IPAddress:   a.IPAddress,
 		UserAgent:   a.UserAgent,
-		MetadataJSON: metadataJSON,
+		CreatedAt:   a.CreatedAt,
+	}
+}
+
+// toSystemAuditLogModel converts a domain system audit log entity to a GORM model
+func toSystemAuditLogModel(a *audit.SystemAuditLog) *SystemAuditLogModel {
+	return &SystemAuditLogModel{
+		ID:          a.ID.String(),
+		Action:      a.Action,
+		Description: a.Description,
+		Severity:    a.Severity,
+		Source:      a.Source,
+		Metadata:    fmt.Sprintf("%v", a.Metadata),
 		CreatedAt:   a.CreatedAt,
 	}
 }
@@ -75,27 +99,47 @@ func (m *AuditLogModel) toDomain() (*audit.AuditLog, error) {
 		return nil, err
 	}
 	
-	// In a real implementation, we would parse the JSON from MetadataJSON
-	metadata := map[string]interface{}{} // Simplified for this example
+	// Create metadata map from string
+	metadata := make(map[string]interface{})
 	
 	return &audit.AuditLog{
 		ID:          id,
 		UserID:      userID,
-		Username:    m.Username,
 		Action:      m.Action,
 		EntityType:  m.EntityType,
 		EntityID:    m.EntityID,
 		Description: m.Description,
+		Metadata:    metadata,
 		IPAddress:   m.IPAddress,
 		UserAgent:   m.UserAgent,
+		CreatedAt:   m.CreatedAt,
+	}, nil
+}
+
+// toDomain converts a GORM model to a domain system audit log entity
+func (m *SystemAuditLogModel) toDomain() (*audit.SystemAuditLog, error) {
+	id, err := uuid.Parse(m.ID)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Create metadata map from string
+	metadata := make(map[string]interface{})
+	
+	return &audit.SystemAuditLog{
+		ID:          id,
+		Action:      m.Action,
+		Description: m.Description,
+		Severity:    m.Severity,
+		Source:      m.Source,
 		Metadata:    metadata,
 		CreatedAt:   m.CreatedAt,
 	}, nil
 }
 
-// CreateAuditLog implements the audit.AuditRepository interface
-func (r *GormAuditRepository) CreateAuditLog(a *audit.AuditLog) error {
-	model := toAuditLogModel(a)
+// Create implements the audit.AuditRepository interface
+func (r *GormAuditRepository) Create(auditLog *audit.AuditLog) error {
+	model := toAuditLogModel(auditLog)
 	result := r.db.Create(model)
 	if result.Error != nil {
 		return fmt.Errorf("failed to create audit log: %w", result.Error)
@@ -104,27 +148,57 @@ func (r *GormAuditRepository) CreateAuditLog(a *audit.AuditLog) error {
 	return nil
 }
 
-// GetAuditLogByID implements the audit.AuditRepository interface
-func (r *GormAuditRepository) GetAuditLogByID(id uuid.UUID) (*audit.AuditLog, error) {
+// CreateSystemAuditLog implements the audit.AuditRepository interface
+func (r *GormAuditRepository) CreateSystemAuditLog(systemAuditLog *audit.SystemAuditLog) error {
+	model := toSystemAuditLogModel(systemAuditLog)
+	result := r.db.Create(model)
+	if result.Error != nil {
+		return fmt.Errorf("failed to create system audit log: %w", result.Error)
+	}
+	
+	return nil
+}
+
+// GetByID implements the audit.AuditRepository interface
+func (r *GormAuditRepository) GetByID(id uuid.UUID) (*audit.AuditLog, error) {
 	var model AuditLogModel
 	result := r.db.First(&model, "id = ?", id.String())
-	if result.Error != nil {
+	if result.Error != nil {			
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return nil, audit.NewAuditError(audit.ErrAuditLogNotFound, "Audit log not found", result.Error)
 		}
 		return nil, fmt.Errorf("failed to get audit log: %w", result.Error)
 	}
 	
-	auditLog, err := model.toDomain()
+	auditLogEntity, err := model.toDomain()
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert audit log model to domain: %w", err)
 	}
 	
-	return auditLog, nil
+	return auditLogEntity, nil
 }
 
-// ListAuditLogs implements the audit.AuditRepository interface
-func (r *GormAuditRepository) ListAuditLogs(filters audit.AuditLogFilters, page, pageSize int) ([]audit.AuditLog, int, error) {
+// GetSystemAuditLogByID implements the audit.AuditRepository interface
+func (r *GormAuditRepository) GetSystemAuditLogByID(id uuid.UUID) (*audit.SystemAuditLog, error) {
+	var model SystemAuditLogModel
+	result := r.db.First(&model, "id = ?", id.String())
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, audit.NewAuditError(audit.ErrSystemAuditLogNotFound, "System audit log not found", result.Error)
+		}
+		return nil, fmt.Errorf("failed to get system audit log: %w", result.Error)
+	}
+	
+	systemAuditLogEntity, err := model.toDomain()
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert system audit log model to domain: %w", err)
+	}
+	
+	return systemAuditLogEntity, nil
+}
+
+// List implements the audit.AuditRepository interface
+func (r *GormAuditRepository) List(filters audit.AuditLogFilters, page, pageSize int) ([]audit.AuditLog, int, error) {
 	var models []AuditLogModel
 	var total int64
 	
@@ -133,7 +207,7 @@ func (r *GormAuditRepository) ListAuditLogs(filters audit.AuditLogFilters, page,
 	// Build query with filters
 	query := r.db.Model(&AuditLogModel{})
 	
-	if filters.UserID != nil {
+	if filters.UserID != uuid.Nil {
 		query = query.Where("user_id = ?", filters.UserID.String())
 	}
 	
@@ -143,10 +217,6 @@ func (r *GormAuditRepository) ListAuditLogs(filters audit.AuditLogFilters, page,
 	
 	if filters.EntityType != "" {
 		query = query.Where("entity_type = ?", filters.EntityType)
-	}
-	
-	if filters.EntityID != "" {
-		query = query.Where("entity_id = ?", filters.EntityID)
 	}
 	
 	if !filters.StartDate.IsZero() {
@@ -171,66 +241,96 @@ func (r *GormAuditRepository) ListAuditLogs(filters audit.AuditLogFilters, page,
 	
 	auditLogs := make([]audit.AuditLog, 0, len(models))
 	for _, model := range models {
-		auditLog, err := model.toDomain()
+		auditLogEntity, err := model.toDomain()
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to convert audit log model to domain: %w", err)
 		}
-		auditLogs = append(auditLogs, *auditLog)
+		auditLogs = append(auditLogs, *auditLogEntity)
 	}
 	
 	return auditLogs, int(total), nil
 }
 
-// GetUserActivitySummary implements the audit.AuditRepository interface
-func (r *GormAuditRepository) GetUserActivitySummary(userID uuid.UUID, startDate, endDate time.Time) (map[string]int, error) {
-	type ActionCount struct {
-		Action string
-		Count  int
+// ListSystemAuditLogs implements the audit.AuditRepository interface
+func (r *GormAuditRepository) ListSystemAuditLogs(filters map[string]interface{}, page, pageSize int) ([]audit.SystemAuditLog, int, error) {
+	var models []SystemAuditLogModel
+	var total int64
+	
+	offset := (page - 1) * pageSize
+	
+	// Build query with filters
+	query := r.db.Model(&SystemAuditLogModel{})
+	
+	for key, value := range filters {
+		query = query.Where(key+" = ?", value)
 	}
 	
-	var actionCounts []ActionCount
-	
-	result := r.db.Model(&AuditLogModel{}).
-		Select("action, COUNT(*) as count").
-		Where("user_id = ? AND created_at BETWEEN ? AND ?", userID.String(), startDate, endDate).
-		Group("action").
-		Find(&actionCounts)
-	
+	// Get total count
+	result := query.Count(&total)
 	if result.Error != nil {
-		return nil, fmt.Errorf("failed to get user activity summary: %w", result.Error)
+		return nil, 0, fmt.Errorf("failed to count system audit logs: %w", result.Error)
 	}
 	
-	summary := make(map[string]int)
-	for _, ac := range actionCounts {
-		summary[ac.Action] = ac.Count
+	// Get paginated system audit logs
+	result = query.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&models)
+	if result.Error != nil {
+		return nil, 0, fmt.Errorf("failed to list system audit logs: %w", result.Error)
 	}
 	
-	return summary, nil
+	systemAuditLogs := make([]audit.SystemAuditLog, 0, len(models))
+	for _, model := range models {
+		systemAuditLogEntity, err := model.toDomain()
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to convert system audit log model to domain: %w", err)
+		}
+		systemAuditLogs = append(systemAuditLogs, *systemAuditLogEntity)
+	}
+	
+	return systemAuditLogs, int(total), nil
 }
 
-// GetSystemActivitySummary implements the audit.AuditRepository interface
-func (r *GormAuditRepository) GetSystemActivitySummary(startDate, endDate time.Time) (map[string]int, error) {
-	type ActionCount struct {
-		Action string
-		Count  int
-	}
-	
-	var actionCounts []ActionCount
-	
-	result := r.db.Model(&AuditLogModel{}).
-		Select("action, COUNT(*) as count").
-		Where("created_at BETWEEN ? AND ?", startDate, endDate).
-		Group("action").
-		Find(&actionCounts)
+// GetByEntityID implements the audit.AuditRepository interface
+func (r *GormAuditRepository) GetByEntityID(entityType string, entityID uuid.UUID) ([]audit.AuditLog, error) {
+	var models []AuditLogModel
+	result := r.db.Where("entity_type = ? AND entity_id = ?", entityType, entityID.String()).
+		Order("created_at DESC").
+		Find(&models)
 	
 	if result.Error != nil {
-		return nil, fmt.Errorf("failed to get system activity summary: %w", result.Error)
+		return nil, fmt.Errorf("failed to get audit logs by entity ID: %w", result.Error)
 	}
 	
-	summary := make(map[string]int)
-	for _, ac := range actionCounts {
-		summary[ac.Action] = ac.Count
+	auditLogs := make([]audit.AuditLog, 0, len(models))
+	for _, model := range models {
+		auditLogEntity, err := model.toDomain()
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert audit log model to domain: %w", err)
+		}
+		auditLogs = append(auditLogs, *auditLogEntity)
 	}
 	
-	return summary, nil
+	return auditLogs, nil
+}
+
+// GetByUserID implements the audit.AuditRepository interface
+func (r *GormAuditRepository) GetByUserID(userID uuid.UUID) ([]audit.AuditLog, error) {
+	var models []AuditLogModel
+	result := r.db.Where("user_id = ?", userID.String()).
+		Order("created_at DESC").
+		Find(&models)
+	
+	if result.Error != nil {
+		return nil, fmt.Errorf("failed to get audit logs by user ID: %w", result.Error)
+	}
+	
+	auditLogs := make([]audit.AuditLog, 0, len(models))
+	for _, model := range models {
+		auditLogEntity, err := model.toDomain()
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert audit log model to domain: %w", err)
+		}
+		auditLogs = append(auditLogs, *auditLogEntity)
+	}
+	
+	return auditLogs, nil
 }

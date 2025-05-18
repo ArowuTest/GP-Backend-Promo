@@ -2,71 +2,49 @@ package draw
 
 import (
 	"context"
-	"time"
-
-	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/draw"
+	"fmt"
+	
+	"github.com/google/uuid"
+	
+	drawDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/draw"
 )
 
-// GetDrawDetailsInput represents the input for the GetDrawDetails use case
+// GetDrawDetailsService provides functionality for retrieving draw details
+type GetDrawDetailsService struct {
+	drawRepository drawDomain.DrawRepository
+}
+
+// NewGetDrawDetailsService creates a new GetDrawDetailsService
+func NewGetDrawDetailsService(drawRepository drawDomain.DrawRepository) *GetDrawDetailsService {
+	return &GetDrawDetailsService{
+		drawRepository: drawRepository,
+	}
+}
+
+// GetDrawDetailsInput defines the input for the GetDrawDetails use case
 type GetDrawDetailsInput struct {
-	DrawID string
+	DrawID uuid.UUID
 }
 
-// GetDrawDetailsOutput represents the output from the GetDrawDetails use case
+// GetDrawDetailsOutput defines the output for the GetDrawDetails use case
 type GetDrawDetailsOutput struct {
-	Draw       draw.Draw
-	Winners    []draw.Winner
-	RunnerUps  []draw.RunnerUp
-	TotalPrize float64
+	Draw    drawDomain.Draw
+	Winners []drawDomain.Winner
 }
 
-// GetDrawDetailsUseCase defines the use case for retrieving draw details
-type GetDrawDetailsUseCase struct {
-	drawRepo draw.Repository
-}
-
-// NewGetDrawDetailsUseCase creates a new GetDrawDetailsUseCase
-func NewGetDrawDetailsUseCase(drawRepo draw.Repository) *GetDrawDetailsUseCase {
-	return &GetDrawDetailsUseCase{
-		drawRepo: drawRepo,
-	}
-}
-
-// Execute performs the get draw details use case
-func (uc *GetDrawDetailsUseCase) Execute(ctx context.Context, input GetDrawDetailsInput) (GetDrawDetailsOutput, error) {
-	// Validate input
-	if input.DrawID == "" {
-		return GetDrawDetailsOutput{}, draw.ErrInvalidDrawID
+// GetDrawDetails retrieves details for a specific draw
+func (s *GetDrawDetailsService) GetDrawDetails(ctx context.Context, input GetDrawDetailsInput) (*GetDrawDetailsOutput, error) {
+	if input.DrawID == uuid.Nil {
+		return nil, fmt.Errorf("draw ID is required")
 	}
 
-	// Get draw from repository
-	d, err := uc.drawRepo.GetDrawByID(ctx, input.DrawID)
+	draw, err := s.drawRepository.GetByID(input.DrawID)
 	if err != nil {
-		return GetDrawDetailsOutput{}, err
+		return nil, fmt.Errorf("failed to get draw: %w", err)
 	}
 
-	// Get winners for this draw
-	winners, err := uc.drawRepo.GetWinnersByDrawID(ctx, input.DrawID)
-	if err != nil {
-		return GetDrawDetailsOutput{}, err
-	}
-
-	// Get runner-ups for this draw
-	runnerUps, err := uc.drawRepo.GetRunnerUpsByDrawID(ctx, input.DrawID)
-	if err != nil {
-		return GetDrawDetailsOutput{}, err
-	}
-
-	// Calculate total prize amount
-	var totalPrize float64
-	for _, winner := range winners {
-		totalPrize += winner.PrizeAmount
-	}
-
-	return GetDrawDetailsOutput{
-		Draw:       d,
-		Winners:    winners,
-		RunnerUps:  runnerUps,
-		TotalPrize: totalPrize,
+	return &GetDrawDetailsOutput{
+		Draw:    *draw,
+		Winners: draw.Winners,
 	}, nil
 }

@@ -2,77 +2,63 @@ package draw
 
 import (
 	"context"
-	"time"
-
+	"fmt"
+	
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/draw"
 )
 
-// ListDrawsInput represents the input for the ListDraws use case
-type ListDrawsInput struct {
-	StartDate time.Time
-	EndDate   time.Time
-	Status    string
-	Page      int
-	PageSize  int
+// ListDrawsService provides functionality for listing draws
+type ListDrawsService struct {
+	drawRepository draw.DrawRepository
 }
 
-// ListDrawsOutput represents the output from the ListDraws use case
-type ListDrawsOutput struct {
-	Draws    []draw.Draw
-	Total    int64
+// NewListDrawsService creates a new ListDrawsService
+func NewListDrawsService(drawRepository draw.DrawRepository) *ListDrawsService {
+	return &ListDrawsService{
+		drawRepository: drawRepository,
+	}
+}
+
+// ListDrawsInput defines the input for the ListDraws use case
+type ListDrawsInput struct {
 	Page     int
 	PageSize int
 }
 
-// ListDrawsUseCase defines the use case for listing draws
-type ListDrawsUseCase struct {
-	drawRepo draw.Repository
+// ListDrawsOutput defines the output for the ListDraws use case
+type ListDrawsOutput struct {
+	Draws      []draw.Draw
+	TotalCount int
+	Page       int
+	PageSize   int
+	TotalPages int
 }
 
-// NewListDrawsUseCase creates a new ListDrawsUseCase
-func NewListDrawsUseCase(drawRepo draw.Repository) *ListDrawsUseCase {
-	return &ListDrawsUseCase{
-		drawRepo: drawRepo,
-	}
-}
-
-// Execute performs the list draws use case
-func (uc *ListDrawsUseCase) Execute(ctx context.Context, input ListDrawsInput) (ListDrawsOutput, error) {
-	// Set default page size if not provided
-	if input.PageSize <= 0 {
-		input.PageSize = 10
-	}
-
-	// Set default page if not provided
-	if input.Page <= 0 {
+// ListDraws retrieves a paginated list of draws
+func (s *ListDrawsService) ListDraws(ctx context.Context, input ListDrawsInput) (*ListDrawsOutput, error) {
+	if input.Page < 1 {
 		input.Page = 1
 	}
-
-	// Prepare filter criteria
-	filter := draw.DrawFilter{
-		StartDate: input.StartDate,
-		EndDate:   input.EndDate,
-		Status:    input.Status,
-		Page:      input.Page,
-		PageSize:  input.PageSize,
+	
+	if input.PageSize < 1 {
+		input.PageSize = 10
 	}
-
-	// Get draws from repository
-	draws, err := uc.drawRepo.ListDraws(ctx, filter)
+	
+	draws, totalCount, err := s.drawRepository.List(input.Page, input.PageSize)
 	if err != nil {
-		return ListDrawsOutput{}, err
+		return nil, fmt.Errorf("failed to list draws: %w", err)
 	}
-
-	// Get total count for pagination
-	total, err := uc.drawRepo.CountDraws(ctx, filter)
-	if err != nil {
-		return ListDrawsOutput{}, err
+	
+	totalPages := totalCount / input.PageSize
+	if totalCount%input.PageSize > 0 {
+		totalPages++
 	}
-
-	return ListDrawsOutput{
-		Draws:    draws,
-		Total:    total,
-		Page:     input.Page,
-		PageSize: input.PageSize,
+	
+	return &ListDrawsOutput{
+		Draws:      draws,
+		TotalCount: totalCount,
+		Page:       input.Page,
+		PageSize:   input.PageSize,
+		TotalPages: totalPages,
 	}, nil
 }

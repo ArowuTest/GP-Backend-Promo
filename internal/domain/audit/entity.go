@@ -1,4 +1,4 @@
-package domain
+package audit
 
 import (
 	"errors"
@@ -33,11 +33,27 @@ type SystemAuditLog struct {
 	CreatedAt   time.Time
 }
 
+// AuditLogFilters defines filters for retrieving audit logs
+type AuditLogFilters struct {
+	StartDate  time.Time
+	EndDate    time.Time
+	UserID     uuid.UUID
+	Action     string
+	EntityType string
+	Page       int
+	PageSize   int
+}
+
+// AuditService defines the interface for audit logging
+type AuditService interface {
+	LogAudit(action, entityType string, entityID uuid.UUID, userID uuid.UUID, summary, details string) error
+}
+
 // AuditRepository defines the interface for audit log data access
 type AuditRepository interface {
-	CreateAuditLog(log *AuditLog) error
-	GetAuditLogByID(id uuid.UUID) (*AuditLog, error)
-	ListAuditLogs(filters map[string]interface{}, page, pageSize int) ([]AuditLog, int, error)
+	Create(log *AuditLog) error
+	GetByID(id uuid.UUID) (*AuditLog, error)
+	List(filters AuditLogFilters, page, pageSize int) ([]AuditLog, int, error)
 	
 	CreateSystemAuditLog(log *SystemAuditLog) error
 	GetSystemAuditLogByID(id uuid.UUID) (*SystemAuditLog, error)

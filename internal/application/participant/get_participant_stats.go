@@ -2,96 +2,85 @@ package participant
 
 import (
 	"context"
+	"fmt"
 	"time"
-
+	
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/participant"
 )
 
-// GetParticipantStatsInput represents the input for the GetParticipantStats use case
+// GetParticipantStatsService provides functionality for retrieving participant statistics
+type GetParticipantStatsService struct {
+	participantRepository participant.ParticipantRepository
+}
+
+// NewGetParticipantStatsService creates a new GetParticipantStatsService
+func NewGetParticipantStatsService(
+	participantRepository participant.ParticipantRepository,
+) *GetParticipantStatsService {
+	return &GetParticipantStatsService{
+		participantRepository: participantRepository,
+	}
+}
+
+// GetParticipantStatsInput defines the input for the GetParticipantStats use case
 type GetParticipantStatsInput struct {
-	StartDate time.Time
-	EndDate   time.Time
+	StartDate string // Format: YYYY-MM-DD
+	EndDate   string // Format: YYYY-MM-DD
 }
 
-// GetParticipantStatsOutput represents the output from the GetParticipantStats use case
+// GetParticipantStatsOutput defines the output for the GetParticipantStats use case
 type GetParticipantStatsOutput struct {
-	TotalParticipants int64
-	TotalPoints       int64
-	AveragePoints     float64
-	DateStats         []DateStat
+	TotalParticipants int     `json:"totalParticipants"`
+	TotalPoints       int     `json:"totalPoints"`
+	AveragePoints     float64 `json:"averagePoints"`
+	StartDate         string  `json:"startDate"`
+	EndDate           string  `json:"endDate"`
 }
 
-// DateStat represents statistics for a specific date
-type DateStat struct {
-	Date              time.Time
-	ParticipantCount  int64
-	TotalPoints       int64
-	AveragePointsPerParticipant float64
-}
-
-// GetParticipantStatsUseCase defines the use case for retrieving participant statistics
-type GetParticipantStatsUseCase struct {
-	participantRepo participant.Repository
-}
-
-// NewGetParticipantStatsUseCase creates a new GetParticipantStatsUseCase
-func NewGetParticipantStatsUseCase(participantRepo participant.Repository) *GetParticipantStatsUseCase {
-	return &GetParticipantStatsUseCase{
-		participantRepo: participantRepo,
+// GetParticipantStats retrieves statistics for participants
+func (s *GetParticipantStatsService) GetParticipantStats(ctx context.Context, input GetParticipantStatsInput) (*GetParticipantStatsOutput, error) {
+	if input.StartDate == "" {
+		return nil, fmt.Errorf("start date is required")
 	}
-}
-
-// Execute performs the get participant statistics use case
-func (uc *GetParticipantStatsUseCase) Execute(ctx context.Context, input GetParticipantStatsInput) (GetParticipantStatsOutput, error) {
-	// Validate input
-	if input.StartDate.IsZero() || input.EndDate.IsZero() {
-		return GetParticipantStatsOutput{}, participant.ErrInvalidDateRange
+	
+	if input.EndDate == "" {
+		return nil, fmt.Errorf("end date is required")
 	}
-
-	// Get total participants in date range
-	totalParticipants, err := uc.participantRepo.CountParticipantsInDateRange(ctx, input.StartDate, input.EndDate)
+	
+	// Parse dates
+	startDate, err := parseDate(input.StartDate)
 	if err != nil {
-		return GetParticipantStatsOutput{}, err
+		return nil, fmt.Errorf("invalid start date: %w", err)
 	}
-
-	// Get total points in date range
-	totalPoints, err := uc.participantRepo.CountTotalPointsInDateRange(ctx, input.StartDate, input.EndDate)
+	
+	// Parse end date but we don't use it currently as the repository method doesn't need it
+	_, err = parseDate(input.EndDate)
 	if err != nil {
-		return GetParticipantStatsOutput{}, err
+		return nil, fmt.Errorf("invalid end date: %w", err)
 	}
-
-	// Calculate average points per participant
+	
+	// Get participant stats
+	totalParticipants, totalPoints, _, err := s.participantRepository.GetStats(startDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get participant stats: %w", err)
+	}
+	
+	// Calculate average points
 	var averagePoints float64
 	if totalParticipants > 0 {
 		averagePoints = float64(totalPoints) / float64(totalParticipants)
 	}
-
-	// Get daily statistics
-	dateStats, err := uc.participantRepo.GetDailyStats(ctx, input.StartDate, input.EndDate)
-	if err != nil {
-		return GetParticipantStatsOutput{}, err
-	}
-
-	// Convert repository data to use case output format
-	stats := make([]DateStat, len(dateStats))
-	for i, stat := range dateStats {
-		var avgPoints float64
-		if stat.ParticipantCount > 0 {
-			avgPoints = float64(stat.TotalPoints) / float64(stat.ParticipantCount)
-		}
-		
-		stats[i] = DateStat{
-			Date:              stat.Date,
-			ParticipantCount:  stat.ParticipantCount,
-			TotalPoints:       stat.TotalPoints,
-			AveragePointsPerParticipant: avgPoints,
-		}
-	}
-
-	return GetParticipantStatsOutput{
+	
+	return &GetParticipantStatsOutput{
 		TotalParticipants: totalParticipants,
 		TotalPoints:       totalPoints,
 		AveragePoints:     averagePoints,
-		DateStats:         stats,
+		StartDate:         input.StartDate,
+		EndDate:           input.EndDate,
 	}, nil
+}
+
+// Helper function to parse date string
+func parseDate(dateStr string) (time.Time, error) {
+	return time.Parse("2006-01-02", dateStr)
 }

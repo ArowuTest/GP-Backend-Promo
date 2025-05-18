@@ -2,71 +2,63 @@ package user
 
 import (
 	"context"
-	"time"
-
-	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/user"
+	"fmt"
+	
+	userDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/user"
 )
 
-// ListUsersInput represents the input for the ListUsers use case
+// ListUsersService provides functionality for listing users
+type ListUsersService struct {
+	userRepository userDomain.UserRepository
+}
+
+// NewListUsersService creates a new ListUsersService
+func NewListUsersService(userRepository userDomain.UserRepository) *ListUsersService {
+	return &ListUsersService{
+		userRepository: userRepository,
+	}
+}
+
+// ListUsersInput defines the input for the ListUsers use case
 type ListUsersInput struct {
 	Page     int
 	PageSize int
 }
 
-// ListUsersOutput represents the output from the ListUsers use case
+// ListUsersOutput defines the output for the ListUsers use case
 type ListUsersOutput struct {
-	Users    []user.User
-	Total    int64
-	Page     int
-	PageSize int
+	Users      []userDomain.User
+	TotalCount int
+	Page       int
+	PageSize   int
+	TotalPages int
 }
 
-// ListUsersUseCase defines the use case for listing users
-type ListUsersUseCase struct {
-	userRepo user.Repository
-}
-
-// NewListUsersUseCase creates a new ListUsersUseCase
-func NewListUsersUseCase(userRepo user.Repository) *ListUsersUseCase {
-	return &ListUsersUseCase{
-		userRepo: userRepo,
-	}
-}
-
-// Execute performs the list users use case
-func (uc *ListUsersUseCase) Execute(ctx context.Context, input ListUsersInput) (ListUsersOutput, error) {
-	// Set default page size if not provided
-	if input.PageSize <= 0 {
-		input.PageSize = 10
-	}
-
-	// Set default page if not provided
-	if input.Page <= 0 {
+// ListUsers retrieves a paginated list of users
+func (s *ListUsersService) ListUsers(ctx context.Context, input ListUsersInput) (*ListUsersOutput, error) {
+	if input.Page < 1 {
 		input.Page = 1
 	}
-
-	// Prepare filter criteria
-	filter := user.UserFilter{
-		Page:     input.Page,
-		PageSize: input.PageSize,
+	
+	if input.PageSize < 1 {
+		input.PageSize = 10
 	}
-
-	// Get users from repository
-	users, err := uc.userRepo.ListUsers(ctx, filter)
+	
+	users, totalCount, err := s.userRepository.List(input.Page, input.PageSize)
 	if err != nil {
-		return ListUsersOutput{}, err
+		return nil, fmt.Errorf("failed to list users: %w", err)
 	}
-
-	// Get total count for pagination
-	total, err := uc.userRepo.CountUsers(ctx, filter)
-	if err != nil {
-		return ListUsersOutput{}, err
+	
+	totalPages := totalCount / input.PageSize
+	if totalCount%input.PageSize > 0 {
+		totalPages++
 	}
-
-	return ListUsersOutput{
-		Users:    users,
-		Total:    total,
-		Page:     input.Page,
-		PageSize: input.PageSize,
+	
+	return &ListUsersOutput{
+		Users:      users,
+		TotalCount: totalCount,
+		Page:       input.Page,
+		PageSize:   input.PageSize,
+		TotalPages: totalPages,
 	}, nil
 }

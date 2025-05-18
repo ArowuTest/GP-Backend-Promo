@@ -1,100 +1,161 @@
-package application
+package prize
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"time"
+	
 	"github.com/google/uuid"
+	
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/prize"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/audit"
 )
 
-// CreatePrizeStructureUseCase represents the use case for creating a prize structure
-type CreatePrizeStructureUseCase struct {
+// CreatePrizeStructureService provides functionality for creating prize structures
+type CreatePrizeStructureService struct {
 	prizeRepository prize.PrizeRepository
+	auditService    audit.AuditService
 }
 
-// NewCreatePrizeStructureUseCase creates a new CreatePrizeStructureUseCase
-func NewCreatePrizeStructureUseCase(
+// NewCreatePrizeStructureService creates a new CreatePrizeStructureService
+func NewCreatePrizeStructureService(
 	prizeRepository prize.PrizeRepository,
-) *CreatePrizeStructureUseCase {
-	return &CreatePrizeStructureUseCase{
+	auditService audit.AuditService,
+) *CreatePrizeStructureService {
+	return &CreatePrizeStructureService{
 		prizeRepository: prizeRepository,
+		auditService:    auditService,
 	}
 }
 
-// CreatePrizeStructureInput represents the input for the create prize structure use case
+// CreatePrizeStructureInput defines the input for the CreatePrizeStructure use case
 type CreatePrizeStructureInput struct {
 	Name        string
 	Description string
-	IsActive    bool
-	ValidFrom   time.Time
-	ValidTo     *time.Time
-	Prizes      []PrizeTierInput
+	StartDate   string // Format: YYYY-MM-DD
+	EndDate     string // Format: YYYY-MM-DD
+	Prizes      []PrizeInput
+	CreatedBy   uuid.UUID
 }
 
-// PrizeTierInput represents the input for a prize tier
-type PrizeTierInput struct {
-	Rank        int
+// PrizeInput defines the input for a prize tier
+type PrizeInput struct {
 	Name        string
 	Description string
 	Value       string
-	ValueNGN    float64
 	Quantity    int
 }
 
-// CreatePrizeStructureOutput represents the output of the create prize structure use case
+// CreatePrizeStructureOutput defines the output for the CreatePrizeStructure use case
 type CreatePrizeStructureOutput struct {
-	PrizeStructure *prize.PrizeStructure
+	ID          uuid.UUID
+	Name        string
+	Description string
+	StartDate   string
+	EndDate     string
+	Prizes      []CreatePrizeOutput
 }
 
-// Execute creates a new prize structure
-func (uc *CreatePrizeStructureUseCase) Execute(input CreatePrizeStructureInput) (*CreatePrizeStructureOutput, error) {
-	// Create prize structure entity
+// CreatePrizeOutput defines the output for a prize tier in create operation
+type CreatePrizeOutput struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+	Value       string
+	Quantity    int
+}
+
+// CreatePrizeStructure creates a new prize structure
+func (s *CreatePrizeStructureService) CreatePrizeStructure(ctx context.Context, input CreatePrizeStructureInput) (*CreatePrizeStructureOutput, error) {
+	// Validate input
+	if input.Name == "" {
+		return nil, errors.New("name is required")
+	}
+	
+	if len(input.Prizes) == 0 {
+		return nil, errors.New("at least one prize is required")
+	}
+	
+	// Parse dates
+	startDate, err := parseDate(input.StartDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid start date: %w", err)
+	}
+	
+	endDate, err := parseDate(input.EndDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid end date: %w", err)
+	}
+	
+	// Create prize structure
 	prizeStructureID := uuid.New()
 	prizeStructure := &prize.PrizeStructure{
 		ID:          prizeStructureID,
 		Name:        input.Name,
 		Description: input.Description,
-		IsActive:    input.IsActive,
-		ValidFrom:   input.ValidFrom,
-		ValidTo:     input.ValidTo,
+		StartDate:   startDate,
+		EndDate:     endDate,
+		CreatedBy:   input.CreatedBy,
 		Prizes:      make([]prize.PrizeTier, 0, len(input.Prizes)),
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
 	}
-
-	// Create prize tiers
-	for _, tierInput := range input.Prizes {
-		tier := prize.PrizeTier{
+	
+	// Create prizes
+	for i, prizeInput := range input.Prizes {
+		prizeItem := prize.PrizeTier{
 			ID:               uuid.New(),
 			PrizeStructureID: prizeStructureID,
-			Rank:             tierInput.Rank,
-			Name:             tierInput.Name,
-			Description:      tierInput.Description,
-			Value:            tierInput.Value,
-			ValueNGN:         tierInput.ValueNGN,
-			Quantity:         tierInput.Quantity,
-			CreatedAt:        time.Now(),
-			UpdatedAt:        time.Now(),
-		}
-
-		// Validate prize tier
-		if err := prize.ValidatePrizeTier(&tier); err != nil {
-			return nil, prize.NewPrizeError(prize.ErrInvalidPrizeTier, "Invalid prize tier", err)
-		}
-
-		prizeStructure.Prizes = append(prizeStructure.Prizes, tier)
+			Rank:             i + 1,
+			Name:             prizeInput.Name,
+			Description:      prizeInput.Description,
+			Value:            prizeInput.Value,
+			ValueNGN:         0, // Default value, can be calculated if needed
+			Quantity:         prizeInput.Quantity,
+		}	
+		prizeStructure.Prizes = append(prizeStructure.Prizes, prizeItem)
 	}
-
-	// Validate prize structure
-	if err := prize.ValidatePrizeStructure(prizeStructure); err != nil {
-		return nil, prize.NewPrizeError(prize.ErrInvalidPrizeStructure, "Invalid prize structure", err)
-	}
-
+	
 	// Save prize structure
-	if err := uc.prizeRepository.CreatePrizeStructure(prizeStructure); err != nil {
-		return nil, prize.NewPrizeError("PRIZE_STRUCTURE_CREATION_FAILED", "Failed to create prize structure", err)
+	if err := s.prizeRepository.CreatePrizeStructure(prizeStructure); err != nil {
+		return nil, fmt.Errorf("failed to create prize structure: %w", err)
 	}
-
+	
+	// Log audit
+	if err := s.auditService.LogAudit(
+		"CREATE_PRIZE_STRUCTURE",
+		"PrizeStructure",
+		prizeStructureID,
+		input.CreatedBy,
+		fmt.Sprintf("Prize structure created: %s", input.Name),
+		fmt.Sprintf("Prizes: %d", len(input.Prizes)),
+	); err != nil {
+		// Log error but continue
+		fmt.Printf("Failed to log audit: %v\n", err)
+	}
+	
+	// Prepare output
+	prizeOutputs := make([]CreatePrizeOutput, 0, len(prizeStructure.Prizes))
+	for _, prizeTier := range prizeStructure.Prizes {
+		prizeOutputs = append(prizeOutputs, CreatePrizeOutput{
+			ID:          prizeTier.ID,
+			Name:        prizeTier.Name,
+			Description: prizeTier.Description,
+			Value:       prizeTier.Value,
+			Quantity:    prizeTier.Quantity,
+		})
+	}
+	
 	return &CreatePrizeStructureOutput{
-		PrizeStructure: prizeStructure,
+		ID:          prizeStructureID,
+		Name:        prizeStructure.Name,
+		Description: prizeStructure.Description,
+		StartDate:   input.StartDate,
+		EndDate:     input.EndDate,
+		Prizes:      prizeOutputs,
 	}, nil
+}
+
+// Helper function to parse date string
+func parseDate(dateStr string) (time.Time, error) {
+	return time.Parse("2006-01-02", dateStr)
 }

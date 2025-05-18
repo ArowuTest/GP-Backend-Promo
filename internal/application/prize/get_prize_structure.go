@@ -2,47 +2,79 @@ package prize
 
 import (
 	"context"
-	"errors"
-
-	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/prize"
+	"fmt"
+	"time"
+	
+	"github.com/google/uuid"
+	
+	prizeDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/prize"
 )
 
-// GetPrizeStructureInput represents the input for the GetPrizeStructure use case
+// GetPrizeStructureService provides functionality for retrieving prize structures
+type GetPrizeStructureService struct {
+	prizeRepository prizeDomain.PrizeRepository
+}
+
+// NewGetPrizeStructureService creates a new GetPrizeStructureService
+func NewGetPrizeStructureService(prizeRepository prizeDomain.PrizeRepository) *GetPrizeStructureService {
+	return &GetPrizeStructureService{
+		prizeRepository: prizeRepository,
+	}
+}
+
+// GetPrizeStructureInput defines the input for the GetPrizeStructure use case
 type GetPrizeStructureInput struct {
-	PrizeStructureID string
+	ID uuid.UUID
 }
 
-// GetPrizeStructureOutput represents the output from the GetPrizeStructure use case
+// GetPrizeStructureOutput defines the output for the GetPrizeStructure use case
 type GetPrizeStructureOutput struct {
-	PrizeStructure prize.PrizeStructure
+	ID          uuid.UUID
+	Name        string
+	Description string
+	StartDate   time.Time
+	EndDate     time.Time
+	Prizes      []PrizeOutput
 }
 
-// GetPrizeStructureUseCase defines the use case for retrieving a prize structure
-type GetPrizeStructureUseCase struct {
-	prizeRepo prize.Repository
+// PrizeOutput defines the output for a prize tier
+type PrizeOutput struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+	Value       string
+	Quantity    int
 }
 
-// NewGetPrizeStructureUseCase creates a new GetPrizeStructureUseCase
-func NewGetPrizeStructureUseCase(prizeRepo prize.Repository) *GetPrizeStructureUseCase {
-	return &GetPrizeStructureUseCase{
-		prizeRepo: prizeRepo,
+// GetPrizeStructure retrieves a prize structure by ID
+func (s *GetPrizeStructureService) GetPrizeStructure(ctx context.Context, input GetPrizeStructureInput) (*GetPrizeStructureOutput, error) {
+	if input.ID == uuid.Nil {
+		return nil, fmt.Errorf("prize structure ID is required")
 	}
-}
-
-// Execute performs the get prize structure use case
-func (uc *GetPrizeStructureUseCase) Execute(ctx context.Context, input GetPrizeStructureInput) (GetPrizeStructureOutput, error) {
-	// Validate input
-	if input.PrizeStructureID == "" {
-		return GetPrizeStructureOutput{}, errors.New("prize structure ID is required")
-	}
-
-	// Get prize structure from repository
-	prizeStructure, err := uc.prizeRepo.GetPrizeStructureByID(ctx, input.PrizeStructureID)
+	
+	prizeStructure, err := s.prizeRepository.GetPrizeStructureByID(input.ID)
 	if err != nil {
-		return GetPrizeStructureOutput{}, err
+		return nil, fmt.Errorf("failed to get prize structure: %w", err)
 	}
-
-	return GetPrizeStructureOutput{
-		PrizeStructure: prizeStructure,
+	
+	// Prepare output
+	prizeOutputs := make([]PrizeOutput, 0, len(prizeStructure.Prizes))
+	for _, prize := range prizeStructure.Prizes {
+		prizeOutputs = append(prizeOutputs, PrizeOutput{
+			ID:          prize.ID,
+			Name:        prize.Name,
+			Description: prize.Description,
+			Value:       prize.Value,
+			Quantity:    prize.Quantity,
+		})
+	}
+	
+	return &GetPrizeStructureOutput{
+		ID:          prizeStructure.ID,
+		Name:        prizeStructure.Name,
+		Description: prizeStructure.Description,
+		StartDate:   prizeStructure.StartDate,
+		EndDate:     prizeStructure.EndDate,
+		Prizes:      prizeOutputs,
 	}, nil
 }

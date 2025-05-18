@@ -1,4 +1,4 @@
-package domain
+package prize
 
 import (
 	"errors"
@@ -15,9 +15,24 @@ type PrizeStructure struct {
 	IsActive    bool
 	ValidFrom   time.Time
 	ValidTo     *time.Time
+	StartDate   time.Time
+	EndDate     time.Time
+	CreatedBy   uuid.UUID
 	Prizes      []PrizeTier
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+}
+
+// Prize represents a prize tier within a prize structure
+type Prize struct {
+	ID               uuid.UUID
+	PrizeStructureID uuid.UUID
+	Name             string
+	Description      string
+	Value            string // Monetary value as string to support different formats
+	Quantity         int
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // PrizeTier represents a prize tier within a prize structure
@@ -28,7 +43,7 @@ type PrizeTier struct {
 	Name             string
 	Description      string
 	Value            string // Monetary value as string to support different formats
-	ValueNGN         float64 // Numeric value in Naira
+	ValueNGN         float64
 	Quantity         int
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
@@ -42,6 +57,12 @@ type PrizeRepository interface {
 	UpdatePrizeStructure(prizeStructure *PrizeStructure) error
 	DeletePrizeStructure(id uuid.UUID) error
 	GetActivePrizeStructure(date time.Time) (*PrizeStructure, error)
+	
+	CreatePrize(prize *Prize) error
+	GetPrizeByID(id uuid.UUID) (*Prize, error)
+	ListPrizesByStructureID(structureID uuid.UUID) ([]Prize, error)
+	UpdatePrize(prize *Prize) error
+	DeletePrize(id uuid.UUID) error
 	
 	CreatePrizeTier(prizeTier *PrizeTier) error
 	GetPrizeTierByID(id uuid.UUID) (*PrizeTier, error)
@@ -60,8 +81,10 @@ type PrizeError struct {
 // Error codes for the prize domain
 const (
 	ErrPrizeStructureNotFound = "PRIZE_STRUCTURE_NOT_FOUND"
+	ErrPrizeNotFound          = "PRIZE_NOT_FOUND"
 	ErrPrizeTierNotFound      = "PRIZE_TIER_NOT_FOUND"
 	ErrInvalidPrizeStructure  = "INVALID_PRIZE_STRUCTURE"
+	ErrInvalidPrize           = "INVALID_PRIZE"
 	ErrInvalidPrizeTier       = "INVALID_PRIZE_TIER"
 	ErrNoPrizeStructureActive = "NO_PRIZE_STRUCTURE_ACTIVE"
 	ErrInvalidDateRange       = "INVALID_DATE_RANGE"
@@ -104,7 +127,20 @@ func ValidatePrizeStructure(ps *PrizeStructure) error {
 	}
 	
 	if len(ps.Prizes) == 0 {
-		return errors.New("prize structure must have at least one prize tier")
+		return errors.New("prize structure must have at least one prize")
+	}
+	
+	return nil
+}
+
+// ValidatePrize validates that a prize is valid
+func ValidatePrize(p *Prize) error {
+	if p.Name == "" {
+		return errors.New("prize name cannot be empty")
+	}
+	
+	if p.Quantity < 1 {
+		return errors.New("prize quantity must be positive")
 	}
 	
 	return nil
@@ -114,10 +150,6 @@ func ValidatePrizeStructure(ps *PrizeStructure) error {
 func ValidatePrizeTier(pt *PrizeTier) error {
 	if pt.Name == "" {
 		return errors.New("prize tier name cannot be empty")
-	}
-	
-	if pt.Rank < 1 {
-		return errors.New("prize tier rank must be positive")
 	}
 	
 	if pt.Quantity < 1 {

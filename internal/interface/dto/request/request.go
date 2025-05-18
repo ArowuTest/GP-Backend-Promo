@@ -35,6 +35,7 @@ type CreatePrizeStructureRequest struct {
 
 // CreatePrizeTierRequest represents the request to create a prize tier
 type CreatePrizeTierRequest struct {
+	ID                string `json:"id,omitempty"`
 	Name              string `json:"name" binding:"required"`
 	PrizeType         string `json:"prize_type" binding:"required"`
 	Value             string `json:"value" binding:"required"`
@@ -85,6 +86,18 @@ type GetAuditLogsRequest struct {
 	Action    string `form:"action"`
 	Page      int    `form:"page,default=1"`
 	PageSize  int    `form:"page_size,default=10"`
+}
+
+// UploadParticipantsRequest represents the request to upload participants
+type UploadParticipantsRequest struct {
+	Participants []ParticipantInput `json:"participants" binding:"required,dive"`
+}
+
+// ParticipantInput represents a participant input for upload
+type ParticipantInput struct {
+	MSISDN         string  `json:"msisdn" binding:"required"`
+	RechargeAmount float64 `json:"recharge_amount" binding:"required"`
+	RechargeDate   string  `json:"recharge_date" binding:"required"`
 }
 
 // ParseTime parses a date string in YYYY-MM-DD format to time.Time

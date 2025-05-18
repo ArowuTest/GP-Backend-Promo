@@ -1,4 +1,4 @@
-package infrastructure
+package gorm
 
 import (
 	"errors"
@@ -30,7 +30,7 @@ type ParticipantModel struct {
 	Points         int
 	RechargeAmount float64
 	RechargeDate   time.Time `gorm:"index"`
-	UploadID       string    `gorm:"type:uuid;index"`
+	UploadID       string    `gorm:"type:uuid"`
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
@@ -45,8 +45,8 @@ type UploadAuditModel struct {
 	TotalRows       int
 	SuccessfulRows  int
 	ErrorCount      int
-	ErrorDetails    []string `gorm:"-"` // Stored as JSON in the database
-	ErrorDetailsJSON string   `gorm:"column:error_details"`
+	ErrorDetails    []string `gorm:"-"` // Not stored directly in the database
+	ErrorDetailsStr string   `gorm:"column:error_details"`
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
@@ -58,7 +58,7 @@ func (ParticipantModel) TableName() string {
 
 // TableName returns the table name for the UploadAuditModel
 func (UploadAuditModel) TableName() string {
-	return "participant_upload_audits"
+	return "upload_audits"
 }
 
 // toModel converts a domain participant entity to a GORM model
@@ -69,6 +69,7 @@ func toParticipantModel(p *participant.Participant) *ParticipantModel {
 		Points:         p.Points,
 		RechargeAmount: p.RechargeAmount,
 		RechargeDate:   p.RechargeDate,
+		UploadID:       p.UploadID.String(),
 		CreatedAt:      p.CreatedAt,
 		UpdatedAt:      p.UpdatedAt,
 	}
@@ -81,12 +82,18 @@ func (m *ParticipantModel) toDomain() (*participant.Participant, error) {
 		return nil, err
 	}
 	
+	uploadID, err := uuid.Parse(m.UploadID)
+	if err != nil {
+		return nil, err
+	}
+	
 	return &participant.Participant{
 		ID:             id,
 		MSISDN:         m.MSISDN,
 		Points:         m.Points,
 		RechargeAmount: m.RechargeAmount,
 		RechargeDate:   m.RechargeDate,
+		UploadID:       uploadID,
 		CreatedAt:      m.CreatedAt,
 		UpdatedAt:      m.UpdatedAt,
 	}, nil
@@ -94,8 +101,14 @@ func (m *ParticipantModel) toDomain() (*participant.Participant, error) {
 
 // toUploadAuditModel converts a domain upload audit entity to a GORM model
 func toUploadAuditModel(a *participant.UploadAudit) *UploadAuditModel {
-	// In a real implementation, we would convert the ErrorDetails slice to JSON
-	errorDetailsJSON := "[]" // Simplified for this example
+	// Convert error details slice to string for storage
+	errorDetailsStr := ""
+	for i, detail := range a.ErrorDetails {
+		if i > 0 {
+			errorDetailsStr += "\n"
+		}
+		errorDetailsStr += detail
+	}
 	
 	return &UploadAuditModel{
 		ID:              a.ID.String(),
@@ -107,7 +120,7 @@ func toUploadAuditModel(a *participant.UploadAudit) *UploadAuditModel {
 		SuccessfulRows:  a.SuccessfulRows,
 		ErrorCount:      a.ErrorCount,
 		ErrorDetails:    a.ErrorDetails,
-		ErrorDetailsJSON: errorDetailsJSON,
+		ErrorDetailsStr: errorDetailsStr,
 		CreatedAt:       a.CreatedAt,
 		UpdatedAt:       a.UpdatedAt,
 	}
@@ -125,28 +138,34 @@ func (m *UploadAuditModel) toDomain() (*participant.UploadAudit, error) {
 		return nil, err
 	}
 	
-	// In a real implementation, we would parse the JSON from ErrorDetailsJSON
-	errorDetails := []string{} // Simplified for this example
+	// Convert error details string to slice
+	var errorDetails []string
+	if m.ErrorDetailsStr != "" {
+		errorDetails = []string{m.ErrorDetailsStr}
+	} else {
+		errorDetails = []string{}
+	}
 	
 	return &participant.UploadAudit{
-		ID:              id,
-		UploadedBy:      uploadedBy,
-		UploadDate:      m.UploadDate,
-		FileName:        m.FileName,
-		Status:          m.Status,
-		TotalRows:       m.TotalRows,
-		SuccessfulRows:  m.SuccessfulRows,
-		ErrorCount:      m.ErrorCount,
-		ErrorDetails:    errorDetails,
-		CreatedAt:       m.CreatedAt,
-		UpdatedAt:       m.UpdatedAt,
+		ID:             id,
+		UploadedBy:     uploadedBy,
+		UploadDate:     m.UploadDate,
+		FileName:       m.FileName,
+		Status:         m.Status,
+		TotalRows:      m.TotalRows,
+		SuccessfulRows: m.SuccessfulRows,
+		ErrorCount:     m.ErrorCount,
+		ErrorDetails:   errorDetails,
+		CreatedAt:      m.CreatedAt,
+		UpdatedAt:      m.UpdatedAt,
 	}, nil
 }
 
 // Create implements the participant.ParticipantRepository interface
-func (r *GormParticipantRepository) Create(p *participant.Participant) error {
-	model := toParticipantModel(p)
-	result := r.db.Create(model)
+func (r *GormParticipantRepository) Create(participant *participant.Participant) error {
+	model := toParticipantModel(participant)
+	
+	result := r.db.Create(&model)
 	if result.Error != nil {
 		return fmt.Errorf("failed to create participant: %w", result.Error)
 	}
@@ -210,7 +229,7 @@ func (r *GormParticipantRepository) List(page, pageSize int) ([]participant.Part
 	}
 	
 	// Get paginated participants
-	result = r.db.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&models)
+	result = r.db.Order("recharge_date DESC").Offset(offset).Limit(pageSize).Find(&models)
 	if result.Error != nil {
 		return nil, 0, fmt.Errorf("failed to list participants: %w", result.Error)
 	}
@@ -238,14 +257,14 @@ func (r *GormParticipantRepository) ListByDate(date time.Time, page, pageSize in
 	formattedDate := date.Format("2006-01-02")
 	
 	// Get total count
-	result := r.db.Model(&ParticipantModel{}).Where("DATE(recharge_date) <= ?", formattedDate).Count(&total)
+	result := r.db.Model(&ParticipantModel{}).Where("DATE(recharge_date) = ?", formattedDate).Count(&total)
 	if result.Error != nil {
 		return nil, 0, fmt.Errorf("failed to count participants: %w", result.Error)
 	}
 	
 	// Get paginated participants
-	result = r.db.Where("DATE(recharge_date) <= ?", formattedDate).
-		Order("created_at DESC").
+	result = r.db.Where("DATE(recharge_date) = ?", formattedDate).
+		Order("recharge_date DESC").
 		Offset(offset).
 		Limit(pageSize).
 		Find(&models)
@@ -266,10 +285,11 @@ func (r *GormParticipantRepository) ListByDate(date time.Time, page, pageSize in
 	return participants, int(total), nil
 }
 
-// GetStatsByDate implements the participant.ParticipantRepository interface
-func (r *GormParticipantRepository) GetStatsByDate(date time.Time) (int, int, error) {
+// GetStats implements the participant.ParticipantRepository interface
+func (r *GormParticipantRepository) GetStats(date time.Time) (int, int, float64, error) {
 	var totalParticipants int64
 	var totalPoints int64
+	var totalUploads int64
 	
 	// Format date to match database format (without time component)
 	formattedDate := date.Format("2006-01-02")
@@ -281,18 +301,102 @@ func (r *GormParticipantRepository) GetStatsByDate(date time.Time) (int, int, er
 		Count(&totalParticipants)
 	
 	if result.Error != nil {
-		return 0, 0, fmt.Errorf("failed to count participants: %w", result.Error)
+		return 0, 0, 0, fmt.Errorf("failed to count participants: %w", result.Error)
 	}
 	
 	// Sum points for the given date
-	result = r.db.Model(&ParticipantModel{}).
+	var err error
+	err = r.db.Model(&ParticipantModel{}).
 		Where("DATE(recharge_date) <= ?", formattedDate).
 		Select("SUM(points)").
 		Row().
 		Scan(&totalPoints)
 	
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("failed to sum points: %w", err)
+	}
+	
+	// Count distinct upload IDs
+	result = r.db.Model(&ParticipantModel{}).
+		Where("DATE(recharge_date) <= ?", formattedDate).
+		Distinct("upload_id").
+		Count(&totalUploads)
+	
 	if result.Error != nil {
-		return 0, 0, fmt.Errorf("failed to sum points: %w", result.Error)
+		return 0, 0, 0, fmt.Errorf("failed to count uploads: %w", result.Error)
+	}
+	
+	return int(totalParticipants), int(totalPoints), float64(totalUploads), nil
+}
+
+// CreateBatch implements the participant.ParticipantRepository interface
+func (r *GormParticipantRepository) CreateBatch(participants []*participant.Participant) (int, []string, error) {
+	tx := r.db.Begin()
+	if tx.Error != nil {
+		return 0, nil, fmt.Errorf("failed to begin transaction: %w", tx.Error)
+	}
+	
+	successCount := 0
+	errorDetails := make([]string, 0)
+	
+	for _, participant := range participants {
+		model := toParticipantModel(participant)
+		result := tx.Create(model)
+		if result.Error != nil {
+			errorDetails = append(errorDetails, fmt.Sprintf("Failed to create participant with MSISDN %s: %s", participant.MSISDN, result.Error.Error()))
+			continue
+		}
+		successCount++
+	}
+	
+	if err := tx.Commit().Error; err != nil {
+		return 0, nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	
+	return successCount, errorDetails, nil
+}
+
+// DeleteByUploadID implements the participant.ParticipantRepository interface
+func (r *GormParticipantRepository) DeleteByUploadID(uploadID uuid.UUID) error {
+	// This would typically involve a join or subquery to identify participants from a specific upload
+	// For demonstration purposes, we'll use a simple approach
+	
+	result := r.db.Where("upload_id = ?", uploadID.String()).Delete(&ParticipantModel{})
+	if result.Error != nil {
+		return fmt.Errorf("failed to delete participants: %w", result.Error)
+	}
+	
+	return nil
+}
+
+// GetStatsByDate implements the participant.ParticipantRepository interface
+func (r *GormParticipantRepository) GetStatsByDate(date time.Time) (int, int, error) {
+	var totalParticipants int64
+	var totalPoints int64
+	
+	// Format date to match database format (without time component)
+	formattedDate := date.Format("2006-01-02")
+	
+	// Count distinct MSISDNs for the given date
+	result := r.db.Model(&ParticipantModel{}).
+		Where("DATE(recharge_date) = ?", formattedDate).
+		Distinct("msisdn").
+		Count(&totalParticipants)
+	
+	if result.Error != nil {
+		return 0, 0, fmt.Errorf("failed to count participants: %w", result.Error)
+	}
+	
+	// Sum points for the given date
+	var err error
+	err = r.db.Model(&ParticipantModel{}).
+		Where("DATE(recharge_date) = ?", formattedDate).
+		Select("SUM(points)").
+		Row().
+		Scan(&totalPoints)
+	
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to sum points: %w", err)
 	}
 	
 	return int(totalParticipants), int(totalPoints), nil
@@ -300,66 +404,6 @@ func (r *GormParticipantRepository) GetStatsByDate(date time.Time) (int, int, er
 
 // BulkCreate implements the participant.ParticipantRepository interface
 func (r *GormParticipantRepository) BulkCreate(participants []*participant.Participant) (int, []string, error) {
-	// Start a transaction
-	tx := r.db.Begin()
-	if tx.Error != nil {
-		return 0, nil, fmt.Errorf("failed to begin transaction: %w", tx.Error)
-	}
-	
-	successCount := 0
-	errors := make([]string, 0)
-	
-	// Process each participant
-	for _, p := range participants {
-		model := toParticipantModel(p)
-		
-		// Check for existing participant with same MSISDN and date
-		var existingCount int64
-		result := tx.Model(&ParticipantModel{}).
-			Where("msisdn = ? AND DATE(recharge_date) = DATE(?)", p.MSISDN, p.RechargeDate).
-			Count(&existingCount)
-		
-		if result.Error != nil {
-			tx.Rollback()
-			return 0, nil, fmt.Errorf("failed to check for existing participant: %w", result.Error)
-		}
-		
-		if existingCount > 0 {
-			errors = append(errors, fmt.Sprintf("Duplicate entry for MSISDN %s on date %s", 
-				p.MSISDN, p.RechargeDate.Format("2006-01-02")))
-			continue
-		}
-		
-		// Create the participant
-		result = tx.Create(model)
-		if result.Error != nil {
-			errors = append(errors, fmt.Sprintf("Failed to create participant %s: %s", 
-				p.MSISDN, result.Error.Error()))
-			continue
-		}
-		
-		successCount++
-	}
-	
-	// Commit or rollback transaction
-	if len(errors) > 0 && successCount == 0 {
-		tx.Rollback()
-		return 0, errors, fmt.Errorf("failed to create any participants")
-	} else {
-		if err := tx.Commit().Error; err != nil {
-			return successCount, errors, fmt.Errorf("failed to commit transaction: %w", err)
-		}
-	}
-	
-	return successCount, errors, nil
-}
-
-// DeleteByUploadID implements the participant.ParticipantRepository interface
-func (r *GormParticipantRepository) DeleteByUploadID(uploadID uuid.UUID) error {
-	result := r.db.Where("upload_id = ?", uploadID.String()).Delete(&ParticipantModel{})
-	if result.Error != nil {
-		return fmt.Errorf("failed to delete participants: %w", result.Error)
-	}
-	
-	return nil
+	// This is an alias for CreateBatch for backward compatibility
+	return r.CreateBatch(participants)
 }

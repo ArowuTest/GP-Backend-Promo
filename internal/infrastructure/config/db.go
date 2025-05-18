@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -15,38 +16,45 @@ type Database struct {
 }
 
 // NewDatabase creates a new database connection
-func NewDatabase(cfg *Config) (*Database, error) {
-	// Create DSN string
+func NewDatabase(config *DatabaseConfig) (*Database, error) {
 	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName,
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		config.Host,
+		config.Port,
+		config.User,
+		config.Password,
+		config.DBName,
+		config.SSLMode,
 	)
 
-	// Configure logger based on environment
-	logLevel := logger.Silent
-	if cfg.Environment == "development" {
-		logLevel = logger.Info
-	}
+	// Configure GORM logger
+	gormLogger := logger.New(
+		log.New(log.Writer(), "\r\n", log.LstdFlags),
+		logger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  logger.Info,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  true,
+		},
+	)
 
-	// Open database connection
+	// Open connection
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logLevel),
+		Logger: gormLogger,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	// Get underlying SQL DB to configure connection pool
+	// Configure connection pool
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database connection: %w", err)
 	}
 
-	// Configure connection pool
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetMaxOpenConns(100)
-
-	log.Println("Database connection established")
+	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	return &Database{
 		DB: db,
@@ -57,12 +65,21 @@ func NewDatabase(cfg *Config) (*Database, error) {
 func (d *Database) Close() error {
 	sqlDB, err := d.DB.DB()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get database connection: %w", err)
 	}
-	return sqlDB.Close()
+
+	if err := sqlDB.Close(); err != nil {
+		return fmt.Errorf("failed to close database connection: %w", err)
+	}
+
+	return nil
 }
 
-// AutoMigrate runs auto migration for the given models
-func (d *Database) AutoMigrate(models ...interface{}) error {
-	return d.DB.AutoMigrate(models...)
+// Migrate runs database migrations
+func (d *Database) Migrate(models ...interface{}) error {
+	if err := d.DB.AutoMigrate(models...); err != nil {
+		return fmt.Errorf("failed to run database migrations: %w", err)
+	}
+
+	return nil
 }
