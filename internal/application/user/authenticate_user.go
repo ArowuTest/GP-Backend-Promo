@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 	
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	
@@ -17,6 +18,7 @@ import (
 type AuthenticateUserService struct {
 	userRepository user.UserRepository
 	auditService   audit.AuditService
+	jwtSecret      string
 }
 
 // NewAuthenticateUserService creates a new AuthenticateUserService
@@ -27,6 +29,7 @@ func NewAuthenticateUserService(
 	return &AuthenticateUserService{
 		userRepository: userRepository,
 		auditService:   auditService,
+		jwtSecret:      "your-secret-key", // In production, this should be loaded from environment variables
 	}
 }
 
@@ -45,6 +48,15 @@ type AuthenticateUserOutput struct {
 	Role      string
 	Token     string
 	ExpiresAt time.Time
+}
+
+// Claims defines the JWT claims
+type Claims struct {
+	UserID   string `json:"user_id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Role     string `json:"role"`
+	jwt.RegisteredClaims
 }
 
 // AuthenticateUser authenticates a user and returns a JWT token
@@ -100,7 +112,7 @@ func (s *AuthenticateUserService) AuthenticateUser(ctx context.Context, input Au
 	}
 	
 	// Generate JWT token
-	token, expiresAt, err := generateJWTToken(user)
+	token, expiresAt, err := s.generateJWTToken(user)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
@@ -129,15 +141,33 @@ func (s *AuthenticateUserService) AuthenticateUser(ctx context.Context, input Au
 }
 
 // generateJWTToken generates a JWT token for the user
-func generateJWTToken(user *user.User) (string, time.Time, error) {
-	// This is a simplified implementation
-	// In a real-world scenario, this would use a JWT library
-	
+func (s *AuthenticateUserService) generateJWTToken(user *user.User) (string, time.Time, error) {
 	// Token expires in 24 hours
 	expiresAt := time.Now().Add(24 * time.Hour)
 	
-	// Generate a dummy token for demonstration
-	token := fmt.Sprintf("dummy_token_%s_%s_%s", user.ID, user.Username, expiresAt.Format(time.RFC3339))
+	// Create claims with user information
+	claims := &Claims{
+		UserID:   user.ID.String(),
+		Username: user.Username,
+		Email:    user.Email,
+		Role:     user.Role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
+			Issuer:    "gp-backend-promo",
+			Subject:   user.ID.String(),
+		},
+	}
 	
-	return token, expiresAt, nil
+	// Create token with claims
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	
+	// Sign the token with the secret key
+	tokenString, err := token.SignedString([]byte(s.jwtSecret))
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	
+	return tokenString, expiresAt, nil
 }
