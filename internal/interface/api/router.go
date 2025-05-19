@@ -18,6 +18,7 @@ type Router struct {
 	participantHandler *handler.ParticipantHandler
 	auditHandler     *handler.AuditHandler
 	userHandler      *handler.UserHandler
+	resetPasswordHandler *handler.ResetPasswordHandler
 }
 
 // NewRouter creates a new Router
@@ -31,6 +32,7 @@ func NewRouter(
 	participantHandler *handler.ParticipantHandler,
 	auditHandler *handler.AuditHandler,
 	userHandler *handler.UserHandler,
+	resetPasswordHandler *handler.ResetPasswordHandler,
 ) *Router {
 	return &Router{
 		engine:           engine,
@@ -42,6 +44,7 @@ func NewRouter(
 		participantHandler: participantHandler,
 		auditHandler:     auditHandler,
 		userHandler:      userHandler,
+		resetPasswordHandler: resetPasswordHandler,
 	}
 }
 
@@ -51,23 +54,23 @@ func (r *Router) Setup() {
 	r.engine.Use(r.corsMiddleware.Handle())
 	r.engine.Use(r.errorMiddleware.Recovery())
 	r.engine.Use(r.errorMiddleware.Handle())
-	
+
 	// Health check endpoint
 	r.engine.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"status": "ok",
 		})
 	})
-	
+
 	// API v1 group
 	api := r.engine.Group("/api/v1")
-	
+
 	// Auth routes
 	auth := api.Group("/auth")
 	{
 		auth.POST("/login", r.userHandler.Login)
 	}
-	
+
 	// Admin routes (require authentication)
 	admin := api.Group("/admin")
 	admin.Use(r.authMiddleware.Authenticate())
@@ -81,14 +84,14 @@ func (r *Router) Setup() {
 			draws.GET("", r.drawHandler.ListDraws)
 			draws.GET("/:id", r.drawHandler.GetDrawByID)
 		}
-		
+
 		// Winner routes
 		winners := admin.Group("/winners")
 		{
 			winners.GET("", r.drawHandler.ListWinners)
 			winners.PUT("/:id/payment-status", r.authMiddleware.RequireRole("super_admin", "admin"), r.drawHandler.UpdateWinnerPaymentStatus)
 		}
-		
+
 		// Prize structure routes
 		prizeStructures := admin.Group("/prize-structures")
 		{
@@ -98,7 +101,7 @@ func (r *Router) Setup() {
 			prizeStructures.PUT("/:id", r.authMiddleware.RequireRole("super_admin", "admin"), r.prizeHandler.UpdatePrizeStructure)
 			prizeStructures.DELETE("/:id", r.authMiddleware.RequireRole("super_admin"), r.prizeHandler.DeletePrizeStructure)
 		}
-		
+
 		// Participant routes
 		participants := admin.Group("/participants")
 		{
@@ -108,13 +111,13 @@ func (r *Router) Setup() {
 			participants.GET("", r.participantHandler.ListParticipants)
 			participants.DELETE("/uploads/:id", r.authMiddleware.RequireRole("super_admin", "admin"), r.participantHandler.DeleteUpload)
 		}
-		
+
 		// Report routes
 		reports := admin.Group("/reports")
 		{
 			reports.GET("/data-uploads", r.auditHandler.GetDataUploadAudits)
 		}
-		
+
 		// User routes
 		users := admin.Group("/users")
 		{
@@ -122,6 +125,9 @@ func (r *Router) Setup() {
 			users.POST("", r.authMiddleware.RequireRole("super_admin"), r.userHandler.CreateUser)
 			users.GET("/:id", r.authMiddleware.RequireRole("super_admin"), r.userHandler.GetUserByID)
 			users.PUT("/:id", r.authMiddleware.RequireRole("super_admin"), r.userHandler.UpdateUser)
+			
+			// Add the new reset password endpoint
+			users.POST("/reset-password", r.authMiddleware.RequireRole("super_admin", "admin"), r.resetPasswordHandler.Handle)
 		}
 	}
 }
