@@ -34,6 +34,7 @@ func NewAuthenticateUserService(
 type AuthenticateUserInput struct {
 	Username string
 	Password string
+	Email    string // Added Email field to support login by email
 }
 
 // AuthenticateUserOutput defines the output for the AuthenticateUser use case
@@ -49,18 +50,35 @@ type AuthenticateUserOutput struct {
 // AuthenticateUser authenticates a user and returns a JWT token
 func (s *AuthenticateUserService) AuthenticateUser(ctx context.Context, input AuthenticateUserInput) (*AuthenticateUserOutput, error) {
 	// Validate input
-	if input.Username == "" {
-		return nil, errors.New("username is required")
+	if input.Username == "" && input.Email == "" {
+		return nil, errors.New("username or email is required")
 	}
 	
 	if input.Password == "" {
 		return nil, errors.New("password is required")
 	}
 	
-	// Get user by username
-	user, err := s.userRepository.GetByUsername(input.Username)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
+	var user *user.User
+	var err error
+	
+	// First try to get user by username
+	if input.Username != "" {
+		user, err = s.userRepository.GetByUsername(input.Username)
+		if err != nil && input.Email != "" {
+			// If username lookup fails and email is provided, try by email
+			user, err = s.userRepository.GetByEmail(input.Email)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get user: %w", err)
+			}
+		} else if err != nil {
+			return nil, fmt.Errorf("failed to get user: %w", err)
+		}
+	} else if input.Email != "" {
+		// If only email is provided, try by email
+		user, err = s.userRepository.GetByEmail(input.Email)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get user: %w", err)
+		}
 	}
 	
 	// Check password

@@ -50,9 +50,11 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// Create input with both username and email fields
 	input := userApp.AuthenticateUserInput{
 		Username: req.Username,
 		Password: req.Password,
+		Email:    req.Email, // Pass email if provided in the request
 	}
 
 	output, err := h.authenticateUserService.AuthenticateUser(c.Request.Context(), input)
