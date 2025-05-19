@@ -25,16 +25,17 @@ func NewGormAuditRepository(db *gorm.DB) *GormAuditRepository {
 
 // AuditLogModel is the GORM model for audit logs
 type AuditLogModel struct {
-	ID          string    `gorm:"primaryKey;type:uuid"`
-	UserID      string    `gorm:"type:uuid;index"`
-	Action      string
-	EntityType  string
-	EntityID    string    `gorm:"type:uuid"`
-	Description string
-	Metadata    string    `gorm:"type:text"`
-	IPAddress   string
-	UserAgent   string
-	CreatedAt   time.Time `gorm:"index"`
+	ID           string    `gorm:"primaryKey;type:uuid"`
+	UserID       string    `gorm:"type:uuid;index"`
+	Action       string
+	EntityType   string
+	EntityID     string    `gorm:"type:uuid"`
+	Description  string
+	Metadata     string    `gorm:"type:text"`
+	IPAddress    string
+	UserAgent    string
+	CreatedAt    time.Time `gorm:"index"`
+	TimestampUTC time.Time `gorm:"column:timestamp_utc;not null"` // Added this field
 }
 
 // SystemAuditLogModel is the GORM model for system audit logs
@@ -61,16 +62,17 @@ func (SystemAuditLogModel) TableName() string {
 // toModel converts a domain audit log entity to a GORM model
 func toAuditLogModel(a *audit.AuditLog) *AuditLogModel {
 	return &AuditLogModel{
-		ID:          a.ID.String(),
-		UserID:      a.UserID.String(),
-		Action:      a.Action,
-		EntityType:  a.EntityType,
-		EntityID:    a.EntityID,
-		Description: a.Description,
-		Metadata:    fmt.Sprintf("%v", a.Metadata),
-		IPAddress:   a.IPAddress,
-		UserAgent:   a.UserAgent,
-		CreatedAt:   a.CreatedAt,
+		ID:           a.ID.String(),
+		UserID:       a.UserID.String(),
+		Action:       a.Action,
+		EntityType:   a.EntityType,
+		EntityID:     a.EntityID,
+		Description:  a.Description,
+		Metadata:     fmt.Sprintf("%v", a.Metadata),
+		IPAddress:    a.IPAddress,
+		UserAgent:    a.UserAgent,
+		CreatedAt:    a.CreatedAt,
+		TimestampUTC: time.Now(), // Set this to current time
 	}
 }
 
