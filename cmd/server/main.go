@@ -10,13 +10,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	
 	"github.com/ArowuTest/GP-Backend-Promo/internal/infrastructure/config"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/infrastructure/persistence/gorm"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/api"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/api/middleware"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/api/handler"
-	
+
 	// Application services
 	auditApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/audit"
 	drawApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/draw"
@@ -48,30 +47,33 @@ func main() {
 	// Set up application services
 	logAuditService := auditApp.NewLogAuditService(auditRepo)
 	getAuditLogsService := auditApp.NewGetAuditLogsService(auditRepo)
-	
+
 	// Draw services
 	executeDrawService := drawApp.NewDrawService(drawRepo, participantRepo, prizeRepo, logAuditService)
 	getDrawDetailsService := drawApp.NewGetDrawDetailsService(drawRepo)
 	listDrawsService := drawApp.NewListDrawsService(drawRepo)
 	getEligibilityStatsService := drawApp.NewGetEligibilityStatsService(drawRepo, participantRepo)
 	invokeRunnerUpService := drawApp.NewInvokeRunnerUpService(drawRepo, logAuditService)
-	
+
 	// Participant services
 	uploadParticipantsService := participantApp.NewUploadParticipantsService(participantRepo, logAuditService)
 	getParticipantStatsService := participantApp.NewGetParticipantStatsService(participantRepo)
-	
+
 	// Prize services
 	createPrizeStructureService := prizeApp.NewCreatePrizeStructureService(prizeRepo, logAuditService)
 	getPrizeStructureService := prizeApp.NewGetPrizeStructureService(prizeRepo)
 	listPrizeStructuresService := prizeApp.NewListPrizeStructuresService(prizeRepo)
 	updatePrizeStructureService := prizeApp.NewUpdatePrizeStructureService(prizeRepo, logAuditService)
-	
+
 	// User services
 	authenticateUserService := userApp.NewAuthenticateUserService(userRepo, logAuditService)
 	createUserService := userApp.NewCreateUserService(userRepo, logAuditService)
 	updateUserService := userApp.NewUpdateUserService(userRepo, logAuditService)
 	getUserService := userApp.NewGetUserService(userRepo)
 	listUsersService := userApp.NewListUsersService(userRepo)
+	
+	// Password reset service
+	resetPasswordService := userApp.NewResetPasswordService(userRepo, logAuditService)
 
 	// Set up middleware
 	authMiddleware := middleware.NewAuthMiddleware(cfg.JWT.Secret)
@@ -107,6 +109,9 @@ func main() {
 		getUserService,
 		listUsersService,
 	)
+	
+	// Password reset handler
+	resetPasswordHandler := handler.NewResetPasswordHandler(resetPasswordService)
 
 	// Set up router
 	router := api.NewRouter(
@@ -119,6 +124,7 @@ func main() {
 		participantHandler,
 		auditHandler,
 		userHandler,
+		resetPasswordHandler, // Add the reset password handler
 	)
 
 	// Setup routes
