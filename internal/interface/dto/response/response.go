@@ -1,6 +1,5 @@
 package response
 
-
 // SuccessResponse represents a successful API response with data
 type SuccessResponse struct {
 	Success bool        `json:"success"`
@@ -11,6 +10,7 @@ type SuccessResponse struct {
 type ErrorResponse struct {
 	Success bool   `json:"success"`
 	Error   string `json:"error"`
+	Details string `json:"details,omitempty"`
 }
 
 // PaginatedResponse represents a paginated API response
@@ -48,31 +48,31 @@ type LoginResponse struct {
 
 // PrizeStructureResponse represents a prize structure in API responses
 type PrizeStructureResponse struct {
-	ID                string                `json:"id"`
-	Name              string                `json:"name"`
-	Description       string                `json:"description"`
-	PrizeType         string                `json:"prizeType"`
-	IsActive          bool                  `json:"isActive"`
-	ValidFrom         string                `json:"validFrom"`
-	ValidTo           string                `json:"validTo"`
-	ApplicableDays    []string              `json:"applicableDays"`
-	PrizeTiers        []PrizeTierResponse   `json:"prizeTiers"`
-	CreatedAt         string                `json:"createdAt"`
-	UpdatedAt         string                `json:"updatedAt"`
+	ID             string              `json:"id"`
+	Name           string              `json:"name"`
+	Description    string              `json:"description"`
+	PrizeType      string              `json:"prizeType"`
+	IsActive       bool                `json:"isActive"`
+	ValidFrom      string              `json:"validFrom"`
+	ValidTo        string              `json:"validTo"`
+	ApplicableDays []string            `json:"applicableDays"`
+	PrizeTiers     []PrizeTierResponse `json:"prizeTiers"`
+	CreatedAt      string              `json:"createdAt"`
+	UpdatedAt      string              `json:"updatedAt"`
 }
 
 // PrizeTierResponse represents a prize tier in API responses
 type PrizeTierResponse struct {
-	ID               string `json:"id"`
-	PrizeStructureID string `json:"prizeStructureID"`
-	Name             string `json:"name"`
-	Description      string `json:"description"`
-	Value            string `json:"value"`
-	Order            int    `json:"order"`
-	NumberOfWinners  int    `json:"numberOfWinners"`
-	NumberOfRunnerUps int   `json:"numberOfRunnerUps"`
-	CreatedAt        string `json:"createdAt"`
-	UpdatedAt        string `json:"updatedAt"`
+	ID                string `json:"id"`
+	PrizeStructureID  string `json:"prizeStructureID"`
+	Name              string `json:"name"`
+	Description       string `json:"description"`
+	Value             string `json:"value"`
+	Order             int    `json:"order"`
+	NumberOfWinners   int    `json:"numberOfWinners"`
+	NumberOfRunnerUps int    `json:"numberOfRunnerUps"`
+	CreatedAt         string `json:"createdAt"`
+	UpdatedAt         string `json:"updatedAt"`
 }
 
 // DrawResponse represents a draw in API responses
