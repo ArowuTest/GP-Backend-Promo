@@ -45,7 +45,7 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 		return
 	}
 	
-	// Get file from multipart form
+	// Get the file from the multipart form
 	file, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
@@ -66,10 +66,10 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 	}
 	defer src.Close()
 	
-	// Parse CSV file
+	// Parse CSV
 	reader := csv.NewReader(src)
 	
-	// Read header row
+	// Read header
 	header, err := reader.Read()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
@@ -80,29 +80,32 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 	}
 	
 	// Validate header
-	msisdnIdx, amountIdx, dateIdx := -1, -1, -1
+	msisdnIdx := -1
+	rechargeAmountIdx := -1
+	rechargeDateIdx := -1
+	
 	for i, col := range header {
 		switch col {
 		case "MSISDN":
 			msisdnIdx = i
 		case "RechargeAmount":
-			amountIdx = i
+			rechargeAmountIdx = i
 		case "RechargeDate":
-			dateIdx = i
+			rechargeDateIdx = i
 		}
 	}
 	
-	if msisdnIdx == -1 || amountIdx == -1 || dateIdx == -1 {
+	if msisdnIdx == -1 || rechargeAmountIdx == -1 || rechargeDateIdx == -1 {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "CSV file must contain MSISDN, RechargeAmount, and RechargeDate columns",
+			Error:   "CSV must contain MSISDN, RechargeAmount, and RechargeDate columns",
 		})
 		return
 	}
 	
-	// Parse CSV rows
+	// Read and parse rows
 	participants := []participantApp.ParticipantInput{}
-	lineNum := 1 // Start at 1 to account for header
+	lineNum := 1 // Start at 1 for header
 	
 	for {
 		lineNum++
@@ -113,13 +116,13 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse{
 				Success: false,
-				Error:   fmt.Sprintf("Error reading CSV line %d: %s", lineNum, err.Error()),
+				Error:   fmt.Sprintf("Error reading CSV at line %d: %s", lineNum, err.Error()),
 			})
 			return
 		}
 		
 		// Parse recharge amount
-		amount, err := strconv.ParseFloat(record[amountIdx], 64)
+		rechargeAmount, err := strconv.ParseFloat(record[rechargeAmountIdx], 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse{
 				Success: false,
@@ -128,11 +131,10 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 			return
 		}
 		
-		// Add participant
 		participants = append(participants, participantApp.ParticipantInput{
 			MSISDN:         record[msisdnIdx],
-			RechargeAmount: amount,
-			RechargeDate:   record[dateIdx],
+			RechargeAmount: rechargeAmount,
+			RechargeDate:   record[rechargeDateIdx],
 		})
 	}
 	
@@ -140,6 +142,7 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 	input := participantApp.UploadParticipantsInput{
 		Participants: participants,
 		UploadedBy:   userID.(uuid.UUID),
+		FileName:     file.Filename,
 	}
 	
 	// Upload participants
@@ -156,9 +159,14 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.UploadParticipantsResponse{
-			TotalUploaded: output.TotalUploaded,
-			UploadID:      output.UploadID.String(),
-			UploadedAt:    output.UploadedAt.Format("2006-01-02 15:04:05"),
+			TotalUploaded:        output.TotalUploaded,
+			UploadID:             output.UploadID.String(),
+			UploadedAt:           output.UploadedAt.Format("2006-01-02 15:04:05"),
+			FileName:             file.Filename,
+			SuccessfullyImported: output.TotalUploaded,
+			DuplicatesSkipped:    0, // Add actual values when available
+			ErrorsEncountered:    0, // Add actual values when available
+			Message:              "Participant data uploaded successfully",
 		},
 	})
 }

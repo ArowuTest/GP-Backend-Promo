@@ -35,8 +35,8 @@ func Default() *CORSMiddleware {
 	return &CORSMiddleware{
 		allowOrigins:     []string{"https://gp-admin-promo.vercel.app", "http://localhost:3000"},
 		allowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		allowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
-		exposeHeaders:    []string{"Content-Length"},
+		allowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With"},
+		exposeHeaders:    []string{"Content-Length", "Content-Type"},
 		allowCredentials: true,
 	}
 }
@@ -51,7 +51,14 @@ func (m *CORSMiddleware) Handle() gin.HandlerFunc {
 		allowOrigin := ""
 		if len(m.allowOrigins) > 0 {
 			if m.allowOrigins[0] == "*" {
-				allowOrigin = "*"
+				// When using wildcard origin with credentials, we must specify the exact origin
+				if m.allowCredentials {
+					if origin != "" {
+						allowOrigin = origin
+					}
+				} else {
+					allowOrigin = "*"
+				}
 			} else {
 				for _, o := range m.allowOrigins {
 					if o == origin {
@@ -86,6 +93,9 @@ func (m *CORSMiddleware) Handle() gin.HandlerFunc {
 		if m.allowCredentials {
 			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
+		
+		// Set Access-Control-Max-Age for preflight requests
+		c.Writer.Header().Set("Access-Control-Max-Age", "86400") // 24 hours
 		
 		// Handle preflight requests
 		if c.Request.Method == "OPTIONS" {

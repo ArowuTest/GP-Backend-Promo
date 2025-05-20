@@ -152,26 +152,32 @@ type UploadAuditResponse struct {
 }
 
 // DataUploadAuditResponse represents a data upload audit response for reports
+// Updated to match frontend expectations
 type DataUploadAuditResponse struct {
-	ID            string `json:"id"`
-	UploadedBy    string `json:"uploadedBy"`
-	UploadedAt    string `json:"uploadedAt"`
-	TotalUploaded int    `json:"totalUploaded"`
-	Status        string `json:"status"`
-	Details       string `json:"details,omitempty"`
+	ID                 string    `json:"id"`
+	UploadedBy         string    `json:"uploadedByUserId"` // Changed to match frontend expectation
+	UploadedAt         string    `json:"uploadTimestamp"`  // Changed to match frontend expectation
+	FileName           string    `json:"fileName"`         // Changed to match frontend expectation
+	Status             string    `json:"status"`
+	TotalUploaded      int       `json:"recordCount"`           // Changed to match frontend expectation
+	SuccessfulRows     int       `json:"successfullyImported"`  // Changed to match frontend expectation
+	ErrorCount         int       `json:"errorsEncountered"`     // Changed to match frontend expectation
+	DuplicatesSkipped  int       `json:"duplicatesSkipped"`     // Added to match frontend expectation
+	OperationType      string    `json:"operationType"`         // Added to match frontend expectation
+	Details            string    `json:"notes"`                 // Changed to match frontend expectation
 }
 
 // AuditLogResponse represents an audit log response
 type AuditLogResponse struct {
 	ID         string `json:"id"`
-	UserID     string `json:"userID"`
+	UserID     string `json:"userId"` // Changed to match frontend expectation
 	Username   string `json:"username"`
 	Action     string `json:"action"`
 	EntityType string `json:"entityType"`
-	EntityID   string `json:"entityID"`
+	EntityID   string `json:"entityId"` // Changed to match frontend expectation
 	Summary    string `json:"summary"`
 	Details    string `json:"details"`
-	CreatedAt  string `json:"createdAt"`
+	CreatedAt  string `json:"timestamp"` // Changed to match frontend expectation
 }
 
 // UserResponse represents a user response
@@ -194,7 +200,12 @@ type LoginResponse struct {
 
 // UploadParticipantsResponse represents a participant upload response
 type UploadParticipantsResponse struct {
-	TotalUploaded int    `json:"totalUploaded"`
-	UploadID      string `json:"uploadID"`
-	UploadedAt    string `json:"uploadedAt"`
+	TotalUploaded        int    `json:"totalUploaded"`
+	UploadID             string `json:"uploadID"`
+	UploadedAt           string `json:"uploadedAt"`
+	FileName             string `json:"fileName"`             // Added to match frontend expectation
+	SuccessfullyImported int    `json:"successfullyImported"` // Added to match frontend expectation
+	DuplicatesSkipped    int    `json:"duplicatesSkipped"`    // Added to match frontend expectation
+	ErrorsEncountered    int    `json:"errorsEncountered"`    // Added to match frontend expectation
+	Message              string `json:"message"`              // Added to match frontend expectation
 }
