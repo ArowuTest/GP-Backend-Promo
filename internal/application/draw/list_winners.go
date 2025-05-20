@@ -3,9 +3,6 @@ package draw
 import (
 	"context"
 	"fmt"
-	"time"
-
-	"github.com/google/uuid"
 
 	drawDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/draw"
 )
