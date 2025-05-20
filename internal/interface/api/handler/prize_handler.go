@@ -61,10 +61,12 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 	prizes := make([]prizeApp.PrizeInput, 0, len(req.Prizes))
 	for _, prize := range req.Prizes {
 		prizes = append(prizes, prizeApp.PrizeInput{
-			Name:        prize.Name,
-			Description: prize.Name, // Using name as description
-			Value:       prize.Value,
-			Quantity:    prize.Quantity,
+			Name:              prize.Name,
+			Description:       prize.Name, // Using name as description
+			Value:             prize.Value,
+			Quantity:          prize.Quantity,
+			Order:             prize.Order,
+			NumberOfRunnerUps: prize.NumberOfRunnerUps,
 		})
 	}
 	
@@ -75,12 +77,14 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 	}
 	
 	input := prizeApp.CreatePrizeStructureInput{
-		Name:        req.Name,
-		Description: req.Description,
-		StartDate:   req.ValidFrom,
-		EndDate:     endDate,
-		Prizes:      prizes,
-		CreatedBy:   userID.(uuid.UUID),
+		Name:           req.Name,
+		Description:    req.Description,
+		StartDate:      req.ValidFrom,
+		EndDate:        endDate,
+		IsActive:       req.IsActive,
+		ApplicableDays: req.ApplicableDays,
+		Prizes:         prizes,
+		CreatedBy:      userID.(uuid.UUID),
 	}
 	
 	// Create prize structure
@@ -95,15 +99,15 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 	
 	// Prepare response
 	prizeTiers := make([]response.PrizeTierResponse, 0, len(output.Prizes))
-	for _, prize := range output.Prizes {
+	for i, prize := range output.Prizes {
 		prizeTiers = append(prizeTiers, response.PrizeTierResponse{
 			ID:                prize.ID.String(),
 			Name:              prize.Name,
-			PrizeType:         "Cash", // Default type
+			PrizeType:         req.Prizes[i].PrizeType, // Use the requested prize type
 			Value:             prize.Value,
 			Quantity:          prize.Quantity,
-			Order:             1, // Default order
-			NumberOfRunnerUps: 1, // Default number of runner ups
+			Order:             req.Prizes[i].Order, // Use the requested order
+			NumberOfRunnerUps: req.Prizes[i].NumberOfRunnerUps, // Use the requested number of runner ups
 		})
 	}
 	
@@ -113,13 +117,13 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 			ID:             output.ID.String(),
 			Name:           output.Name,
 			Description:    output.Description,
-			IsActive:       true, // Default to active
+			IsActive:       req.IsActive,
 			ValidFrom:      output.StartDate,
 			ValidTo:        output.EndDate,
-			ApplicableDays: []string{}, // Empty applicable days
+			ApplicableDays: req.ApplicableDays,
 			Prizes:         prizeTiers,
-			CreatedAt:      time.Now().Format("2006-01-02 15:04:05"),
-			UpdatedAt:      time.Now().Format("2006-01-02 15:04:05"),
+			CreatedAt:      time.Now().Format(time.RFC3339),
+			UpdatedAt:      time.Now().Format(time.RFC3339),
 		},
 	})
 }
@@ -157,11 +161,11 @@ func (h *PrizeHandler) GetPrizeStructure(c *gin.Context) {
 		prizeTiers = append(prizeTiers, response.PrizeTierResponse{
 			ID:                prize.ID.String(),
 			Name:              prize.Name,
-			PrizeType:         "Cash", // Default type
+			PrizeType:         "Cash", // Default type, should be stored in the database
 			Value:             prize.Value,
 			Quantity:          prize.Quantity,
-			Order:             1, // Default order
-			NumberOfRunnerUps: 1, // Default number of runner ups
+			Order:             prize.Order,
+			NumberOfRunnerUps: prize.NumberOfRunnerUps,
 		})
 	}
 	
@@ -171,13 +175,13 @@ func (h *PrizeHandler) GetPrizeStructure(c *gin.Context) {
 			ID:             output.ID.String(),
 			Name:           output.Name,
 			Description:    output.Description,
-			IsActive:       true, // Default to active
+			IsActive:       output.IsActive,
 			ValidFrom:      output.StartDate.Format("2006-01-02"),
 			ValidTo:        output.EndDate.Format("2006-01-02"),
-			ApplicableDays: []string{}, // Empty applicable days
+			ApplicableDays: output.ApplicableDays,
 			Prizes:         prizeTiers,
-			CreatedAt:      time.Now().Format("2006-01-02 15:04:05"),
-			UpdatedAt:      time.Now().Format("2006-01-02 15:04:05"),
+			CreatedAt:      output.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:      output.UpdatedAt.Format(time.RFC3339),
 		},
 	})
 }
@@ -219,11 +223,11 @@ func (h *PrizeHandler) ListPrizeStructures(c *gin.Context) {
 			prizeTiers = append(prizeTiers, response.PrizeTierResponse{
 				ID:                prize.ID.String(),
 				Name:              prize.Name,
-				PrizeType:         "Cash", // Default type
+				PrizeType:         "Cash", // Default type, should be stored in the database
 				Value:             prize.Value,
 				Quantity:          prize.Quantity,
-				Order:             1, // Default order
-				NumberOfRunnerUps: 1, // Default number of runner ups
+				Order:             prize.Order,
+				NumberOfRunnerUps: prize.NumberOfRunnerUps,
 			})
 		}
 		
@@ -231,13 +235,13 @@ func (h *PrizeHandler) ListPrizeStructures(c *gin.Context) {
 			ID:             ps.ID.String(),
 			Name:           ps.Name,
 			Description:    ps.Description,
-			IsActive:       true, // Default to active
+			IsActive:       ps.IsActive,
 			ValidFrom:      ps.StartDate.Format("2006-01-02"),
 			ValidTo:        ps.EndDate.Format("2006-01-02"),
-			ApplicableDays: []string{}, // Empty applicable days
+			ApplicableDays: ps.ApplicableDays,
 			Prizes:         prizeTiers,
-			CreatedAt:      time.Now().Format("2006-01-02 15:04:05"),
-			UpdatedAt:      time.Now().Format("2006-01-02 15:04:05"),
+			CreatedAt:      ps.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:      ps.UpdatedAt.Format(time.RFC3339),
 		})
 	}
 	
@@ -271,6 +275,7 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
 			Error:   "Invalid request: " + err.Error(),
+			Details: err.Error(),
 		})
 		return
 	}
@@ -290,11 +295,13 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 	for _, prize := range req.Prizes {
 		prizeID, _ := uuid.Parse(prize.ID) // Ignore error, will be uuid.Nil if empty
 		updatePrizes = append(updatePrizes, prizeApp.UpdatePrizeInput{
-			ID:          prizeID,
-			Name:        prize.Name,
-			Description: prize.Name, // Using name as description
-			Value:       prize.Value,
-			Quantity:    prize.Quantity,
+			ID:                prizeID,
+			Name:              prize.Name,
+			Description:       prize.Name, // Using name as description
+			Value:             prize.Value,
+			Quantity:          prize.Quantity,
+			Order:             prize.Order,
+			NumberOfRunnerUps: prize.NumberOfRunnerUps,
 		})
 	}
 	
@@ -304,14 +311,22 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 		endDate = *req.ValidTo
 	}
 	
+	// Handle optional IsActive field
+	isActive := false
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+	
 	input := prizeApp.UpdatePrizeStructureInput{
-		ID:          prizeStructureID,
-		Name:        req.Name,
-		Description: req.Description,
-		StartDate:   req.ValidFrom,
-		EndDate:     endDate,
-		Prizes:      updatePrizes,
-		UpdatedBy:   userID.(uuid.UUID),
+		ID:             prizeStructureID,
+		Name:           req.Name,
+		Description:    req.Description,
+		StartDate:      req.ValidFrom,
+		EndDate:        endDate,
+		IsActive:       isActive,
+		ApplicableDays: req.ApplicableDays,
+		Prizes:         updatePrizes,
+		UpdatedBy:      userID.(uuid.UUID),
 	}
 	
 	// Update prize structure
@@ -320,21 +335,28 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
 			Error:   "Failed to update prize structure: " + err.Error(),
+			Details: err.Error(),
 		})
 		return
 	}
 	
 	// Prepare response
 	prizeTiers := make([]response.PrizeTierResponse, 0, len(output.Prizes))
-	for _, prize := range output.Prizes {
+	for i, prize := range output.Prizes {
+		// Find matching prize in request to get PrizeType
+		prizeType := "Cash" // Default
+		if i < len(req.Prizes) {
+			prizeType = req.Prizes[i].PrizeType
+		}
+		
 		prizeTiers = append(prizeTiers, response.PrizeTierResponse{
 			ID:                prize.ID.String(),
 			Name:              prize.Name,
-			PrizeType:         "Cash", // Default type
+			PrizeType:         prizeType,
 			Value:             prize.Value,
 			Quantity:          prize.Quantity,
-			Order:             1, // Default order
-			NumberOfRunnerUps: 1, // Default number of runner ups
+			Order:             prize.Order,
+			NumberOfRunnerUps: prize.NumberOfRunnerUps,
 		})
 	}
 	
@@ -344,13 +366,13 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 			ID:             output.ID.String(),
 			Name:           output.Name,
 			Description:    output.Description,
-			IsActive:       true, // Default to active
+			IsActive:       output.IsActive,
 			ValidFrom:      output.StartDate,
 			ValidTo:        output.EndDate,
-			ApplicableDays: []string{}, // Empty applicable days
+			ApplicableDays: output.ApplicableDays,
 			Prizes:         prizeTiers,
-			CreatedAt:      time.Now().Format("2006-01-02 15:04:05"),
-			UpdatedAt:      time.Now().Format("2006-01-02 15:04:05"),
+			CreatedAt:      output.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:      time.Now().Format(time.RFC3339),
 		},
 	})
 }
