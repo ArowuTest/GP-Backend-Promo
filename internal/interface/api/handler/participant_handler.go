@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	
 	participantApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/participant"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/request"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
 )
 
@@ -34,6 +33,7 @@ func NewParticipantHandler(
 }
 
 // UploadParticipants handles POST /api/admin/participants/upload
+// Updated to handle multipart/form-data with CSV file
 func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 	// Get user ID from context
 	userID, exists := c.Get("userID")
@@ -45,27 +45,48 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 		return
 	}
 	
-	// Get the file from the multipart form
+	// Parse user ID
+	uid, err := uuid.Parse(userID.(string))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid user ID",
+		})
+		return
+	}
+
+	// Get file from form
 	file, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid file upload: " + err.Error(),
+			Error:   "No file uploaded or invalid form data",
+			Details: err.Error(),
 		})
 		return
 	}
-	
-	// Open the uploaded file
+
+	// Check file extension
+	if file.Filename[len(file.Filename)-4:] != ".csv" {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid file format. Only CSV files are supported.",
+		})
+		return
+	}
+
+	// Open the file
 	src, err := file.Open()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
-			Error:   "Failed to open uploaded file: " + err.Error(),
+			Error:   "Failed to open uploaded file",
+			Details: err.Error(),
 		})
 		return
 	}
 	defer src.Close()
-	
+
 	// Parse CSV
 	reader := csv.NewReader(src)
 	
@@ -74,16 +95,17 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Failed to read CSV header: " + err.Error(),
+			Error:   "Failed to read CSV header",
+			Details: err.Error(),
 		})
 		return
 	}
-	
+
 	// Validate header
 	msisdnIdx := -1
 	rechargeAmountIdx := -1
 	rechargeDateIdx := -1
-	
+
 	for i, col := range header {
 		switch col {
 		case "MSISDN":
@@ -94,19 +116,19 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 			rechargeDateIdx = i
 		}
 	}
-	
+
 	if msisdnIdx == -1 || rechargeAmountIdx == -1 || rechargeDateIdx == -1 {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "CSV must contain MSISDN, RechargeAmount, and RechargeDate columns",
+			Error:   "Invalid CSV format. Required columns: MSISDN, RechargeAmount, RechargeDate",
 		})
 		return
 	}
-	
-	// Read and parse rows
-	participants := []participantApp.ParticipantInput{}
-	lineNum := 1 // Start at 1 for header
-	
+
+	// Parse participants
+	var participants []participantApp.ParticipantInput
+	lineNum := 1 // Start at 1 to account for header
+
 	for {
 		lineNum++
 		record, err := reader.Read()
@@ -116,57 +138,89 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse{
 				Success: false,
-				Error:   fmt.Sprintf("Error reading CSV at line %d: %s", lineNum, err.Error()),
+				Error:   fmt.Sprintf("Error reading CSV at line %d", lineNum),
+				Details: err.Error(),
 			})
 			return
 		}
-		
+
+		// Validate record length
+		if len(record) <= msisdnIdx || len(record) <= rechargeAmountIdx || len(record) <= rechargeDateIdx {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Success: false,
+				Error:   fmt.Sprintf("Invalid CSV format at line %d: missing required fields", lineNum),
+			})
+			return
+		}
+
 		// Parse recharge amount
-		rechargeAmount, err := strconv.ParseFloat(record[rechargeAmountIdx], 64)
+		var rechargeAmount float64
+		_, err = fmt.Sscanf(record[rechargeAmountIdx], "%f", &rechargeAmount)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse{
 				Success: false,
-				Error:   fmt.Sprintf("Invalid recharge amount at line %d: %s", lineNum, err.Error()),
+				Error:   fmt.Sprintf("Invalid recharge amount at line %d: %s", lineNum, record[rechargeAmountIdx]),
+				Details: err.Error(),
 			})
 			return
 		}
-		
+
+		// Validate recharge date format
+		_, err = time.Parse("2006-01-02", record[rechargeDateIdx])
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Success: false,
+				Error:   fmt.Sprintf("Invalid recharge date at line %d: %s (expected format: YYYY-MM-DD)", lineNum, record[rechargeDateIdx]),
+				Details: err.Error(),
+			})
+			return
+		}
+
+		// Add participant
 		participants = append(participants, participantApp.ParticipantInput{
 			MSISDN:         record[msisdnIdx],
 			RechargeAmount: rechargeAmount,
 			RechargeDate:   record[rechargeDateIdx],
 		})
 	}
-	
-	// Prepare input
-	input := participantApp.UploadParticipantsInput{
-		Participants: participants,
-		UploadedBy:   userID.(uuid.UUID),
-		FileName:     file.Filename,
-	}
-	
-	// Upload participants
-	output, err := h.uploadParticipantsService.UploadParticipants(c.Request.Context(), input)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+
+	// Check if any participants were found
+	if len(participants) == 0 {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Failed to upload participants: " + err.Error(),
+			Error:   "No valid participants found in CSV",
 		})
 		return
 	}
-	
-	// Prepare response
+
+	// Upload participants
+	input := participantApp.UploadParticipantsInput{
+		Participants: participants,
+		UploadedBy:   uid,
+	}
+
+	output, err := h.uploadParticipantsService.UploadParticipants(c, input)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Success: false,
+			Error:   "Failed to upload participants",
+			Details: err.Error(),
+		})
+		return
+	}
+
+	// Return success response
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.UploadParticipantsResponse{
-			TotalUploaded:        output.TotalUploaded,
-			UploadID:             output.UploadID.String(),
-			UploadedAt:           output.UploadedAt.Format("2006-01-02 15:04:05"),
-			FileName:             file.Filename,
+			TotalUploaded: output.TotalUploaded,
+			UploadID:      output.UploadID.String(),
+			UploadedAt:    output.UploadedAt.Format(time.RFC3339),
+			FileName:      file.Filename,
 			SuccessfullyImported: output.TotalUploaded,
-			DuplicatesSkipped:    0, // Add actual values when available
-			ErrorsEncountered:    0, // Add actual values when available
-			Message:              "Participant data uploaded successfully",
+			DuplicatesSkipped:    0, // Add this information if available
+			ErrorsEncountered:    0, // Add this information if available
+			Message:              fmt.Sprintf("Successfully uploaded %d participants", output.TotalUploaded),
 		},
 	})
 }
