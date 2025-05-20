@@ -1,8 +1,5 @@
 package response
 
-import (
-	"time"
-)
 
 // SuccessResponse represents a successful API response with data
 type SuccessResponse struct {
