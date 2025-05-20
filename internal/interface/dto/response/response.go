@@ -37,16 +37,16 @@ type UserResponse struct {
 
 // PrizeStructureResponse is the response for prize structure
 type PrizeStructureResponse struct {
-	ID             string           `json:"id"`
-	Name           string           `json:"name"`
-	Description    string           `json:"description"`
-	IsActive       bool             `json:"isActive"`
-	ValidFrom      string           `json:"validFrom"`
-	ValidTo        string           `json:"validTo,omitempty"`
-	ApplicableDays []string         `json:"applicableDays"`
+	ID             string              `json:"id"`
+	Name           string              `json:"name"`
+	Description    string              `json:"description"`
+	IsActive       bool                `json:"isActive"`
+	ValidFrom      string              `json:"validFrom"`
+	ValidTo        string              `json:"validTo,omitempty"`
+	ApplicableDays []string            `json:"applicableDays"`
 	Prizes         []PrizeTierResponse `json:"prizes"`
-	CreatedAt      string           `json:"createdAt"`
-	UpdatedAt      string           `json:"updatedAt"`
+	CreatedAt      string              `json:"createdAt"`
+	UpdatedAt      string              `json:"updatedAt"`
 }
 
 // PrizeTierResponse is the response for prize tier
@@ -62,13 +62,16 @@ type PrizeTierResponse struct {
 
 // DrawResponse is the response for draw
 type DrawResponse struct {
-	ID               string    `json:"id"`
-	DrawDate         string    `json:"drawDate"`
-	PrizeStructureID string    `json:"prizeStructureId"`
-	Status           string    `json:"status"`
-	CreatedAt        string    `json:"createdAt"`
-	UpdatedAt        string    `json:"updatedAt"`
-	Winners          []WinnerResponse `json:"winners,omitempty"`
+	ID                  string           `json:"id"`
+	DrawDate            string           `json:"drawDate"`
+	PrizeStructureID    string           `json:"prizeStructureId"`
+	Status              string           `json:"status"`
+	CreatedAt           string           `json:"createdAt"`
+	UpdatedAt           string           `json:"updatedAt"`
+	Winners             []WinnerResponse `json:"winners,omitempty"`
+	TotalEligibleMSISDNs int             `json:"totalEligibleMSISDNs"`
+	TotalEntries        int              `json:"totalEntries"`
+	ExecutedByAdminID   string           `json:"executedByAdminID"`
 }
 
 // WinnerResponse is the response for winner
@@ -84,6 +87,8 @@ type WinnerResponse struct {
 	Status           string `json:"status"`
 	CreatedAt        string `json:"createdAt"`
 	UpdatedAt        string `json:"updatedAt"`
+	PrizeTierName    string `json:"prizeTierName"`
+	RunnerUpRank     int    `json:"runnerUpRank"`
 }
 
 // ParticipantResponse is the response for participant
@@ -133,28 +138,29 @@ type UploadAuditResponse struct {
 
 // AuditLogResponse is the response for audit log
 type AuditLogResponse struct {
-	ID        string `json:"id"`
-	UserID    string `json:"userId"`
-	Action    string `json:"action"`
-	EntityID  string `json:"entityId"`
+	ID         string `json:"id"`
+	UserID     string `json:"userId"`
+	Action     string `json:"action"`
+	EntityID   string `json:"entityId"`
 	EntityType string `json:"entityType"`
-	CreatedAt string `json:"timestamp"`
-	Details   string `json:"details"`
+	CreatedAt  string `json:"timestamp"`
+	Details    string `json:"details"`
+	Summary    string `json:"summary"`
 }
 
 // DataUploadAuditResponse is the response for data upload audit
 type DataUploadAuditResponse struct {
-	ID                 string `json:"id"`
-	UploadedBy         string `json:"uploadedByUserId"`
-	UploadedAt         string `json:"uploadTimestamp"`
-	FileName           string `json:"fileName"`
-	TotalUploaded      int    `json:"recordCount"`
-	SuccessfullyImported int  `json:"successfullyImported"`
-	DuplicatesSkipped  int    `json:"duplicatesSkipped"`
-	ErrorsEncountered  int    `json:"errorsEncountered"`
-	Status             string `json:"status"`
-	Details            string `json:"notes"`
-	OperationType      string `json:"operationType"`
+	ID                  string `json:"id"`
+	UploadedBy          string `json:"uploadedByUserId"`
+	UploadedAt          string `json:"uploadTimestamp"`
+	FileName            string `json:"fileName"`
+	TotalUploaded       int    `json:"recordCount"`
+	SuccessfullyImported int    `json:"successfullyImported"`
+	DuplicatesSkipped   int    `json:"duplicatesSkipped"`
+	ErrorsEncountered   int    `json:"errorsEncountered"`
+	Status              string `json:"status"`
+	Details             string `json:"notes"`
+	OperationType       string `json:"operationType"`
 }
 
 // Pagination is the response for pagination
