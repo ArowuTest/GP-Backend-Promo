@@ -1,6 +1,9 @@
 package middleware
 
 import (
+	"os"
+	"strings"
+	
 	"github.com/gin-gonic/gin"
 )
 
@@ -32,11 +35,23 @@ func NewCORSMiddleware(
 
 // Default creates a new CORSMiddleware with default settings
 func Default() *CORSMiddleware {
+	// Check for environment variable first
+	allowOrigins := []string{"https://gp-admin-promo.vercel.app", "http://localhost:3000"}
+	
+	// If ALLOWED_ORIGINS environment variable is set, use it instead
+	if envOrigins := os.Getenv("ALLOWED_ORIGINS"); envOrigins != "" {
+		allowOrigins = strings.Split(envOrigins, ",")
+		// Trim spaces if any
+		for i := range allowOrigins {
+			allowOrigins[i] = strings.TrimSpace(allowOrigins[i])
+		}
+	}
+	
 	return &CORSMiddleware{
-		allowOrigins:     []string{"https://gp-admin-promo.vercel.app", "http://localhost:3000"},
+		allowOrigins:     allowOrigins,
 		allowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		allowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With"},
-		exposeHeaders:    []string{"Content-Length", "Content-Type"},
+		allowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		exposeHeaders:    []string{"Content-Length"},
 		allowCredentials: true,
 	}
 }
@@ -51,14 +66,7 @@ func (m *CORSMiddleware) Handle() gin.HandlerFunc {
 		allowOrigin := ""
 		if len(m.allowOrigins) > 0 {
 			if m.allowOrigins[0] == "*" {
-				// When using wildcard origin with credentials, we must specify the exact origin
-				if m.allowCredentials {
-					if origin != "" {
-						allowOrigin = origin
-					}
-				} else {
-					allowOrigin = "*"
-				}
+				allowOrigin = "*"
 			} else {
 				for _, o := range m.allowOrigins {
 					if o == origin {
@@ -72,6 +80,10 @@ func (m *CORSMiddleware) Handle() gin.HandlerFunc {
 		// Set Access-Control-Allow-Origin
 		if allowOrigin != "" {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", allowOrigin)
+		} else if origin != "" {
+			// If no match but we have an origin, log it for debugging
+			// In production, you might want to remove this or use a proper logger
+			println("CORS: Rejected origin:", origin)
 		}
 		
 		// Set Access-Control-Allow-Methods
@@ -94,7 +106,7 @@ func (m *CORSMiddleware) Handle() gin.HandlerFunc {
 			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
 		
-		// Set Access-Control-Max-Age for preflight requests
+		// Set Access-Control-Max-Age to reduce preflight requests
 		c.Writer.Header().Set("Access-Control-Max-Age", "86400") // 24 hours
 		
 		// Handle preflight requests
