@@ -66,20 +66,13 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, response.SuccessResponse{
-		Success: true,
-		Data: response.LoginResponse{
-			Token:     output.Token,
-			ExpiresAt: output.ExpiresAt.Format(time.RFC3339),
-			User: response.UserResponse{
-				ID:        output.ID.String(),
-				Username:  output.Username,
-				Email:     output.Email,
-				Role:      output.Role,
-				CreatedAt: time.Now().Format(time.RFC3339),
-				UpdatedAt: time.Now().Format(time.RFC3339),
-			},
-		},
+	// FIXED: Return token at the top level instead of nested in a data object
+	// This matches the format expected by the frontend
+	c.JSON(http.StatusOK, gin.H{
+		"token":    output.Token,
+		"user_id":  output.ID.String(),
+		"username": output.Username,
+		"role":     output.Role,
 	})
 }
 
