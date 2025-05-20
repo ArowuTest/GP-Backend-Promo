@@ -42,10 +42,28 @@ func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 		return
 	}
 	
-	// Prepare input - only use fields that exist in the actual service
+	// Parse user ID if provided
+	var userID uuid.UUID
+	if req.UserID != "" {
+		var err error
+		userID, err = uuid.Parse(req.UserID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid user ID format",
+			})
+			return
+		}
+	}
+	
+	// Prepare input
 	input := auditApp.GetAuditLogsInput{
-		Page:     req.Page,
-		PageSize: req.PageSize,
+		StartDate: req.StartDate,
+		EndDate:   req.EndDate,
+		UserID:    userID,
+		Action:    req.Action,
+		Page:      req.Page,
+		PageSize:  req.PageSize,
 	}
 	
 	// Get audit logs
@@ -67,9 +85,10 @@ func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 			Username:   al.Username,
 			Action:     al.Action,
 			EntityType: al.EntityType,
-			EntityID:   al.EntityID,  // Changed from al.EntityID.String() to al.EntityID
+			EntityID:   al.EntityID.String(),
+			Summary:    al.Summary,
+			Details:    al.Details,
 			CreatedAt:  al.CreatedAt.Format(time.RFC3339),
-			// Removed Summary and Details fields as they don't exist in the domain model
 		})
 	}
 	
