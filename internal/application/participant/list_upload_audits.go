@@ -3,7 +3,6 @@ package participant
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -12,13 +11,13 @@ import (
 
 // ListUploadAuditsService provides functionality for retrieving upload audit logs
 type ListUploadAuditsService struct {
-	participantRepository participantDomain.ParticipantRepository
+	uploadAuditRepository participantDomain.UploadAuditRepository
 }
 
 // NewListUploadAuditsService creates a new ListUploadAuditsService
-func NewListUploadAuditsService(participantRepository participantDomain.ParticipantRepository) *ListUploadAuditsService {
+func NewListUploadAuditsService(uploadAuditRepository participantDomain.UploadAuditRepository) *ListUploadAuditsService {
 	return &ListUploadAuditsService{
-		participantRepository: participantRepository,
+		uploadAuditRepository: uploadAuditRepository,
 	}
 }
 
@@ -28,21 +27,9 @@ type ListUploadAuditsInput struct {
 	PageSize int
 }
 
-// UploadAudit represents an upload audit record
-type UploadAudit struct {
-	ID             uuid.UUID
-	UploadedBy     uuid.UUID
-	UploadDate     time.Time
-	FileName       string
-	Status         string
-	TotalRows      int
-	SuccessfulRows int
-	ErrorCount     int
-}
-
 // ListUploadAuditsOutput defines the output for the ListUploadAudits use case
 type ListUploadAuditsOutput struct {
-	UploadAudits []UploadAudit
+	UploadAudits []participantDomain.UploadAudit
 	TotalCount   int
 	Page         int
 	PageSize     int
@@ -60,7 +47,7 @@ func (s *ListUploadAuditsService) ListUploadAudits(ctx context.Context, input Li
 	}
 
 	// Get upload audits from repository
-	audits, totalCount, err := s.participantRepository.ListUploadAudits(ctx, input.Page, input.PageSize)
+	uploadAudits, totalCount, err := s.uploadAuditRepository.List(input.Page, input.PageSize)
 	if err != nil {
 		return ListUploadAuditsOutput{}, fmt.Errorf("failed to list upload audits: %w", err)
 	}
@@ -69,21 +56,6 @@ func (s *ListUploadAuditsService) ListUploadAudits(ctx context.Context, input Li
 	totalPages := totalCount / input.PageSize
 	if totalCount%input.PageSize > 0 {
 		totalPages++
-	}
-
-	// Map domain audits to service audits
-	uploadAudits := make([]UploadAudit, 0, len(audits))
-	for _, audit := range audits {
-		uploadAudits = append(uploadAudits, UploadAudit{
-			ID:             audit.ID,
-			UploadedBy:     audit.UploadedBy,
-			UploadDate:     audit.UploadDate,
-			FileName:       audit.FileName,
-			Status:         audit.Status,
-			TotalRows:      audit.TotalRows,
-			SuccessfulRows: audit.SuccessfulRows,
-			ErrorCount:     audit.ErrorCount,
-		})
 	}
 
 	return ListUploadAuditsOutput{

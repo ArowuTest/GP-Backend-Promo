@@ -8,17 +8,23 @@ import (
 	"github.com/google/uuid"
 
 	auditDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/audit"
+	participantDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/participant"
 )
 
 // GetDataUploadAuditsService provides functionality for retrieving data upload audit logs
 type GetDataUploadAuditsService struct {
 	auditRepository auditDomain.AuditRepository
+	uploadAuditRepository participantDomain.UploadAuditRepository
 }
 
 // NewGetDataUploadAuditsService creates a new GetDataUploadAuditsService
-func NewGetDataUploadAuditsService(auditRepository auditDomain.AuditRepository) *GetDataUploadAuditsService {
+func NewGetDataUploadAuditsService(
+	auditRepository auditDomain.AuditRepository,
+	uploadAuditRepository participantDomain.UploadAuditRepository,
+) *GetDataUploadAuditsService {
 	return &GetDataUploadAuditsService{
 		auditRepository: auditRepository,
+		uploadAuditRepository: uploadAuditRepository,
 	}
 }
 
@@ -62,17 +68,10 @@ func (s *GetDataUploadAuditsService) GetDataUploadAudits(ctx context.Context, in
 		input.PageSize = 10
 	}
 
-	// Get data upload audits from repository
-	// This would typically filter audits related to data uploads
-	filters := auditDomain.AuditLogFilters{
-		Action: "UPLOAD_PARTICIPANTS",
-		Page:   input.Page,
-		PageSize: input.PageSize,
-	}
-
-	auditLogs, totalCount, err := s.auditRepository.List(filters, input.Page, input.PageSize)
+	// Get upload audits from repository
+	uploadAudits, totalCount, err := s.uploadAuditRepository.List(input.Page, input.PageSize)
 	if err != nil {
-		return GetDataUploadAuditsOutput{}, fmt.Errorf("failed to list data upload audits: %w", err)
+		return GetDataUploadAuditsOutput{}, fmt.Errorf("failed to list upload audits: %w", err)
 	}
 
 	// Calculate total pages
@@ -81,21 +80,21 @@ func (s *GetDataUploadAuditsService) GetDataUploadAudits(ctx context.Context, in
 		totalPages++
 	}
 
-	// Map domain audit logs to data upload audits
-	dataUploadAudits := make([]DataUploadAudit, 0, len(auditLogs))
-	for _, log := range auditLogs {
+	// Map domain upload audits to service data upload audits
+	dataUploadAudits := make([]DataUploadAudit, 0, len(uploadAudits))
+	for _, audit := range uploadAudits {
 		dataUploadAudits = append(dataUploadAudits, DataUploadAudit{
-			ID:                  log.ID,
-			UploadedBy:          log.UserID,
-			UploadedAt:          log.CreatedAt,
-			FileName:            log.Details,
-			TotalUploaded:       log.TotalCount,
-			SuccessfullyImported: log.SuccessCount,
-			DuplicatesSkipped:   log.DuplicateCount,
-			ErrorsEncountered:   log.ErrorCount,
-			Status:              log.Status,
-			Details:             log.Summary,
-			OperationType:       log.Action,
+			ID:                  audit.ID,
+			UploadedBy:          audit.UploadedBy,
+			UploadedAt:          audit.UploadDate,
+			FileName:            audit.FileName,
+			TotalUploaded:       audit.TotalRows,
+			SuccessfullyImported: audit.SuccessfulRows,
+			DuplicatesSkipped:   audit.TotalRows - audit.SuccessfulRows - audit.ErrorCount,
+			ErrorsEncountered:   audit.ErrorCount,
+			Status:              audit.Status,
+			Details:             "",
+			OperationType:       "UPLOAD_PARTICIPANTS",
 		})
 	}
 

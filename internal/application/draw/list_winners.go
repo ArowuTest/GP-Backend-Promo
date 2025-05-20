@@ -49,28 +49,17 @@ func (s *ListWinnersService) ListWinners(ctx context.Context, input ListWinnersI
 		input.PageSize = 10
 	}
 
-	// Parse date range if provided
-	var startDate, endDate time.Time
-	var err error
-
-	if input.StartDate != "" {
-		startDate, err = time.Parse("2006-01-02", input.StartDate)
-		if err != nil {
-			return ListWinnersOutput{}, fmt.Errorf("invalid start date format: %w", err)
-		}
-	}
-
-	if input.EndDate != "" {
-		endDate, err = time.Parse("2006-01-02", input.EndDate)
-		if err != nil {
-			return ListWinnersOutput{}, fmt.Errorf("invalid end date format: %w", err)
-		}
-	}
-
-	// Get winners from repository
-	winners, totalCount, err := s.drawRepository.ListWinners(ctx, startDate, endDate, input.Page, input.PageSize)
+	// Since the repository doesn't have a direct ListWinners method,
+	// we'll need to get draws and extract winners from them
+	draws, totalCount, err := s.drawRepository.List(input.Page, input.PageSize)
 	if err != nil {
-		return ListWinnersOutput{}, fmt.Errorf("failed to list winners: %w", err)
+		return ListWinnersOutput{}, fmt.Errorf("failed to list draws: %w", err)
+	}
+
+	// Extract winners from all draws
+	var allWinners []drawDomain.Winner
+	for _, draw := range draws {
+		allWinners = append(allWinners, draw.Winners...)
 	}
 
 	// Calculate total pages
@@ -80,8 +69,8 @@ func (s *ListWinnersService) ListWinners(ctx context.Context, input ListWinnersI
 	}
 
 	return ListWinnersOutput{
-		Winners:    winners,
-		TotalCount: totalCount,
+		Winners:    allWinners,
+		TotalCount: len(allWinners),
 		Page:       input.Page,
 		PageSize:   input.PageSize,
 		TotalPages: totalPages,

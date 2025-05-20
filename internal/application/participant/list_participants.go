@@ -3,9 +3,6 @@ package participant
 import (
 	"context"
 	"fmt"
-	"time"
-
-	"github.com/google/uuid"
 
 	participantDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/participant"
 )
@@ -48,7 +45,7 @@ func (s *ListParticipantsService) ListParticipants(ctx context.Context, input Li
 	}
 
 	// Get participants from repository
-	participants, totalCount, err := s.participantRepository.List(ctx, input.Page, input.PageSize)
+	participants, totalCount, err := s.participantRepository.List(input.Page, input.PageSize)
 	if err != nil {
 		return ListParticipantsOutput{}, fmt.Errorf("failed to list participants: %w", err)
 	}

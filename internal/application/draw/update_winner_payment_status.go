@@ -36,8 +36,6 @@ type UpdateWinnerPaymentStatusOutput struct {
 	DrawID        uuid.UUID
 	MSISDN        string
 	PrizeTierID   uuid.UUID
-	PrizeTierName string
-	PrizeValue    string
 	Status        string
 	PaymentStatus string
 	PaymentNotes  string
@@ -51,7 +49,7 @@ type UpdateWinnerPaymentStatusOutput struct {
 // UpdateWinnerPaymentStatus updates a winner's payment status
 func (s *UpdateWinnerPaymentStatusService) UpdateWinnerPaymentStatus(ctx context.Context, input UpdateWinnerPaymentStatusInput) (UpdateWinnerPaymentStatusOutput, error) {
 	// Get current winner
-	winner, err := s.drawRepository.GetWinnerByID(ctx, input.WinnerID)
+	winner, err := s.drawRepository.GetWinnerByID(input.WinnerID)
 	if err != nil {
 		return UpdateWinnerPaymentStatusOutput{}, fmt.Errorf("failed to get winner: %w", err)
 	}
@@ -68,13 +66,13 @@ func (s *UpdateWinnerPaymentStatusService) UpdateWinnerPaymentStatus(ctx context
 	}
 	
 	// Save updated winner
-	err = s.drawRepository.UpdateWinner(ctx, *winner)
+	err = s.drawRepository.UpdateWinner(winner)
 	if err != nil {
 		return UpdateWinnerPaymentStatusOutput{}, fmt.Errorf("failed to update winner: %w", err)
 	}
 	
 	// Get updated winner
-	updatedWinner, err := s.drawRepository.GetWinnerByID(ctx, input.WinnerID)
+	updatedWinner, err := s.drawRepository.GetWinnerByID(input.WinnerID)
 	if err != nil {
 		return UpdateWinnerPaymentStatusOutput{}, fmt.Errorf("failed to get updated winner: %w", err)
 	}
@@ -90,8 +88,6 @@ func (s *UpdateWinnerPaymentStatusService) UpdateWinnerPaymentStatus(ctx context
 		DrawID:        updatedWinner.DrawID,
 		MSISDN:        updatedWinner.MSISDN,
 		PrizeTierID:   updatedWinner.PrizeTierID,
-		PrizeTierName: updatedWinner.PrizeTierName,
-		PrizeValue:    updatedWinner.PrizeValue,
 		Status:        updatedWinner.Status,
 		PaymentStatus: updatedWinner.PaymentStatus,
 		PaymentNotes:  updatedWinner.PaymentNotes,
