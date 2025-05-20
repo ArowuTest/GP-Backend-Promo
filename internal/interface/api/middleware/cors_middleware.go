@@ -33,11 +33,11 @@ func NewCORSMiddleware(
 // Default creates a new CORSMiddleware with default settings
 func Default() *CORSMiddleware {
 	return &CORSMiddleware{
-		allowOrigins:     []string{"*"},
+		allowOrigins:     []string{"https://gp-admin-promo.vercel.app", "http://localhost:3000"},
 		allowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		allowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		exposeHeaders:    []string{"Content-Length"},
-		allowCredentials: false,
+		allowCredentials: true,
 	}
 }
 
@@ -48,19 +48,24 @@ func (m *CORSMiddleware) Handle() gin.HandlerFunc {
 		origin := c.Request.Header.Get("Origin")
 		
 		// Check if the origin is allowed
-		allowOrigin := "*"
-		if len(m.allowOrigins) > 0 && m.allowOrigins[0] != "*" {
-			allowOrigin = ""
-			for _, o := range m.allowOrigins {
-				if o == origin {
-					allowOrigin = origin
-					break
+		allowOrigin := ""
+		if len(m.allowOrigins) > 0 {
+			if m.allowOrigins[0] == "*" {
+				allowOrigin = "*"
+			} else {
+				for _, o := range m.allowOrigins {
+					if o == origin {
+						allowOrigin = origin
+						break
+					}
 				}
 			}
 		}
 		
 		// Set Access-Control-Allow-Origin
-		c.Writer.Header().Set("Access-Control-Allow-Origin", allowOrigin)
+		if allowOrigin != "" {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", allowOrigin)
+		}
 		
 		// Set Access-Control-Allow-Methods
 		if len(m.allowMethods) > 0 {
