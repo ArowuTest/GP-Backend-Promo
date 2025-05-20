@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"encoding/csv"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -32,15 +35,6 @@ func NewParticipantHandler(
 
 // UploadParticipants handles POST /api/admin/participants/upload
 func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
-	var req request.UploadParticipantsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
-			Success: false,
-			Error:   "Invalid request: " + err.Error(),
-		})
-		return
-	}
-	
 	// Get user ID from context
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -51,16 +45,98 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 		return
 	}
 	
-	// Prepare input
-	participants := make([]participantApp.ParticipantInput, 0, len(req.Participants))
-	for _, p := range req.Participants {
+	// Get file from multipart form
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid file upload: " + err.Error(),
+		})
+		return
+	}
+	
+	// Open the uploaded file
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Success: false,
+			Error:   "Failed to open uploaded file: " + err.Error(),
+		})
+		return
+	}
+	defer src.Close()
+	
+	// Parse CSV file
+	reader := csv.NewReader(src)
+	
+	// Read header row
+	header, err := reader.Read()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Failed to read CSV header: " + err.Error(),
+		})
+		return
+	}
+	
+	// Validate header
+	msisdnIdx, amountIdx, dateIdx := -1, -1, -1
+	for i, col := range header {
+		switch col {
+		case "MSISDN":
+			msisdnIdx = i
+		case "RechargeAmount":
+			amountIdx = i
+		case "RechargeDate":
+			dateIdx = i
+		}
+	}
+	
+	if msisdnIdx == -1 || amountIdx == -1 || dateIdx == -1 {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "CSV file must contain MSISDN, RechargeAmount, and RechargeDate columns",
+		})
+		return
+	}
+	
+	// Parse CSV rows
+	participants := []participantApp.ParticipantInput{}
+	lineNum := 1 // Start at 1 to account for header
+	
+	for {
+		lineNum++
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Success: false,
+				Error:   fmt.Sprintf("Error reading CSV line %d: %s", lineNum, err.Error()),
+			})
+			return
+		}
+		
+		// Parse recharge amount
+		amount, err := strconv.ParseFloat(record[amountIdx], 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Success: false,
+				Error:   fmt.Sprintf("Invalid recharge amount at line %d: %s", lineNum, err.Error()),
+			})
+			return
+		}
+		
+		// Add participant
 		participants = append(participants, participantApp.ParticipantInput{
-			MSISDN:         p.MSISDN,
-			RechargeAmount: p.RechargeAmount,
-			RechargeDate:   p.RechargeDate,
+			MSISDN:         record[msisdnIdx],
+			RechargeAmount: amount,
+			RechargeDate:   record[dateIdx],
 		})
 	}
 	
+	// Prepare input
 	input := participantApp.UploadParticipantsInput{
 		Participants: participants,
 		UploadedBy:   userID.(uuid.UUID),
