@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"encoding/csv"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -8,41 +11,36 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	
-	prizeApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/prize"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/request"
+	participantApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/participant"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
 )
 
-// PrizeHandler handles prize-related HTTP requests
-type PrizeHandler struct {
-	createPrizeStructureService *prizeApp.CreatePrizeStructureService
-	getPrizeStructureService    *prizeApp.GetPrizeStructureService
-	listPrizeStructuresService  *prizeApp.ListPrizeStructuresService
-	updatePrizeStructureService *prizeApp.UpdatePrizeStructureService
+// ParticipantHandler handles participant-related HTTP requests
+type ParticipantHandler struct {
+	uploadParticipantsService *participantApp.UploadParticipantsService
+	getParticipantStatsService *participantApp.GetParticipantStatsService
 }
 
-// NewPrizeHandler creates a new PrizeHandler
-func NewPrizeHandler(
-	createPrizeStructureService *prizeApp.CreatePrizeStructureService,
-	getPrizeStructureService *prizeApp.GetPrizeStructureService,
-	listPrizeStructuresService *prizeApp.ListPrizeStructuresService,
-	updatePrizeStructureService *prizeApp.UpdatePrizeStructureService,
-) *PrizeHandler {
-	return &PrizeHandler{
-		createPrizeStructureService: createPrizeStructureService,
-		getPrizeStructureService:    getPrizeStructureService,
-		listPrizeStructuresService:  listPrizeStructuresService,
-		updatePrizeStructureService: updatePrizeStructureService,
+// NewParticipantHandler creates a new ParticipantHandler
+func NewParticipantHandler(
+	uploadParticipantsService *participantApp.UploadParticipantsService,
+	getParticipantStatsService *participantApp.GetParticipantStatsService,
+) *ParticipantHandler {
+	return &ParticipantHandler{
+		uploadParticipantsService: uploadParticipantsService,
+		getParticipantStatsService: getParticipantStatsService,
 	}
 }
 
-// CreatePrizeStructure handles POST /api/admin/prize-structures
-func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
-	var req request.CreatePrizeStructureRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+// UploadParticipants handles POST /api/admin/participants/upload
+func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
+	// Get the file from the multipart form
+	file, err := c.FormFile("file")
+	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
 			Error:   "Invalid request: " + err.Error(),
+			Details: "No file uploaded or invalid form data",
 		})
 		return
 	}
@@ -57,133 +55,159 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 		return
 	}
 	
-	// Prepare input
-	prizes := make([]prizeApp.PrizeInput, 0, len(req.Prizes))
-	for _, prize := range req.Prizes {
-		prizes = append(prizes, prizeApp.PrizeInput{
-			Name:        prize.Name,
-			Description: prize.Name, // Using name as description
-			Value:       prize.Value,
-			Quantity:    prize.Quantity,
-		})
-	}
-	
-	// Handle optional ValidTo field
-	endDate := ""
-	if req.ValidTo != nil {
-		endDate = *req.ValidTo
-	}
-	
-	input := prizeApp.CreatePrizeStructureInput{
-		Name:        req.Name,
-		Description: req.Description,
-		StartDate:   req.ValidFrom,
-		EndDate:     endDate,
-		Prizes:      prizes,
-		CreatedBy:   userID.(uuid.UUID),
-	}
-	
-	// Create prize structure
-	output, err := h.createPrizeStructureService.CreatePrizeStructure(c.Request.Context(), input)
+	// Open the uploaded file
+	src, err := file.Open()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
-			Error:   "Failed to create prize structure: " + err.Error(),
+			Error:   "Failed to open uploaded file: " + err.Error(),
 		})
 		return
 	}
+	defer src.Close()
 	
-	// Prepare response
-	prizeTiers := make([]response.PrizeTierResponse, 0, len(output.Prizes))
-	for _, prize := range output.Prizes {
-		prizeTiers = append(prizeTiers, response.PrizeTierResponse{
-			ID:                prize.ID.String(),
-			Name:              prize.Name,
-			PrizeType:         "Cash", // Default type
-			Value:             prize.Value,
-			Quantity:          prize.Quantity,
-			Order:             1, // Default order
-			NumberOfRunnerUps: 1, // Default number of runner ups
-		})
-	}
+	// Parse CSV
+	reader := csv.NewReader(src)
 	
-	c.JSON(http.StatusCreated, response.SuccessResponse{
-		Success: true,
-		Data: response.PrizeStructureResponse{
-			ID:             output.ID.String(),
-			Name:           output.Name,
-			Description:    output.Description,
-			IsActive:       true, // Default to active
-			ValidFrom:      output.StartDate,
-			ValidTo:        output.EndDate,
-			ApplicableDays: []string{}, // Empty applicable days
-			Prizes:         prizeTiers,
-			CreatedAt:      time.Now().Format("2006-01-02 15:04:05"),
-			UpdatedAt:      time.Now().Format("2006-01-02 15:04:05"),
-		},
-	})
-}
-
-// GetPrizeStructure handles GET /api/admin/prize-structures/:id
-func (h *PrizeHandler) GetPrizeStructure(c *gin.Context) {
-	// Parse prize structure ID
-	prizeStructureID, err := uuid.Parse(c.Param("id"))
+	// Read header
+	header, err := reader.Read()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid prize structure ID format",
+			Error:   "Failed to read CSV header: " + err.Error(),
 		})
 		return
 	}
 	
-	// Prepare input
-	input := prizeApp.GetPrizeStructureInput{
-		ID: prizeStructureID,
+	// Validate header
+	msisdnIdx := -1
+	rechargeAmountIdx := -1
+	rechargeDateIdx := -1
+	
+	for i, col := range header {
+		switch col {
+		case "MSISDN":
+			msisdnIdx = i
+		case "RechargeAmount":
+			rechargeAmountIdx = i
+		case "RechargeDate":
+			rechargeDateIdx = i
+		}
 	}
 	
-	// Get prize structure
-	output, err := h.getPrizeStructureService.GetPrizeStructure(c.Request.Context(), input)
+	if msisdnIdx == -1 || rechargeAmountIdx == -1 || rechargeDateIdx == -1 {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid CSV format",
+			Details: "CSV must contain MSISDN, RechargeAmount, and RechargeDate columns",
+		})
+		return
+	}
+	
+	// Read and parse rows
+	participants := []participantApp.ParticipantInput{}
+	lineNum := 1 // Start from 1 to account for header
+	
+	for {
+		lineNum++
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Success: false,
+				Error:   fmt.Sprintf("Error reading CSV at line %d: %s", lineNum, err.Error()),
+			})
+			return
+		}
+		
+		// Parse recharge amount
+		rechargeAmount, err := strconv.ParseFloat(record[rechargeAmountIdx], 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Success: false,
+				Error:   fmt.Sprintf("Invalid recharge amount at line %d: %s", lineNum, err.Error()),
+			})
+			return
+		}
+		
+		participants = append(participants, participantApp.ParticipantInput{
+			MSISDN:         record[msisdnIdx],
+			RechargeAmount: rechargeAmount,
+			RechargeDate:   record[rechargeDateIdx],
+		})
+	}
+	
+	// Prepare input
+	input := participantApp.UploadParticipantsInput{
+		Participants: participants,
+		UploadedBy:   userID.(uuid.UUID),
+	}
+	
+	// Upload participants
+	output, err := h.uploadParticipantsService.UploadParticipants(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
-			Error:   "Failed to get prize structure: " + err.Error(),
+			Error:   "Failed to upload participants: " + err.Error(),
 		})
 		return
 	}
 	
 	// Prepare response
-	prizeTiers := make([]response.PrizeTierResponse, 0, len(output.Prizes))
-	for _, prize := range output.Prizes {
-		prizeTiers = append(prizeTiers, response.PrizeTierResponse{
-			ID:                prize.ID.String(),
-			Name:              prize.Name,
-			PrizeType:         "Cash", // Default type
-			Value:             prize.Value,
-			Quantity:          prize.Quantity,
-			Order:             1, // Default order
-			NumberOfRunnerUps: 1, // Default number of runner ups
-		})
-	}
-	
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
-		Data: response.PrizeStructureResponse{
-			ID:             output.ID.String(),
-			Name:           output.Name,
-			Description:    output.Description,
-			IsActive:       true, // Default to active
-			ValidFrom:      output.StartDate.Format("2006-01-02"),
-			ValidTo:        output.EndDate.Format("2006-01-02"),
-			ApplicableDays: []string{}, // Empty applicable days
-			Prizes:         prizeTiers,
-			CreatedAt:      time.Now().Format("2006-01-02 15:04:05"),
-			UpdatedAt:      time.Now().Format("2006-01-02 15:04:05"),
+		Data: response.UploadParticipantsResponse{
+			TotalUploaded: output.TotalUploaded,
+			UploadID:      output.UploadID.String(),
+			UploadedAt:    output.UploadedAt.Format("2006-01-02 15:04:05"),
+			FileName:      file.Filename,
+			SuccessfullyImported: output.TotalUploaded,
+			DuplicatesSkipped: 0,
+			ErrorsEncountered: 0,
+			Status: "Completed",
+			Notes: "CSV upload processed successfully",
+			OperationType: "Upload",
 		},
 	})
 }
 
-// ListPrizeStructures handles GET /api/admin/prize-structures
-func (h *PrizeHandler) ListPrizeStructures(c *gin.Context) {
+// GetParticipantStats handles GET /api/admin/participants/stats
+func (h *ParticipantHandler) GetParticipantStats(c *gin.Context) {
+	// Parse date range
+	startDate := c.DefaultQuery("startDate", "")
+	endDate := c.DefaultQuery("endDate", "")
+	
+	// Prepare input
+	input := participantApp.GetParticipantStatsInput{
+		StartDate: startDate,
+		EndDate:   endDate,
+	}
+	
+	// Get participant stats
+	output, err := h.getParticipantStatsService.GetParticipantStats(c.Request.Context(), input)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Success: false,
+			Error:   "Failed to get participant stats: " + err.Error(),
+		})
+		return
+	}
+	
+	// Prepare response
+	c.JSON(http.StatusOK, response.SuccessResponse{
+		Success: true,
+		Data: response.ParticipantStatsResponse{
+			Date:              output.StartDate,
+			TotalParticipants: output.TotalParticipants,
+			TotalPoints:       output.TotalPoints,
+		},
+	})
+}
+
+// ListUploadAudits handles GET /api/admin/participants/uploads
+func (h *ParticipantHandler) ListUploadAudits(c *gin.Context) {
 	// Parse pagination parameters
 	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if err != nil || page < 1 {
@@ -195,174 +219,87 @@ func (h *PrizeHandler) ListPrizeStructures(c *gin.Context) {
 		pageSize = 10
 	}
 	
-	// Prepare input
-	input := prizeApp.ListPrizeStructuresInput{
-		Page:     page,
-		PageSize: pageSize,
-	}
+	// In a real implementation, this would call a dedicated service
+	// For now, we'll just return a mock response with pagination
 	
-	// List prize structures
-	output, err := h.listPrizeStructuresService.ListPrizeStructures(c.Request.Context(), input)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
-			Success: false,
-			Error:   "Failed to list prize structures: " + err.Error(),
-		})
-		return
-	}
-	
-	// Prepare response
-	prizeStructures := make([]response.PrizeStructureResponse, 0, len(output.PrizeStructures))
-	for _, ps := range output.PrizeStructures {
-		prizeTiers := make([]response.PrizeTierResponse, 0, len(ps.Prizes))
-		for _, prize := range ps.Prizes {
-			prizeTiers = append(prizeTiers, response.PrizeTierResponse{
-				ID:                prize.ID.String(),
-				Name:              prize.Name,
-				PrizeType:         "Cash", // Default type
-				Value:             prize.Value,
-				Quantity:          prize.Quantity,
-				Order:             1, // Default order
-				NumberOfRunnerUps: 1, // Default number of runner ups
-			})
-		}
-		
-		prizeStructures = append(prizeStructures, response.PrizeStructureResponse{
-			ID:             ps.ID.String(),
-			Name:           ps.Name,
-			Description:    ps.Description,
-			IsActive:       true, // Default to active
-			ValidFrom:      ps.StartDate.Format("2006-01-02"),
-			ValidTo:        ps.EndDate.Format("2006-01-02"),
-			ApplicableDays: []string{}, // Empty applicable days
-			Prizes:         prizeTiers,
-			CreatedAt:      time.Now().Format("2006-01-02 15:04:05"),
-			UpdatedAt:      time.Now().Format("2006-01-02 15:04:05"),
-		})
+	// Mock upload audits
+	uploadAudits := []response.UploadAuditResponse{
+		{
+			ID:             uuid.New().String(),
+			UploadedBy:     "Admin User",
+			UploadDate:     time.Now().Format("2006-01-02 15:04:05"),
+			FileName:       "participants.csv",
+			Status:         "Completed",
+			TotalRows:      100,
+			SuccessfulRows: 100,
+			ErrorCount:     0,
+		},
 	}
 	
 	c.JSON(http.StatusOK, response.PaginatedResponse{
 		Success: true,
-		Data:    prizeStructures,
+		Data:    uploadAudits,
 		Pagination: response.Pagination{
-			Page:       output.Page,
-			PageSize:   output.PageSize,
-			TotalRows:  int(output.TotalCount),
-			TotalPages: output.TotalPages,
-			TotalItems: int64(output.TotalCount),
+			Page:       page,
+			PageSize:   pageSize,
+			TotalRows:  len(uploadAudits),
+			TotalPages: 1,
+			TotalItems: int64(len(uploadAudits)),
 		},
 	})
 }
 
-// UpdatePrizeStructure handles PUT /api/admin/prize-structures/:id
-func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
-	// Parse prize structure ID
-	prizeStructureID, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
-			Success: false,
-			Error:   "Invalid prize structure ID format",
-		})
-		return
+// ListParticipants handles GET /api/admin/participants
+func (h *ParticipantHandler) ListParticipants(c *gin.Context) {
+	// Parse pagination parameters
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
+		page = 1
 	}
 	
-	var req request.UpdatePrizeStructureRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
-			Success: false,
-			Error:   "Invalid request: " + err.Error(),
-		})
-		return
+	pageSize, err := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	if err != nil || pageSize < 1 {
+		pageSize = 10
 	}
 	
-	// Get user ID from context
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
-			Success: false,
-			Error:   "User not authenticated",
-		})
-		return
-	}
+	// In a real implementation, this would call a dedicated service
+	// For now, we'll just return a mock response with pagination
 	
-	// Prepare input
-	updatePrizes := make([]prizeApp.UpdatePrizeInput, 0, len(req.Prizes))
-	for _, prize := range req.Prizes {
-		prizeID, _ := uuid.Parse(prize.ID) // Ignore error, will be uuid.Nil if empty
-		updatePrizes = append(updatePrizes, prizeApp.UpdatePrizeInput{
-			ID:          prizeID,
-			Name:        prize.Name,
-			Description: prize.Name, // Using name as description
-			Value:       prize.Value,
-			Quantity:    prize.Quantity,
-		})
-	}
-	
-	// Handle optional ValidTo field
-	endDate := ""
-	if req.ValidTo != nil {
-		endDate = *req.ValidTo
-	}
-	
-	input := prizeApp.UpdatePrizeStructureInput{
-		ID:          prizeStructureID,
-		Name:        req.Name,
-		Description: req.Description,
-		StartDate:   req.ValidFrom,
-		EndDate:     endDate,
-		Prizes:      updatePrizes,
-		UpdatedBy:   userID.(uuid.UUID),
-	}
-	
-	// Update prize structure
-	output, err := h.updatePrizeStructureService.UpdatePrizeStructure(c.Request.Context(), input)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
-			Success: false,
-			Error:   "Failed to update prize structure: " + err.Error(),
-		})
-		return
-	}
-	
-	// Prepare response
-	prizeTiers := make([]response.PrizeTierResponse, 0, len(output.Prizes))
-	for _, prize := range output.Prizes {
-		prizeTiers = append(prizeTiers, response.PrizeTierResponse{
-			ID:                prize.ID.String(),
-			Name:              prize.Name,
-			PrizeType:         "Cash", // Default type
-			Value:             prize.Value,
-			Quantity:          prize.Quantity,
-			Order:             1, // Default order
-			NumberOfRunnerUps: 1, // Default number of runner ups
-		})
-	}
-	
-	c.JSON(http.StatusOK, response.SuccessResponse{
-		Success: true,
-		Data: response.PrizeStructureResponse{
-			ID:             output.ID.String(),
-			Name:           output.Name,
-			Description:    output.Description,
-			IsActive:       true, // Default to active
-			ValidFrom:      output.StartDate,
-			ValidTo:        output.EndDate,
-			ApplicableDays: []string{}, // Empty applicable days
-			Prizes:         prizeTiers,
+	// Mock participants
+	participants := []response.ParticipantResponse{
+		{
+			ID:             uuid.New().String(),
+			MSISDN:         "234*****789", // Masked for privacy
+			RechargeAmount: 500.0,
+			RechargeDate:   time.Now().Format("2006-01-02"),
+			Points:         5,
 			CreatedAt:      time.Now().Format("2006-01-02 15:04:05"),
-			UpdatedAt:      time.Now().Format("2006-01-02 15:04:05"),
+			UploadID:       uuid.New().String(),
+			UploadedAt:     time.Now().Format("2006-01-02 15:04:05"),
+		},
+	}
+	
+	c.JSON(http.StatusOK, response.PaginatedResponse{
+		Success: true,
+		Data:    participants,
+		Pagination: response.Pagination{
+			Page:       page,
+			PageSize:   pageSize,
+			TotalRows:  len(participants),
+			TotalPages: 1,
+			TotalItems: int64(len(participants)),
 		},
 	})
 }
 
-// DeletePrizeStructure handles DELETE /api/admin/prize-structures/:id
-func (h *PrizeHandler) DeletePrizeStructure(c *gin.Context) {
-	// Parse prize structure ID
-	prizeStructureID, err := uuid.Parse(c.Param("id"))
+// DeleteUpload handles DELETE /api/admin/participants/uploads/:id
+func (h *ParticipantHandler) DeleteUpload(c *gin.Context) {
+	// Parse upload ID
+	uploadID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid prize structure ID format",
+			Error:   "Invalid upload ID format",
 		})
 		return
 	}
@@ -373,7 +310,7 @@ func (h *PrizeHandler) DeletePrizeStructure(c *gin.Context) {
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: gin.H{
-			"id":      prizeStructureID.String(),
+			"id":      uploadID.String(),
 			"deleted": true,
 		},
 	})
