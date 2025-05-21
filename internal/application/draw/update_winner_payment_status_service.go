@@ -5,6 +5,7 @@ import (
 	"time"
 	
 	"github.com/google/uuid"
+	drawDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/draw"
 )
 
 // UpdateWinnerPaymentStatusInput represents input for UpdateWinnerPaymentStatus
@@ -47,26 +48,32 @@ func NewUpdateWinnerPaymentStatusService(repository Repository) *UpdateWinnerPay
 
 // UpdateWinnerPaymentStatus updates a winner's payment status
 func (s *UpdateWinnerPaymentStatusService) UpdateWinnerPaymentStatus(ctx context.Context, input UpdateWinnerPaymentStatusInput) (UpdateWinnerPaymentStatusOutput, error) {
-	// For now, return mock data
-	paidAt := ""
-	if input.PaymentStatus == "Paid" {
-		paidAt = time.Now().Format("2006-01-02 15:04:05")
+	// Implementation using domain types
+	winner, err := s.repository.UpdateWinnerPaymentStatus(ctx, input.WinnerID, input.PaymentStatus, input.Notes, input.UpdatedBy)
+	if err != nil {
+		return UpdateWinnerPaymentStatusOutput{}, err
+	}
+	
+	// Convert paidAt to string format if needed
+	paidAtStr := ""
+	if winner.PaidAt != nil {
+		paidAtStr = winner.PaidAt.Format("2006-01-02 15:04:05")
 	}
 	
 	return UpdateWinnerPaymentStatusOutput{
-		ID:            input.WinnerID,
-		DrawID:        uuid.New(),
-		MSISDN:        "234*****789",
-		PrizeTierID:   uuid.New(),
-		PrizeTierName: "First Prize",
-		PrizeValue:    1000000,
-		Status:        "Active",
-		PaymentStatus: input.PaymentStatus,
-		PaymentNotes:  input.Notes,
-		PaidAt:        paidAt,
-		IsRunnerUp:    false,
-		RunnerUpRank:  0,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		ID:            winner.ID,
+		DrawID:        winner.DrawID,
+		MSISDN:        winner.MSISDN,
+		PrizeTierID:   winner.PrizeTierID,
+		PrizeTierName: winner.PrizeTierName,
+		PrizeValue:    winner.PrizeValue,
+		Status:        winner.Status,
+		PaymentStatus: winner.PaymentStatus,
+		PaymentNotes:  winner.PaymentNotes,
+		PaidAt:        paidAtStr,
+		IsRunnerUp:    winner.IsRunnerUp,
+		RunnerUpRank:  winner.RunnerUpRank,
+		CreatedAt:     winner.CreatedAt,
+		UpdatedAt:     winner.UpdatedAt,
 	}, nil
 }

@@ -2,21 +2,10 @@ package participant
 
 import (
 	"context"
-	"time"
 	
 	"github.com/google/uuid"
+	participantDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/participant"
 )
-
-// Participant represents a participant record
-type Participant struct {
-	ID             uuid.UUID
-	MSISDN         string
-	Points         int
-	RechargeAmount float64
-	RechargeDate   time.Time
-	CreatedAt      time.Time
-	UploadID       uuid.UUID
-}
 
 // ListParticipantsInput represents input for ListParticipants
 type ListParticipantsInput struct {
@@ -26,7 +15,7 @@ type ListParticipantsInput struct {
 
 // ListParticipantsOutput represents output for ListParticipants
 type ListParticipantsOutput struct {
-	Participants []Participant
+	Participants []participantDomain.Participant
 	Page         int
 	PageSize     int
 	TotalCount   int
@@ -47,24 +36,28 @@ func NewListParticipantsService(repository Repository) *ListParticipantsService 
 
 // ListParticipants lists participants with pagination
 func (s *ListParticipantsService) ListParticipants(ctx context.Context, input ListParticipantsInput) (ListParticipantsOutput, error) {
-	// For now, return mock data
-	mockParticipants := []Participant{
-		{
-			ID:             uuid.New(),
-			MSISDN:         "234*****789",
-			Points:         5,
-			RechargeAmount: 500,
-			RechargeDate:   time.Now(),
-			CreatedAt:      time.Now(),
-			UploadID:       uuid.New(),
-		},
+	// Implementation using domain types
+	participants, total, err := s.repository.ListParticipants(ctx, input.Page, input.PageSize)
+	if err != nil {
+		return ListParticipantsOutput{}, err
+	}
+	
+	// Convert to output format
+	participantOutputs := make([]participantDomain.Participant, len(participants))
+	for i, participant := range participants {
+		participantOutputs[i] = *participant
+	}
+	
+	totalPages := total / input.PageSize
+	if total%input.PageSize > 0 {
+		totalPages++
 	}
 	
 	return ListParticipantsOutput{
-		Participants: mockParticipants,
+		Participants: participantOutputs,
 		Page:         input.Page,
 		PageSize:     input.PageSize,
-		TotalCount:   len(mockParticipants),
-		TotalPages:   1,
+		TotalCount:   total,
+		TotalPages:   totalPages,
 	}, nil
 }

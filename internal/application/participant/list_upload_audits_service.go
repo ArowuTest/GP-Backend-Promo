@@ -2,23 +2,9 @@ package participant
 
 import (
 	"context"
-	"time"
 	
-	"github.com/google/uuid"
+	participantDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/participant"
 )
-
-// UploadAudit represents an upload audit record
-type UploadAudit struct {
-	ID             uuid.UUID
-	UploadedBy     uuid.UUID
-	UploadDate     time.Time
-	FileName       string
-	Status         string
-	TotalRows      int
-	SuccessfulRows int
-	ErrorCount     int
-	ErrorDetails   string
-}
 
 // ListUploadAuditsInput represents input for ListUploadAudits
 type ListUploadAuditsInput struct {
@@ -28,7 +14,7 @@ type ListUploadAuditsInput struct {
 
 // ListUploadAuditsOutput represents output for ListUploadAudits
 type ListUploadAuditsOutput struct {
-	Audits     []UploadAudit
+	Audits     []participantDomain.UploadAudit
 	Page       int
 	PageSize   int
 	TotalCount int
@@ -49,26 +35,28 @@ func NewListUploadAuditsService(repository Repository) *ListUploadAuditsService 
 
 // ListUploadAudits lists upload audits with pagination
 func (s *ListUploadAuditsService) ListUploadAudits(ctx context.Context, input ListUploadAuditsInput) (ListUploadAuditsOutput, error) {
-	// For now, return mock data
-	mockAudits := []UploadAudit{
-		{
-			ID:             uuid.New(),
-			UploadedBy:     uuid.New(),
-			UploadDate:     time.Now(),
-			FileName:       "participants.csv",
-			Status:         "Completed",
-			TotalRows:      100,
-			SuccessfulRows: 95,
-			ErrorCount:     5,
-			ErrorDetails:   "5 rows had invalid data",
-		},
+	// Implementation using domain types
+	audits, total, err := s.repository.ListUploadAudits(ctx, input.Page, input.PageSize)
+	if err != nil {
+		return ListUploadAuditsOutput{}, err
+	}
+	
+	// Convert to output format
+	auditOutputs := make([]participantDomain.UploadAudit, len(audits))
+	for i, audit := range audits {
+		auditOutputs[i] = *audit
+	}
+	
+	totalPages := total / input.PageSize
+	if total%input.PageSize > 0 {
+		totalPages++
 	}
 	
 	return ListUploadAuditsOutput{
-		Audits:     mockAudits,
+		Audits:     auditOutputs,
 		Page:       input.Page,
 		PageSize:   input.PageSize,
-		TotalCount: len(mockAudits),
-		TotalPages: 1,
+		TotalCount: total,
+		TotalPages: totalPages,
 	}, nil
 }

@@ -16,6 +16,7 @@ type Draw struct {
 	TotalEligibleMSISDNs int
 	TotalEntries        int
 	ExecutedByAdminID   uuid.UUID
+	ExecutedBy          uuid.UUID  // Added for application layer compatibility
 	Winners             []Winner
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
@@ -27,6 +28,8 @@ type Winner struct {
 	DrawID        uuid.UUID
 	MSISDN        string
 	PrizeTierID   uuid.UUID
+	PrizeTierName string        // Added for application layer compatibility
+	PrizeValue    float64       // Added for application layer compatibility
 	Status        string // "PendingNotification", "Notified", "Confirmed"
 	PaymentStatus string // "Pending", "Paid", "Failed"
 	PaymentNotes  string

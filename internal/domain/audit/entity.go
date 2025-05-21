@@ -33,6 +33,23 @@ type SystemAuditLog struct {
 	CreatedAt   time.Time
 }
 
+// DataUploadAudit represents a data upload audit record
+type DataUploadAudit struct {
+	ID                  uuid.UUID
+	UploadedBy          uuid.UUID
+	UploadedAt          time.Time
+	FileName            string
+	TotalUploaded       int
+	SuccessfullyImported int
+	DuplicatesSkipped   int
+	ErrorsEncountered   int
+	Status              string
+	Details             string
+	OperationType       string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
 // AuditLogFilters defines filters for retrieving audit logs
 type AuditLogFilters struct {
 	StartDate  time.Time

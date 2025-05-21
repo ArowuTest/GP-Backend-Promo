@@ -19,6 +19,14 @@ type Participant struct {
 	UpdatedAt      time.Time
 }
 
+// ParticipantInput represents input for creating a participant
+type ParticipantInput struct {
+	MSISDN         string
+	Points         int
+	RechargeAmount float64
+	RechargeDate   time.Time
+}
+
 // ParticipantRepository defines the interface for participant data access
 type ParticipantRepository interface {
 	Create(participant *Participant) error
@@ -44,6 +52,7 @@ type UploadAudit struct {
 	SuccessfulRows  int
 	ErrorCount      int
 	ErrorDetails    []string
+	ErrorDetailsStr string       // Added for application layer compatibility
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }

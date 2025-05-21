@@ -1,68 +1,63 @@
-package draw
+package participant
 
 import (
 	"context"
-	"time"
 	
 	"github.com/google/uuid"
+	participantDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/participant"
 )
 
-// ListWinnersInput represents input for ListWinners
-type ListWinnersInput struct {
-	Page      int
-	PageSize  int
-	StartDate string
-	EndDate   string
+// ListParticipantsInput represents input for ListParticipants
+type ListParticipantsInput struct {
+	Page     int
+	PageSize int
 }
 
-// ListWinnersOutput represents output for ListWinners
-type ListWinnersOutput struct {
-	Winners    []Winner
-	Page       int
-	PageSize   int
-	TotalCount int
-	TotalPages int
+// ListParticipantsOutput represents output for ListParticipants
+type ListParticipantsOutput struct {
+	Participants []participantDomain.Participant
+	Page         int
+	PageSize     int
+	TotalCount   int
+	TotalPages   int
 }
 
-// ListWinnersService handles listing winners
-type ListWinnersService struct {
+// ListParticipantsService handles listing participants
+type ListParticipantsService struct {
 	repository Repository
 }
 
-// NewListWinnersService creates a new ListWinnersService
-func NewListWinnersService(repository Repository) *ListWinnersService {
-	return &ListWinnersService{
+// NewListParticipantsService creates a new ListParticipantsService
+func NewListParticipantsService(repository Repository) *ListParticipantsService {
+	return &ListParticipantsService{
 		repository: repository,
 	}
 }
 
-// ListWinners lists winners with pagination
-func (s *ListWinnersService) ListWinners(ctx context.Context, input ListWinnersInput) (ListWinnersOutput, error) {
-	// For now, return mock data
-	mockWinners := []Winner{
-		{
-			ID:            uuid.New(),
-			DrawID:        uuid.New(),
-			MSISDN:        "234*****789",
-			PrizeTierID:   uuid.New(),
-			PrizeTierName: "First Prize",
-			PrizeValue:    1000000,
-			Status:        "Active",
-			PaymentStatus: "Pending",
-			PaymentNotes:  "",
-			PaidAt:        "",
-			IsRunnerUp:    false,
-			RunnerUpRank:  0,
-			CreatedAt:     time.Now(),
-			UpdatedAt:     time.Now(),
-		},
+// ListParticipants lists participants with pagination
+func (s *ListParticipantsService) ListParticipants(ctx context.Context, input ListParticipantsInput) (ListParticipantsOutput, error) {
+	// Implementation using domain types
+	participants, total, err := s.repository.ListParticipants(ctx, input.Page, input.PageSize)
+	if err != nil {
+		return ListParticipantsOutput{}, err
 	}
 	
-	return ListWinnersOutput{
-		Winners:    mockWinners,
-		Page:       input.Page,
-		PageSize:   input.PageSize,
-		TotalCount: len(mockWinners),
-		TotalPages: 1,
+	// Convert to output format
+	participantOutputs := make([]participantDomain.Participant, len(participants))
+	for i, participant := range participants {
+		participantOutputs[i] = *participant
+	}
+	
+	totalPages := total / input.PageSize
+	if total%input.PageSize > 0 {
+		totalPages++
+	}
+	
+	return ListParticipantsOutput{
+		Participants: participantOutputs,
+		Page:         input.Page,
+		PageSize:     input.PageSize,
+		TotalCount:   total,
+		TotalPages:   totalPages,
 	}, nil
 }
