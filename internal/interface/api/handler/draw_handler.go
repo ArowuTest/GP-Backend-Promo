@@ -11,6 +11,7 @@ import (
 	drawApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/draw"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/request"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/pkg/util"
 )
 
 // DrawHandler handles draw-related HTTP requests
@@ -76,11 +77,21 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 		return
 	}
 	
+	// Parse draw date string to time.Time
+	drawDate := util.ParseTimeOrZero(req.DrawDate, "2006-01-02")
+	if drawDate.IsZero() {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid draw date format. Expected YYYY-MM-DD.",
+		})
+		return
+	}
+	
 	// Prepare input
 	input := drawApp.ExecuteDrawInput{
-		DrawDate:         req.DrawDate,
+		DrawDate:         drawDate,
 		PrizeStructureID: prizeStructureID,
-		ExecutedByAdminID: userID.(uuid.UUID), // Changed from ExecutedBy to ExecutedByAdminID
+		ExecutedByAdminID: userID.(uuid.UUID),
 	}
 	
 	// Execute draw - removed context parameter to match service signature
@@ -98,15 +109,15 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 	for _, w := range output.Winners {
 		winners = append(winners, response.WinnerResponse{
 			ID:            w.ID.String(),
-			DrawID:        output.DrawID.String(), // Using output.DrawID instead of w.DrawID
+			DrawID:        output.DrawID.String(),
 			MSISDN:        w.MSISDN,
 			PrizeTierID:   w.PrizeTierID.String(),
-			PrizeTierName: w.PrizeName, // Changed from w.PrizeTierName to w.PrizeName
-			PrizeValue:    w.PrizeValue,
-			Status:        "PendingNotification", // Hardcoded status since it's not in WinnerOutput
-			IsRunnerUp:    false, // Default value
-			RunnerUpRank:  0, // Default value
-			CreatedAt:     time.Now().Format(time.RFC3339), // Using current time
+			PrizeTierName: w.PrizeName,
+			PrizeValue:    util.FormatFloat(w.PrizeValue),
+			Status:        "PendingNotification",
+			IsRunnerUp:    false,
+			RunnerUpRank:  0,
+			CreatedAt:     time.Now().Format(time.RFC3339),
 		})
 	}
 	
@@ -114,15 +125,15 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 		Success: true,
 		Data: response.DrawResponse{
 			ID:                   output.DrawID.String(),
-			DrawDate:             output.DrawDate,
-			PrizeStructureID:     input.PrizeStructureID.String(), // Using input value
-			Status:               "Completed", // Hardcoded status
+			DrawDate:             util.FormatTimeOrEmpty(output.DrawDate, "2006-01-02"),
+			PrizeStructureID:     input.PrizeStructureID.String(),
+			Status:               "Completed",
 			TotalEligibleMSISDNs: output.TotalEligibleMSISDNs,
 			TotalEntries:         output.TotalEntries,
-			ExecutedByAdminID:    input.ExecutedByAdminID.String(), // Using input value
+			ExecutedByAdminID:    input.ExecutedByAdminID.String(),
 			Winners:              winners,
-			CreatedAt:            time.Now().Format(time.RFC3339), // Using current time
-			UpdatedAt:            time.Now().Format(time.RFC3339), // Using current time
+			CreatedAt:            time.Now().Format(time.RFC3339),
+			UpdatedAt:            time.Now().Format(time.RFC3339),
 		},
 	})
 }
@@ -163,11 +174,11 @@ func (h *DrawHandler) GetDrawByID(c *gin.Context) {
 			MSISDN:        w.MSISDN,
 			PrizeTierID:   w.PrizeTierID.String(),
 			PrizeTierName: w.PrizeTierName,
-			PrizeValue:    w.PrizeValue,
+			PrizeValue:    util.FormatFloat(w.PrizeValue),
 			Status:        w.Status,
 			IsRunnerUp:    w.IsRunnerUp,
 			RunnerUpRank:  w.RunnerUpRank,
-			CreatedAt:     w.CreatedAt.Format(time.RFC3339),
+			CreatedAt:     util.FormatTimeOrEmpty(w.CreatedAt, time.RFC3339),
 		})
 	}
 	
@@ -175,15 +186,15 @@ func (h *DrawHandler) GetDrawByID(c *gin.Context) {
 		Success: true,
 		Data: response.DrawResponse{
 			ID:                   output.ID.String(),
-			DrawDate:             output.DrawDate,
+			DrawDate:             util.FormatTimeOrEmpty(output.DrawDate, "2006-01-02"),
 			PrizeStructureID:     output.PrizeStructureID.String(),
 			Status:               output.Status,
 			TotalEligibleMSISDNs: output.TotalEligibleMSISDNs,
 			TotalEntries:         output.TotalEntries,
 			ExecutedByAdminID:    output.ExecutedBy.String(),
 			Winners:              winners,
-			CreatedAt:            output.CreatedAt.Format(time.RFC3339),
-			UpdatedAt:            output.UpdatedAt.Format(time.RFC3339),
+			CreatedAt:            util.FormatTimeOrEmpty(output.CreatedAt, time.RFC3339),
+			UpdatedAt:            util.FormatTimeOrEmpty(output.UpdatedAt, time.RFC3339),
 		},
 	})
 }
@@ -228,25 +239,25 @@ func (h *DrawHandler) ListDraws(c *gin.Context) {
 				MSISDN:        w.MSISDN,
 				PrizeTierID:   w.PrizeTierID.String(),
 				PrizeTierName: w.PrizeTierName,
-				PrizeValue:    w.PrizeValue,
+				PrizeValue:    util.FormatFloat(w.PrizeValue),
 				Status:        w.Status,
 				IsRunnerUp:    w.IsRunnerUp,
 				RunnerUpRank:  w.RunnerUpRank,
-				CreatedAt:     w.CreatedAt.Format(time.RFC3339),
+				CreatedAt:     util.FormatTimeOrEmpty(w.CreatedAt, time.RFC3339),
 			})
 		}
 		
 		draws = append(draws, response.DrawResponse{
 			ID:                   d.ID.String(),
-			DrawDate:             d.DrawDate,
+			DrawDate:             util.FormatTimeOrEmpty(d.DrawDate, "2006-01-02"),
 			PrizeStructureID:     d.PrizeStructureID.String(),
 			Status:               d.Status,
 			TotalEligibleMSISDNs: d.TotalEligibleMSISDNs,
 			TotalEntries:         d.TotalEntries,
 			ExecutedByAdminID:    d.ExecutedBy.String(),
 			Winners:              winners,
-			CreatedAt:            d.CreatedAt.Format(time.RFC3339),
-			UpdatedAt:            d.UpdatedAt.Format(time.RFC3339),
+			CreatedAt:            util.FormatTimeOrEmpty(d.CreatedAt, time.RFC3339),
+			UpdatedAt:            util.FormatTimeOrEmpty(d.UpdatedAt, time.RFC3339),
 		})
 	}
 	
@@ -301,26 +312,23 @@ func (h *DrawHandler) ListWinners(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
-		// Create a default paidAt string
-		paidAtStr := ""
-		
 		// Create response with available fields
 		winnerResponse := response.WinnerResponse{
 			ID:            w.ID.String(),
 			MSISDN:        w.MSISDN,
 			PrizeTierID:   w.PrizeTierID.String(),
 			PrizeTierName: w.PrizeTierName,
-			PrizeValue:    w.PrizeValue,
+			PrizeValue:    util.FormatFloat(w.PrizeValue),
 			IsRunnerUp:    w.IsRunnerUp,
 			RunnerUpRank:  w.RunnerUpRank,
-			CreatedAt:     w.CreatedAt.Format(time.RFC3339),
-			UpdatedAt:     w.UpdatedAt.Format(time.RFC3339),
+			CreatedAt:     util.FormatTimeOrEmpty(w.CreatedAt, time.RFC3339),
+			UpdatedAt:     util.FormatTimeOrEmpty(w.UpdatedAt, time.RFC3339),
 			// Set default values for fields that might not exist
 			DrawID:        "",
 			Status:        "PendingNotification",
 			PaymentStatus: "Pending",
 			PaymentNotes:  "",
-			PaidAt:        paidAtStr,
+			PaidAt:        "",
 		}
 		
 		winners = append(winners, winnerResponse)
@@ -425,11 +433,11 @@ func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
 		MSISDN:        output.OriginalWinner.MSISDN,
 		PrizeTierID:   output.OriginalWinner.PrizeTierID.String(),
 		PrizeTierName: output.OriginalWinner.PrizeTierName,
-		PrizeValue:    output.OriginalWinner.PrizeValue,
+		PrizeValue:    util.FormatFloat(output.OriginalWinner.PrizeValue),
 		Status:        output.OriginalWinner.Status,
 		IsRunnerUp:    output.OriginalWinner.IsRunnerUp,
 		RunnerUpRank:  output.OriginalWinner.RunnerUpRank,
-		CreatedAt:     output.OriginalWinner.CreatedAt.Format(time.RFC3339),
+		CreatedAt:     util.FormatTimeOrEmpty(output.OriginalWinner.CreatedAt, time.RFC3339),
 	}
 	
 	newWinner := response.WinnerResponse{
@@ -438,11 +446,11 @@ func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
 		MSISDN:        output.NewWinner.MSISDN,
 		PrizeTierID:   output.NewWinner.PrizeTierID.String(),
 		PrizeTierName: output.NewWinner.PrizeTierName,
-		PrizeValue:    output.NewWinner.PrizeValue,
+		PrizeValue:    util.FormatFloat(output.NewWinner.PrizeValue),
 		Status:        output.NewWinner.Status,
 		IsRunnerUp:    output.NewWinner.IsRunnerUp,
 		RunnerUpRank:  output.NewWinner.RunnerUpRank,
-		CreatedAt:     output.NewWinner.CreatedAt.Format(time.RFC3339),
+		CreatedAt:     util.FormatTimeOrEmpty(output.NewWinner.CreatedAt, time.RFC3339),
 	}
 	
 	c.JSON(http.StatusOK, response.SuccessResponse{
@@ -513,15 +521,15 @@ func (h *DrawHandler) UpdateWinnerPaymentStatus(c *gin.Context) {
 			MSISDN:        output.MSISDN,
 			PrizeTierID:   output.PrizeTierID.String(),
 			PrizeTierName: output.PrizeTierName,
-			PrizeValue:    output.PrizeValue,
+			PrizeValue:    util.FormatFloat(output.PrizeValue),
 			Status:        output.Status,
 			PaymentStatus: output.PaymentStatus,
 			PaymentNotes:  output.PaymentNotes,
 			PaidAt:        output.PaidAt,
 			IsRunnerUp:    output.IsRunnerUp,
 			RunnerUpRank:  output.RunnerUpRank,
-			CreatedAt:     output.CreatedAt.Format(time.RFC3339),
-			UpdatedAt:     output.UpdatedAt.Format(time.RFC3339),
+			CreatedAt:     util.FormatTimeOrEmpty(output.CreatedAt, time.RFC3339),
+			UpdatedAt:     util.FormatTimeOrEmpty(output.UpdatedAt, time.RFC3339),
 		},
 	})
 }

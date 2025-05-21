@@ -11,6 +11,7 @@ import (
 	auditApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/audit"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/request"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/pkg/util"
 )
 
 // AuditHandler handles audit-related HTTP requests
@@ -56,14 +57,20 @@ func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 		}
 	}
 	
-	// Prepare input
+	// Parse dates if provided
+	startDate := util.ParseTimeOrZero(req.StartDate, time.RFC3339)
+	endDate := util.ParseTimeOrZero(req.EndDate, time.RFC3339)
+	
+	// Prepare input with nested filters structure
 	input := auditApp.GetAuditLogsInput{
-		StartDate: req.StartDate,
-		EndDate:   req.EndDate,
-		UserID:    userID,
-		Action:    req.Action,
-		Page:      req.Page,
-		PageSize:  req.PageSize,
+		Page:     req.Page,
+		PageSize: req.PageSize,
+		Filters: auditApp.AuditLogFilters{
+			StartDate:  startDate,
+			EndDate:    endDate,
+			UserID:     userID,
+			Action:     req.Action,
+		},
 	}
 	
 	// Get audit logs
@@ -85,10 +92,10 @@ func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 			Username:   al.Username,
 			Action:     al.Action,
 			EntityType: al.EntityType,
-			EntityID:   al.EntityID, // Changed from al.EntityID.String() to al.EntityID
-			Summary:    al.Description, // Changed from al.Summary to al.Description
-			Details:    "", // Set to empty string as Details doesn't exist in domain type
-			CreatedAt:  al.CreatedAt.Format(time.RFC3339),
+			EntityID:   al.EntityID, // EntityID is already a string
+			Summary:    al.Description, // Using Description as Summary
+			Details:    "", // Set to empty string as Details doesn't exist
+			CreatedAt:  util.FormatTimeOrEmpty(al.CreatedAt, time.RFC3339),
 		})
 	}
 	
@@ -122,28 +129,8 @@ func (h *AuditHandler) GetDataUploadAudits(c *gin.Context) {
 	startDateStr := c.DefaultQuery("startDate", "")
 	endDateStr := c.DefaultQuery("endDate", "")
 	
-	var startDate, endDate time.Time
-	if startDateStr != "" {
-		startDate, err = time.Parse(time.RFC3339, startDateStr)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, response.ErrorResponse{
-				Success: false,
-				Error:   "Invalid start date format. Expected RFC3339 format.",
-			})
-			return
-		}
-	}
-	
-	if endDateStr != "" {
-		endDate, err = time.Parse(time.RFC3339, endDateStr)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, response.ErrorResponse{
-				Success: false,
-				Error:   "Invalid end date format. Expected RFC3339 format.",
-			})
-			return
-		}
-	}
+	startDate := util.ParseTimeOrZero(startDateStr, time.RFC3339)
+	endDate := util.ParseTimeOrZero(endDateStr, time.RFC3339)
 	
 	// Prepare input
 	input := auditApp.GetDataUploadAuditsInput{
@@ -169,7 +156,7 @@ func (h *AuditHandler) GetDataUploadAudits(c *gin.Context) {
 		dataUploadAudits = append(dataUploadAudits, response.DataUploadAuditResponse{
 			ID:                  dua.ID.String(),
 			UploadedBy:          dua.UploadedBy.String(),
-			UploadedAt:          dua.UploadedAt.Format(time.RFC3339),
+			UploadedAt:          util.FormatTimeOrEmpty(dua.UploadedAt, time.RFC3339),
 			FileName:            dua.FileName,
 			TotalUploaded:       dua.TotalUploaded,
 			SuccessfullyImported: dua.SuccessfullyImported,
