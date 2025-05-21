@@ -15,7 +15,7 @@ import (
 
 // AuditHandler handles audit-related HTTP requests
 type AuditHandler struct {
-	getAuditLogsService       *auditApp.GetAuditLogsService
+	getAuditLogsService        *auditApp.GetAuditLogsService
 	getDataUploadAuditsService *auditApp.GetDataUploadAuditsService
 }
 
@@ -25,7 +25,7 @@ func NewAuditHandler(
 	getDataUploadAuditsService *auditApp.GetDataUploadAuditsService,
 ) *AuditHandler {
 	return &AuditHandler{
-		getAuditLogsService:       getAuditLogsService,
+		getAuditLogsService:        getAuditLogsService,
 		getDataUploadAuditsService: getDataUploadAuditsService,
 	}
 }

@@ -15,12 +15,12 @@ import (
 
 // DrawHandler handles draw-related HTTP requests
 type DrawHandler struct {
-	executeDrawService      *drawApp.ExecuteDrawService
-	getDrawByIDService      *drawApp.GetDrawByIDService
-	listDrawsService        *drawApp.ListDrawsService
-	listWinnersService      *drawApp.ListWinnersService
-	getEligibilityStatsService *drawApp.GetEligibilityStatsService
-	invokeRunnerUpService   *drawApp.InvokeRunnerUpService
+	executeDrawService          *drawApp.ExecuteDrawService
+	getDrawByIDService          *drawApp.GetDrawByIDService
+	listDrawsService            *drawApp.ListDrawsService
+	listWinnersService          *drawApp.ListWinnersService
+	getEligibilityStatsService  *drawApp.GetEligibilityStatsService
+	invokeRunnerUpService       *drawApp.InvokeRunnerUpService
 	updateWinnerPaymentStatusService *drawApp.UpdateWinnerPaymentStatusService
 }
 

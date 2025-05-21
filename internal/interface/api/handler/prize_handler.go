@@ -77,14 +77,14 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 	}
 	
 	input := prizeApp.CreatePrizeStructureInput{
-		Name:           req.Name,
-		Description:    req.Description,
-		StartDate:      req.ValidFrom,
-		EndDate:        endDate,
-		IsActive:       req.IsActive,
+		Name:          req.Name,
+		Description:   req.Description,
+		StartDate:     req.ValidFrom,
+		EndDate:       endDate,
+		IsActive:      req.IsActive,
 		ApplicableDays: req.ApplicableDays,
-		Prizes:         prizes,
-		CreatedBy:      userID.(uuid.UUID),
+		Prizes:        prizes,
+		CreatedBy:     userID.(uuid.UUID),
 	}
 	
 	// Create prize structure
@@ -291,11 +291,9 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 	}
 	
 	// Prepare input
-	updatePrizes := make([]prizeApp.UpdatePrizeInput, 0, len(req.Prizes))
+	prizes := make([]prizeApp.PrizeInput, 0, len(req.Prizes))
 	for _, prize := range req.Prizes {
-		prizeID, _ := uuid.Parse(prize.ID) // Ignore error, will be uuid.Nil if empty
-		updatePrizes = append(updatePrizes, prizeApp.UpdatePrizeInput{
-			ID:                prizeID,
+		prizes = append(prizes, prizeApp.PrizeInput{
 			Name:              prize.Name,
 			Description:       prize.Name, // Using name as description
 			Value:             prize.Value,
@@ -311,22 +309,16 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 		endDate = *req.ValidTo
 	}
 	
-	// Handle optional IsActive field
-	isActive := false
-	if req.IsActive != nil {
-		isActive = *req.IsActive
-	}
-	
 	input := prizeApp.UpdatePrizeStructureInput{
-		ID:             prizeStructureID,
-		Name:           req.Name,
-		Description:    req.Description,
-		StartDate:      req.ValidFrom,
-		EndDate:        endDate,
-		IsActive:       isActive,
+		ID:            prizeStructureID,
+		Name:          req.Name,
+		Description:   req.Description,
+		StartDate:     req.ValidFrom,
+		EndDate:       endDate,
+		IsActive:      req.IsActive,
 		ApplicableDays: req.ApplicableDays,
-		Prizes:         updatePrizes,
-		UpdatedBy:      userID.(uuid.UUID),
+		Prizes:        prizes,
+		UpdatedBy:     userID.(uuid.UUID),
 	}
 	
 	// Update prize structure
@@ -335,7 +327,6 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
 			Error:   "Failed to update prize structure: " + err.Error(),
-			Details: err.Error(),
 		})
 		return
 	}
@@ -343,20 +334,14 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 	// Prepare response
 	prizeTiers := make([]response.PrizeTierResponse, 0, len(output.Prizes))
 	for i, prize := range output.Prizes {
-		// Find matching prize in request to get PrizeType
-		prizeType := "Cash" // Default
-		if i < len(req.Prizes) {
-			prizeType = req.Prizes[i].PrizeType
-		}
-		
 		prizeTiers = append(prizeTiers, response.PrizeTierResponse{
 			ID:                prize.ID.String(),
 			Name:              prize.Name,
-			PrizeType:         prizeType,
+			PrizeType:         req.Prizes[i].PrizeType, // Use the requested prize type
 			Value:             prize.Value,
 			Quantity:          prize.Quantity,
-			Order:             prize.Order,
-			NumberOfRunnerUps: prize.NumberOfRunnerUps,
+			Order:             req.Prizes[i].Order, // Use the requested order
+			NumberOfRunnerUps: req.Prizes[i].NumberOfRunnerUps, // Use the requested number of runner ups
 		})
 	}
 	
@@ -366,37 +351,13 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 			ID:             output.ID.String(),
 			Name:           output.Name,
 			Description:    output.Description,
-			IsActive:       output.IsActive,
+			IsActive:       req.IsActive,
 			ValidFrom:      output.StartDate,
 			ValidTo:        output.EndDate,
-			ApplicableDays: output.ApplicableDays,
+			ApplicableDays: req.ApplicableDays,
 			Prizes:         prizeTiers,
 			CreatedAt:      output.CreatedAt.Format(time.RFC3339),
 			UpdatedAt:      time.Now().Format(time.RFC3339),
-		},
-	})
-}
-
-// DeletePrizeStructure handles DELETE /api/admin/prize-structures/:id
-func (h *PrizeHandler) DeletePrizeStructure(c *gin.Context) {
-	// Parse prize structure ID
-	prizeStructureID, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
-			Success: false,
-			Error:   "Invalid prize structure ID format",
-		})
-		return
-	}
-	
-	// In a real implementation, this would call a dedicated service
-	// For now, we'll just return a success response
-	
-	c.JSON(http.StatusOK, response.SuccessResponse{
-		Success: true,
-		Data: gin.H{
-			"id":      prizeStructureID.String(),
-			"deleted": true,
 		},
 	})
 }

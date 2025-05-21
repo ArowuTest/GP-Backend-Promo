@@ -15,11 +15,11 @@ import (
 
 // ParticipantHandler handles participant-related HTTP requests
 type ParticipantHandler struct {
-	uploadParticipantsService *participantApp.UploadParticipantsService
-	listParticipantsService   *participantApp.ListParticipantsService
-	getParticipantStatsService *participantApp.GetParticipantStatsService
-	listUploadAuditsService   *participantApp.ListUploadAuditsService
-	deleteUploadService       *participantApp.DeleteUploadService
+	uploadParticipantsService   *participantApp.UploadParticipantsService
+	listParticipantsService     *participantApp.ListParticipantsService
+	getParticipantStatsService  *participantApp.GetParticipantStatsService
+	listUploadAuditsService     *participantApp.ListUploadAuditsService
+	deleteUploadService         *participantApp.DeleteUploadService
 }
 
 // NewParticipantHandler creates a new ParticipantHandler
@@ -31,11 +31,11 @@ func NewParticipantHandler(
 	deleteUploadService *participantApp.DeleteUploadService,
 ) *ParticipantHandler {
 	return &ParticipantHandler{
-		uploadParticipantsService: uploadParticipantsService,
-		listParticipantsService:   listParticipantsService,
-		getParticipantStatsService: getParticipantStatsService,
-		listUploadAuditsService:   listUploadAuditsService,
-		deleteUploadService:       deleteUploadService,
+		uploadParticipantsService:   uploadParticipantsService,
+		listParticipantsService:     listParticipantsService,
+		getParticipantStatsService:  getParticipantStatsService,
+		listUploadAuditsService:     listUploadAuditsService,
+		deleteUploadService:         deleteUploadService,
 	}
 }
 
