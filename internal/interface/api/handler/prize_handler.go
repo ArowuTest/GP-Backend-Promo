@@ -43,6 +43,7 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
 			Error:   "Invalid request: " + err.Error(),
+			Details: "Please check all required fields and formats",
 		})
 		return
 	}
@@ -61,10 +62,14 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 	prizes := make([]prizeApp.PrizeInput, 0, len(req.Prizes))
 	for _, prize := range req.Prizes {
 		prizes = append(prizes, prizeApp.PrizeInput{
-			Name:        prize.Name,
-			Description: prize.Name, // Using name as description
-			Value:       prize.Value,
-			Quantity:    prize.Quantity,
+			Name:              prize.Name,
+			Description:       prize.Name, // Using name as description
+			PrizeType:         prize.PrizeType,
+			Value:             prize.Value,
+			ValueNGN:          prize.ValueNGN,
+			Quantity:          prize.Quantity,
+			Order:             prize.Order,
+			NumberOfRunnerUps: prize.NumberOfRunnerUps,
 		})
 	}
 	
@@ -75,12 +80,15 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 	}
 	
 	input := prizeApp.CreatePrizeStructureInput{
-		Name:        req.Name,
-		Description: req.Description,
-		StartDate:   req.ValidFrom,
-		EndDate:     endDate,
-		Prizes:      prizes,
-		CreatedBy:   userID.(uuid.UUID),
+		Name:           req.Name,
+		Description:    req.Description,
+		IsActive:       req.IsActive,
+		StartDate:      req.ValidFrom,
+		EndDate:        endDate,
+		ApplicableDays: req.ApplicableDays,
+		DayType:        req.DayType,
+		Prizes:         prizes,
+		CreatedBy:      userID.(uuid.UUID),
 	}
 	
 	// Create prize structure
@@ -89,21 +97,23 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
 			Error:   "Failed to create prize structure: " + err.Error(),
+			Details: "An error occurred while processing your request. Please try again later.",
 		})
 		return
 	}
 	
 	// Prepare response
 	prizeTiers := make([]response.PrizeTierResponse, 0, len(output.Prizes))
-	for _, prize := range output.Prizes {
+	for i, prize := range output.Prizes {
 		prizeTiers = append(prizeTiers, response.PrizeTierResponse{
 			ID:                prize.ID.String(),
 			Name:              prize.Name,
-			PrizeType:         "Cash", // Default type
+			PrizeType:         prize.PrizeType,
 			Value:             prize.Value,
+			ValueNGN:          prize.ValueNGN,
 			Quantity:          prize.Quantity,
-			Order:             1, // Default order
-			NumberOfRunnerUps: 1, // Default number of runner ups
+			Order:             i + 1, // Use index if order is not set
+			NumberOfRunnerUps: prize.NumberOfRunnerUps,
 		})
 	}
 	
@@ -113,10 +123,11 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 			ID:             output.ID.String(),
 			Name:           output.Name,
 			Description:    output.Description,
-			IsActive:       true, // Default to active
+			IsActive:       req.IsActive,
 			ValidFrom:      output.StartDate,
 			ValidTo:        output.EndDate,
-			ApplicableDays: []string{}, // Empty applicable days
+			ApplicableDays: req.ApplicableDays,
+			DayType:        req.DayType,
 			Prizes:         prizeTiers,
 			CreatedAt:      time.Now().Format("2006-01-02 15:04:05"),
 			UpdatedAt:      time.Now().Format("2006-01-02 15:04:05"),
@@ -132,6 +143,7 @@ func (h *PrizeHandler) GetPrizeStructure(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
 			Error:   "Invalid prize structure ID format",
+			Details: "The provided ID is not in the correct UUID format",
 		})
 		return
 	}
@@ -147,21 +159,23 @@ func (h *PrizeHandler) GetPrizeStructure(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
 			Error:   "Failed to get prize structure: " + err.Error(),
+			Details: "An error occurred while retrieving the prize structure. Please try again later.",
 		})
 		return
 	}
 	
 	// Prepare response
 	prizeTiers := make([]response.PrizeTierResponse, 0, len(output.Prizes))
-	for _, prize := range output.Prizes {
+	for i, prize := range output.Prizes {
 		prizeTiers = append(prizeTiers, response.PrizeTierResponse{
 			ID:                prize.ID.String(),
 			Name:              prize.Name,
-			PrizeType:         "Cash", // Default type
+			PrizeType:         "Cash", // Default type if not set
 			Value:             prize.Value,
+			ValueNGN:          prize.ValueNGN,
 			Quantity:          prize.Quantity,
-			Order:             1, // Default order
-			NumberOfRunnerUps: 1, // Default number of runner ups
+			Order:             i + 1, // Use index if order is not set
+			NumberOfRunnerUps: prize.NumberOfRunnerUps,
 		})
 	}
 	
@@ -207,6 +221,7 @@ func (h *PrizeHandler) ListPrizeStructures(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
 			Error:   "Failed to list prize structures: " + err.Error(),
+			Details: "An error occurred while retrieving prize structures. Please try again later.",
 		})
 		return
 	}
@@ -215,15 +230,16 @@ func (h *PrizeHandler) ListPrizeStructures(c *gin.Context) {
 	prizeStructures := make([]response.PrizeStructureResponse, 0, len(output.PrizeStructures))
 	for _, ps := range output.PrizeStructures {
 		prizeTiers := make([]response.PrizeTierResponse, 0, len(ps.Prizes))
-		for _, prize := range ps.Prizes {
+		for i, prize := range ps.Prizes {
 			prizeTiers = append(prizeTiers, response.PrizeTierResponse{
 				ID:                prize.ID.String(),
 				Name:              prize.Name,
 				PrizeType:         "Cash", // Default type
 				Value:             prize.Value,
+				ValueNGN:          prize.ValueNGN,
 				Quantity:          prize.Quantity,
-				Order:             1, // Default order
-				NumberOfRunnerUps: 1, // Default number of runner ups
+				Order:             i + 1, // Use index if order is not set
+				NumberOfRunnerUps: prize.NumberOfRunnerUps,
 			})
 		}
 		
@@ -241,16 +257,9 @@ func (h *PrizeHandler) ListPrizeStructures(c *gin.Context) {
 		})
 	}
 	
-	c.JSON(http.StatusOK, response.PaginatedResponse{
+	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data:    prizeStructures,
-		Pagination: response.Pagination{
-			Page:       output.Page,
-			PageSize:   output.PageSize,
-			TotalRows:  int(output.TotalCount),
-			TotalPages: output.TotalPages,
-			TotalItems: int64(output.TotalCount),
-		},
 	})
 }
 
@@ -262,6 +271,7 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
 			Error:   "Invalid prize structure ID format",
+			Details: "The provided ID is not in the correct UUID format",
 		})
 		return
 	}
@@ -271,6 +281,7 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
 			Error:   "Invalid request: " + err.Error(),
+			Details: "Please check all required fields and formats",
 		})
 		return
 	}
@@ -290,11 +301,15 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 	for _, prize := range req.Prizes {
 		prizeID, _ := uuid.Parse(prize.ID) // Ignore error, will be uuid.Nil if empty
 		updatePrizes = append(updatePrizes, prizeApp.UpdatePrizeInput{
-			ID:          prizeID,
-			Name:        prize.Name,
-			Description: prize.Name, // Using name as description
-			Value:       prize.Value,
-			Quantity:    prize.Quantity,
+			ID:                prizeID,
+			Name:              prize.Name,
+			Description:       prize.Name, // Using name as description
+			PrizeType:         prize.PrizeType,
+			Value:             prize.Value,
+			ValueNGN:          prize.ValueNGN,
+			Quantity:          prize.Quantity,
+			Order:             prize.Order,
+			NumberOfRunnerUps: prize.NumberOfRunnerUps,
 		})
 	}
 	
@@ -305,13 +320,16 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 	}
 	
 	input := prizeApp.UpdatePrizeStructureInput{
-		ID:          prizeStructureID,
-		Name:        req.Name,
-		Description: req.Description,
-		StartDate:   req.ValidFrom,
-		EndDate:     endDate,
-		Prizes:      updatePrizes,
-		UpdatedBy:   userID.(uuid.UUID),
+		ID:             prizeStructureID,
+		Name:           req.Name,
+		Description:    req.Description,
+		IsActive:       req.IsActive,
+		StartDate:      req.ValidFrom,
+		EndDate:        endDate,
+		ApplicableDays: req.ApplicableDays,
+		DayType:        req.DayType,
+		Prizes:         updatePrizes,
+		UpdatedBy:      userID.(uuid.UUID),
 	}
 	
 	// Update prize structure
@@ -320,21 +338,23 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
 			Error:   "Failed to update prize structure: " + err.Error(),
+			Details: "An error occurred while updating the prize structure. Please try again later.",
 		})
 		return
 	}
 	
 	// Prepare response
 	prizeTiers := make([]response.PrizeTierResponse, 0, len(output.Prizes))
-	for _, prize := range output.Prizes {
+	for i, prize := range output.Prizes {
 		prizeTiers = append(prizeTiers, response.PrizeTierResponse{
 			ID:                prize.ID.String(),
 			Name:              prize.Name,
 			PrizeType:         "Cash", // Default type
 			Value:             prize.Value,
+			ValueNGN:          prize.ValueNGN,
 			Quantity:          prize.Quantity,
-			Order:             1, // Default order
-			NumberOfRunnerUps: 1, // Default number of runner ups
+			Order:             i + 1, // Use index if order is not set
+			NumberOfRunnerUps: prize.NumberOfRunnerUps,
 		})
 	}
 	
@@ -344,10 +364,11 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 			ID:             output.ID.String(),
 			Name:           output.Name,
 			Description:    output.Description,
-			IsActive:       true, // Default to active
+			IsActive:       req.IsActive,
 			ValidFrom:      output.StartDate,
 			ValidTo:        output.EndDate,
-			ApplicableDays: []string{}, // Empty applicable days
+			ApplicableDays: req.ApplicableDays,
+			DayType:        req.DayType,
 			Prizes:         prizeTiers,
 			CreatedAt:      time.Now().Format("2006-01-02 15:04:05"),
 			UpdatedAt:      time.Now().Format("2006-01-02 15:04:05"),
@@ -363,6 +384,7 @@ func (h *PrizeHandler) DeletePrizeStructure(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
 			Error:   "Invalid prize structure ID format",
+			Details: "The provided ID is not in the correct UUID format",
 		})
 		return
 	}
