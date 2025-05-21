@@ -168,13 +168,16 @@ func (h *DrawHandler) GetDrawByID(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
+		// Convert float64 to string for PrizeValue
+		prizeValueStr := util.FormatFloat(w.PrizeValue)
+		
 		winners = append(winners, response.WinnerResponse{
 			ID:            w.ID.String(),
 			DrawID:        output.ID.String(),
 			MSISDN:        w.MSISDN,
 			PrizeTierID:   w.PrizeTierID.String(),
 			PrizeTierName: w.PrizeTierName,
-			PrizeValue:    util.FormatFloat(w.PrizeValue),
+			PrizeValue:    prizeValueStr,
 			Status:        w.Status,
 			IsRunnerUp:    w.IsRunnerUp,
 			RunnerUpRank:  w.RunnerUpRank,
@@ -233,13 +236,16 @@ func (h *DrawHandler) ListDraws(c *gin.Context) {
 	for _, d := range output.Draws {
 		winners := make([]response.WinnerResponse, 0, len(d.Winners))
 		for _, w := range d.Winners {
+			// Convert float64 to string for PrizeValue
+			prizeValueStr := util.FormatFloat(w.PrizeValue)
+			
 			winners = append(winners, response.WinnerResponse{
 				ID:            w.ID.String(),
 				DrawID:        d.ID.String(),
 				MSISDN:        w.MSISDN,
 				PrizeTierID:   w.PrizeTierID.String(),
 				PrizeTierName: w.PrizeTierName,
-				PrizeValue:    util.FormatFloat(w.PrizeValue),
+				PrizeValue:    prizeValueStr,
 				Status:        w.Status,
 				IsRunnerUp:    w.IsRunnerUp,
 				RunnerUpRank:  w.RunnerUpRank,
@@ -312,13 +318,16 @@ func (h *DrawHandler) ListWinners(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
+		// Convert float64 to string for PrizeValue
+		prizeValueStr := util.FormatFloat(w.PrizeValue)
+		
 		// Create response with available fields
 		winnerResponse := response.WinnerResponse{
 			ID:            w.ID.String(),
 			MSISDN:        w.MSISDN,
 			PrizeTierID:   w.PrizeTierID.String(),
 			PrizeTierName: w.PrizeTierName,
-			PrizeValue:    util.FormatFloat(w.PrizeValue),
+			PrizeValue:    prizeValueStr,
 			IsRunnerUp:    w.IsRunnerUp,
 			RunnerUpRank:  w.RunnerUpRank,
 			CreatedAt:     util.FormatTimeOrEmpty(w.CreatedAt, time.RFC3339),
@@ -409,15 +418,15 @@ func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
 		return
 	}
 	
-	// Prepare input
+	// Prepare input - using the correct field names from the application layer
 	input := drawApp.InvokeRunnerUpInput{
-		WinnerID:  winnerID,
-		Reason:    req.Reason,
-		InvokedBy: userID.(uuid.UUID),
+		WinnerID:    winnerID,
+		AdminUserID: userID.(uuid.UUID),
+		Reason:      req.Reason,
 	}
 	
-	// Invoke runner-up
-	output, err := h.invokeRunnerUpService.InvokeRunnerUp(c.Request.Context(), input)
+	// Invoke runner-up - do not pass context as it's not in the method signature
+	output, err := h.invokeRunnerUpService.InvokeRunnerUp(input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
@@ -426,31 +435,33 @@ func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response
+	// Prepare response - using only the fields that exist in RunnerUpWinnerOutput
 	originalWinner := response.WinnerResponse{
-		ID:            output.OriginalWinner.ID.String(),
-		DrawID:        output.OriginalWinner.DrawID.String(),
-		MSISDN:        output.OriginalWinner.MSISDN,
-		PrizeTierID:   output.OriginalWinner.PrizeTierID.String(),
-		PrizeTierName: output.OriginalWinner.PrizeTierName,
-		PrizeValue:    util.FormatFloat(output.OriginalWinner.PrizeValue),
-		Status:        output.OriginalWinner.Status,
-		IsRunnerUp:    output.OriginalWinner.IsRunnerUp,
-		RunnerUpRank:  output.OriginalWinner.RunnerUpRank,
-		CreatedAt:     util.FormatTimeOrEmpty(output.OriginalWinner.CreatedAt, time.RFC3339),
+		ID:          output.OriginalWinner.ID.String(),
+		MSISDN:      output.OriginalWinner.MSISDN,
+		PrizeTierID: output.OriginalWinner.PrizeTierID.String(),
+		Status:      output.OriginalWinner.Status,
+		// Set default values for fields that don't exist in RunnerUpWinnerOutput
+		DrawID:        "",
+		PrizeTierName: "",
+		PrizeValue:    "",
+		IsRunnerUp:    false,
+		RunnerUpRank:  0,
+		CreatedAt:     time.Now().Format(time.RFC3339),
 	}
 	
 	newWinner := response.WinnerResponse{
-		ID:            output.NewWinner.ID.String(),
-		DrawID:        output.NewWinner.DrawID.String(),
-		MSISDN:        output.NewWinner.MSISDN,
-		PrizeTierID:   output.NewWinner.PrizeTierID.String(),
-		PrizeTierName: output.NewWinner.PrizeTierName,
-		PrizeValue:    util.FormatFloat(output.NewWinner.PrizeValue),
-		Status:        output.NewWinner.Status,
-		IsRunnerUp:    output.NewWinner.IsRunnerUp,
-		RunnerUpRank:  output.NewWinner.RunnerUpRank,
-		CreatedAt:     util.FormatTimeOrEmpty(output.NewWinner.CreatedAt, time.RFC3339),
+		ID:          output.NewWinner.ID.String(),
+		MSISDN:      output.NewWinner.MSISDN,
+		PrizeTierID: output.NewWinner.PrizeTierID.String(),
+		Status:      output.NewWinner.Status,
+		// Set default values for fields that don't exist in RunnerUpWinnerOutput
+		DrawID:        "",
+		PrizeTierName: "",
+		PrizeValue:    "",
+		IsRunnerUp:    false,
+		RunnerUpRank:  0,
+		CreatedAt:     time.Now().Format(time.RFC3339),
 	}
 	
 	c.JSON(http.StatusOK, response.SuccessResponse{
