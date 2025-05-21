@@ -16,92 +16,33 @@ type Repository interface {
 	GetParticipantStats(ctx context.Context, startDate, endDate string) (int, int, error)
 }
 
+// Participant represents a participant record
+type Participant struct {
+	ID             uuid.UUID
+	MSISDN         string
+	Points         int
+	RechargeAmount float64
+	RechargeDate   time.Time
+	CreatedAt      time.Time
+	UploadID       uuid.UUID
+}
+
+// UploadAudit represents an upload audit record
+type UploadAudit struct {
+	ID             uuid.UUID
+	UploadedBy     uuid.UUID
+	UploadDate     time.Time
+	FileName       string
+	Status         string
+	TotalRows      int
+	SuccessfulRows int
+	ErrorCount     int
+	ErrorDetails   string
+}
+
 // ParticipantInput represents input for uploading a participant
 type ParticipantInput struct {
 	MSISDN         string
 	RechargeAmount float64
 	RechargeDate   string
-}
-
-// UploadParticipantsInput represents input for UploadParticipants
-type UploadParticipantsInput struct {
-	Participants []ParticipantInput
-	UploadedBy   uuid.UUID
-	FileName     string
-}
-
-// UploadParticipantsOutput represents output for UploadParticipants
-type UploadParticipantsOutput struct {
-	AuditID           uuid.UUID
-	TotalRowsProcessed int
-	SuccessfulRows    int
-	ErrorCount        int
-	DuplicatesSkipped int
-	ErrorDetails      string
-	Status            string
-	UploadedAt        time.Time
-}
-
-// UploadParticipantsService handles uploading participants
-type UploadParticipantsService struct {
-	repository Repository
-}
-
-// NewUploadParticipantsService creates a new UploadParticipantsService
-func NewUploadParticipantsService(repository Repository) *UploadParticipantsService {
-	return &UploadParticipantsService{
-		repository: repository,
-	}
-}
-
-// UploadParticipants uploads participants
-func (s *UploadParticipantsService) UploadParticipants(ctx context.Context, input UploadParticipantsInput) (UploadParticipantsOutput, error) {
-	// For now, return mock data
-	return UploadParticipantsOutput{
-		AuditID:           uuid.New(),
-		TotalRowsProcessed: len(input.Participants),
-		SuccessfulRows:    len(input.Participants),
-		ErrorCount:        0,
-		DuplicatesSkipped: 0,
-		ErrorDetails:      "",
-		Status:            "Completed",
-		UploadedAt:        time.Now(),
-	}, nil
-}
-
-// GetParticipantStatsInput represents input for GetParticipantStats
-type GetParticipantStatsInput struct {
-	StartDate string
-	EndDate   string
-}
-
-// GetParticipantStatsOutput represents output for GetParticipantStats
-type GetParticipantStatsOutput struct {
-	StartDate         string
-	EndDate           string
-	TotalParticipants int
-	TotalPoints       int
-}
-
-// GetParticipantStatsService handles getting participant statistics
-type GetParticipantStatsService struct {
-	repository Repository
-}
-
-// NewGetParticipantStatsService creates a new GetParticipantStatsService
-func NewGetParticipantStatsService(repository Repository) *GetParticipantStatsService {
-	return &GetParticipantStatsService{
-		repository: repository,
-	}
-}
-
-// GetParticipantStats gets participant statistics
-func (s *GetParticipantStatsService) GetParticipantStats(ctx context.Context, input GetParticipantStatsInput) (GetParticipantStatsOutput, error) {
-	// For now, return mock data
-	return GetParticipantStatsOutput{
-		StartDate:         input.StartDate,
-		EndDate:           input.EndDate,
-		TotalParticipants: 1000,
-		TotalPoints:       5000,
-	}, nil
 }
