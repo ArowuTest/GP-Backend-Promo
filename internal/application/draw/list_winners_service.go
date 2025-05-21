@@ -2,50 +2,52 @@ package draw
 
 import (
 	"context"
+	"time"
 	
-	"github.com/google/uuid"
-	participantDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/participant"
+	drawDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/draw"
 )
 
-// ListParticipantsInput represents input for ListParticipants
-type ListParticipantsInput struct {
-	Page     int
-	PageSize int
+// ListWinnersInput represents input for ListWinners
+type ListWinnersInput struct {
+	Page      int
+	PageSize  int
+	StartDate string
+	EndDate   string
 }
 
-// ListParticipantsOutput represents output for ListParticipants
-type ListParticipantsOutput struct {
-	Participants []participantDomain.Participant
-	Page         int
-	PageSize     int
-	TotalCount   int
-	TotalPages   int
+// ListWinnersOutput represents output for ListWinners
+type ListWinnersOutput struct {
+	Winners    []drawDomain.Winner
+	Page       int
+	PageSize   int
+	TotalCount int
+	TotalPages int
 }
 
-// ListParticipantsService handles listing participants
-type ListParticipantsService struct {
+// ListWinnersService handles listing winners
+type ListWinnersService struct {
 	repository Repository
 }
 
-// NewListParticipantsService creates a new ListParticipantsService
-func NewListParticipantsService(repository Repository) *ListParticipantsService {
-	return &ListParticipantsService{
+// NewListWinnersService creates a new ListWinnersService
+func NewListWinnersService(repository Repository) *ListWinnersService {
+	return &ListWinnersService{
 		repository: repository,
 	}
 }
 
-// ListParticipants lists participants with pagination
-func (s *ListParticipantsService) ListParticipants(ctx context.Context, input ListParticipantsInput) (ListParticipantsOutput, error) {
+// ListWinners lists winners with pagination
+func (s *ListWinnersService) ListWinners(ctx context.Context, input ListWinnersInput) (ListWinnersOutput, error) {
 	// Implementation using domain types
-	participants, total, err := s.repository.ListParticipants(ctx, input.Page, input.PageSize)
+	winners, total, err := s.repository.ListWinners(ctx, input.Page, input.PageSize, input.StartDate, input.EndDate)
 	if err != nil {
-		return ListParticipantsOutput{}, err
+		return ListWinnersOutput{}, err
 	}
 	
 	// Convert to output format
-	participantOutputs := make([]participantDomain.Participant, len(participants))
-	for i, participant := range participants {
-		participantOutputs[i] = *participant
+	winnerOutputs := make([]drawDomain.Winner, len(winners))
+	for i, winner := range winners {
+		winnerOutputs[i] = *winner
 	}
 	
 	totalPages := total / input.PageSize
@@ -53,11 +55,11 @@ func (s *ListParticipantsService) ListParticipants(ctx context.Context, input Li
 		totalPages++
 	}
 	
-	return ListParticipantsOutput{
-		Participants: participantOutputs,
-		Page:         input.Page,
-		PageSize:     input.PageSize,
-		TotalCount:   total,
-		TotalPages:   totalPages,
+	return ListWinnersOutput{
+		Winners:    winnerOutputs,
+		Page:       input.Page,
+		PageSize:   input.PageSize,
+		TotalCount: total,
+		TotalPages: totalPages,
 	}, nil
 }

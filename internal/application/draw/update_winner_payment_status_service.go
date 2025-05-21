@@ -5,7 +5,6 @@ import (
 	"time"
 	
 	"github.com/google/uuid"
-	drawDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/draw"
 )
 
 // UpdateWinnerPaymentStatusInput represents input for UpdateWinnerPaymentStatus

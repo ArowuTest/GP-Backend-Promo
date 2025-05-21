@@ -3,7 +3,6 @@ package participant
 import (
 	"context"
 	
-	"github.com/google/uuid"
 	participantDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/participant"
 )
 

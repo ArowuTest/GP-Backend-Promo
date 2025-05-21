@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 	
-	"github.com/google/uuid"
 	auditDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/audit"
 )
 
