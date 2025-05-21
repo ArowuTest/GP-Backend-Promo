@@ -2,7 +2,6 @@ package draw
 
 import (
 	"context"
-	"time"
 	
 	drawDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/draw"
 )
