@@ -107,6 +107,7 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
+		// w.PrizeValue is a float64 in the application layer, so this is correct
 		winners = append(winners, response.WinnerResponse{
 			ID:            w.ID.String(),
 			DrawID:        output.DrawID.String(),
@@ -168,7 +169,7 @@ func (h *DrawHandler) GetDrawByID(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
-		// Convert float64 to string for PrizeValue
+		// w.PrizeValue is a float64 in the application layer, so this is correct
 		prizeValueStr := util.FormatFloat(w.PrizeValue)
 		
 		winners = append(winners, response.WinnerResponse{
@@ -236,7 +237,7 @@ func (h *DrawHandler) ListDraws(c *gin.Context) {
 	for _, d := range output.Draws {
 		winners := make([]response.WinnerResponse, 0, len(d.Winners))
 		for _, w := range d.Winners {
-			// Convert float64 to string for PrizeValue
+			// w.PrizeValue is a float64 in the application layer, so this is correct
 			prizeValueStr := util.FormatFloat(w.PrizeValue)
 			
 			winners = append(winners, response.WinnerResponse{
@@ -318,7 +319,7 @@ func (h *DrawHandler) ListWinners(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
-		// Convert float64 to string for PrizeValue
+		// w.PrizeValue is a float64 in the application layer, so this is correct
 		prizeValueStr := util.FormatFloat(w.PrizeValue)
 		
 		// Create response with available fields
