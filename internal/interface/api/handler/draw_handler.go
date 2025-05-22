@@ -527,5 +527,21 @@ func (h *DrawHandler) UpdateWinnerPaymentStatus(c *gin.Context) {
 	// Prepare response
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
-		Data:
-(Content truncated due to size limit. Use line ranges to read in chunks)
+		Data: response.WinnerResponse{
+			ID:            output.ID.String(),
+			DrawID:        output.DrawID.String(),
+			MSISDN:        output.MSISDN,
+			PrizeTierID:   output.PrizeTierID.String(),
+			PrizeTierName: output.PrizeTierName,
+			PrizeValue:    util.FormatFloat(output.PrizeValue), // output.PrizeValue is float64
+			Status:        output.Status,
+			PaymentStatus: output.PaymentStatus,
+			PaymentNotes:  output.PaymentNotes,
+			PaidAt:        output.PaidAt,
+			IsRunnerUp:    output.IsRunnerUp,
+			RunnerUpRank:  output.RunnerUpRank,
+			CreatedAt:     util.FormatTimeOrEmpty(output.CreatedAt, time.RFC3339),
+			UpdatedAt:     util.FormatTimeOrEmpty(output.UpdatedAt, time.RFC3339),
+		},
+	})
+}
