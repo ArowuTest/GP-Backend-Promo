@@ -11,6 +11,7 @@ import (
 	userApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/user"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/request"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/pkg/util"
 )
 
 // UserHandler handles user-related HTTP requests
@@ -66,19 +67,20 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// REVERTED: Return token in the nested format expected by the frontend
+	// Return token in the nested format expected by the frontend
+	// with explicit type conversions at DTO boundary
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.LoginResponse{
 			Token:     output.Token,
-			ExpiresAt: output.ExpiresAt.Format(time.RFC3339),
+			ExpiresAt: util.FormatTimeOrEmpty(output.ExpiresAt, time.RFC3339),
 			User: response.UserResponse{
 				ID:        output.ID.String(),
 				Username:  output.Username,
 				Email:     output.Email,
 				Role:      output.Role,
-				CreatedAt: time.Now().Format(time.RFC3339),
-				UpdatedAt: time.Now().Format(time.RFC3339),
+				CreatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
+				UpdatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
 			},
 		},
 	})
@@ -95,12 +97,22 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	// Get creator information from context
-	creatorID, exists := c.Get("userID")
+	// Get creator information from context with explicit type conversion
+	creatorIDValue, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
 			Success: false,
 			Error:   "User not authenticated",
+		})
+		return
+	}
+	
+	// Type assertion with safety check
+	creatorID, ok := creatorIDValue.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid creator user ID type",
 		})
 		return
 	}
@@ -110,7 +122,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		Password:  req.Password,
 		Email:     req.Email,
 		Role:      req.Role,
-		CreatedBy: creatorID.(uuid.UUID),
+		CreatedBy: creatorID,
 	}
 
 	output, err := h.createUserService.CreateUser(c.Request.Context(), input)
@@ -122,6 +134,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		return
 	}
 
+	// Return response with explicit type conversions at DTO boundary
 	c.JSON(http.StatusCreated, response.SuccessResponse{
 		Success: true,
 		Data: response.UserResponse{
@@ -130,14 +143,15 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 			Email:     output.Email,
 			FullName:  req.FullName, // Use from request since it might not be in output
 			Role:      output.Role,
-			CreatedAt: time.Now().Format(time.RFC3339),
-			UpdatedAt: time.Now().Format(time.RFC3339),
+			CreatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
+			UpdatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
 		},
 	})
 }
 
 // UpdateUser handles user updates
 func (h *UserHandler) UpdateUser(c *gin.Context) {
+	// Parse user ID with explicit error handling
 	userID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
@@ -156,12 +170,22 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		return
 	}
 
-	// Get updater information from context
-	updaterID, exists := c.Get("userID")
+	// Get updater information from context with explicit type conversion
+	updaterIDValue, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
 			Success: false,
 			Error:   "User not authenticated",
+		})
+		return
+	}
+	
+	// Type assertion with safety check
+	updaterID, ok := updaterIDValue.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid updater user ID type",
 		})
 		return
 	}
@@ -171,7 +195,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		Email:     req.Email,
 		Role:      req.Role,
 		Password:  req.Password,
-		UpdatedBy: updaterID.(uuid.UUID),
+		UpdatedBy: updaterID,
 	}
 
 	output, err := h.updateUserService.UpdateUser(c.Request.Context(), input)
@@ -183,6 +207,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		return
 	}
 
+	// Return response with explicit type conversions at DTO boundary
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.UserResponse{
@@ -191,14 +216,15 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 			Email:     output.Email,
 			FullName:  req.FullName, // Use from request since it might not be in output
 			Role:      output.Role,
-			CreatedAt: time.Now().Format(time.RFC3339),
-			UpdatedAt: time.Now().Format(time.RFC3339),
+			CreatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
+			UpdatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
 		},
 	})
 }
 
 // GetUserByID handles retrieving a user by ID
 func (h *UserHandler) GetUserByID(c *gin.Context) {
+	// Parse user ID with explicit error handling
 	userID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
@@ -221,6 +247,7 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 		return
 	}
 
+	// Return response with explicit type conversions at DTO boundary
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.UserResponse{
@@ -229,17 +256,26 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 			Email:     output.Email,
 			FullName:  "", // Not available in output
 			Role:      output.Role,
-			CreatedAt: time.Now().Format(time.RFC3339),
-			UpdatedAt: time.Now().Format(time.RFC3339),
+			CreatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
+			UpdatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
 		},
 	})
 }
 
 // ListUsers handles retrieving a list of users
 func (h *UserHandler) ListUsers(c *gin.Context) {
-	// Parse pagination parameters
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	// Parse pagination parameters with explicit error handling
+	pageStr := c.DefaultQuery("page", "1")
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 1 {
+		page = 1
+	}
+	
+	pageSizeStr := c.DefaultQuery("page_size", "10")
+	pageSize, err := strconv.Atoi(pageSizeStr)
+	if err != nil || pageSize < 1 {
+		pageSize = 10
+	}
 
 	input := userApp.ListUsersInput{
 		Page:     page,
@@ -255,7 +291,7 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 		return
 	}
 
-	// Convert users to response format
+	// Convert users to response format with explicit type conversions
 	users := make([]response.UserResponse, 0, len(output.Users))
 	for _, u := range output.Users {
 		users = append(users, response.UserResponse{
@@ -264,8 +300,8 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 			Email:     u.Email,
 			FullName:  "", // Not available in output
 			Role:      u.Role,
-			CreatedAt: time.Now().Format(time.RFC3339),
-			UpdatedAt: time.Now().Format(time.RFC3339),
+			CreatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
+			UpdatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
 		})
 	}
 

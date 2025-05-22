@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	
 	"github.com/ArowuTest/GP-Backend-Promo/internal/application/user"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
 )
 
 // ResetPasswordHandler handles password reset requests
@@ -31,42 +32,67 @@ type ResetPasswordRequest struct {
 func (h *ResetPasswordHandler) Handle(c *gin.Context) {
 	var req ResetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
 		return
 	}
 	
-	// Parse user ID
+	// Parse user ID with explicit error handling
 	userID, err := uuid.Parse(req.UserID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID format"})
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid user ID format",
+		})
 		return
 	}
 	
-	// Get admin user ID from context
-	adminUserID, exists := c.Get("user_id")
+	// Get admin user ID from context with explicit type conversion
+	adminUserIDValue, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Admin user not authenticated"})
+		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
+			Success: false,
+			Error:   "Admin user not authenticated",
+		})
 		return
 	}
 	
-	// Reset password
+	// Type assertion with safety check
+	adminUserID, ok := adminUserIDValue.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid admin user ID type",
+		})
+		return
+	}
+	
+	// Reset password with explicit input structure
 	input := user.ResetPasswordInput{
 		UserID:      userID,
 		NewPassword: req.NewPassword,
-		AdminUserID: adminUserID.(uuid.UUID),
+		AdminUserID: adminUserID,
 	}
 	
 	output, err := h.resetPasswordService.ResetPassword(c.Request.Context(), input)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reset password: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Success: false,
+			Error:   "Failed to reset password: " + err.Error(),
+		})
 		return
 	}
 	
-	// Return success response
-	c.JSON(http.StatusOK, gin.H{
-		"message":  "Password reset successfully",
-		"user_id":  output.UserID.String(),
-		"username": output.Username,
-		"email":    output.Email,
+	// Return success response using standard response format
+	c.JSON(http.StatusOK, response.SuccessResponse{
+		Success: true,
+		Data: map[string]string{
+			"message":  "Password reset successfully",
+			"user_id":  output.UserID.String(),
+			"username": output.Username,
+			"email":    output.Email,
+		},
 	})
 }

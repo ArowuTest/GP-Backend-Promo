@@ -83,7 +83,7 @@ func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response
+	// Prepare response with explicit type conversions at DTO boundary
 	auditLogs := make([]response.AuditLogResponse, 0, len(output.AuditLogs))
 	for _, al := range output.AuditLogs {
 		auditLogs = append(auditLogs, response.AuditLogResponse{
@@ -150,7 +150,7 @@ func (h *AuditHandler) GetDataUploadAudits(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response
+	// Prepare response with explicit type conversions at DTO boundary
 	dataUploadAudits := make([]response.DataUploadAuditResponse, 0, len(output.Audits))
 	for _, dua := range output.Audits {
 		dataUploadAudits = append(dataUploadAudits, response.DataUploadAuditResponse{
