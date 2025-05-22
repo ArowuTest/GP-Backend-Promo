@@ -529,5 +529,18 @@ func (h *DrawHandler) UpdateWinnerPaymentStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.WinnerResponse{
-			ID:            output.ID.
-(Content truncated due to size limit. Use line ranges to read in chunks)
+			ID:            output.ID.String(),
+			MSISDN:        output.MSISDN,
+			PrizeTierID:   output.PrizeTierID.String(),
+			PrizeTierName: output.PrizeTierName,
+			PrizeValue:    util.FormatFloat(output.PrizeValue), // Convert float64 to string
+			Status:        output.Status,
+			PaymentStatus: output.PaymentStatus,
+			PaymentNotes:  output.PaymentNotes,
+			PaidAt:        output.PaidAt, // PaidAt is already a string in the application layer
+			IsRunnerUp:    output.IsRunnerUp,
+			RunnerUpRank:  output.RunnerUpRank,
+			CreatedAt:     util.FormatTimeOrEmpty(output.CreatedAt, time.RFC3339),
+		},
+	})
+}
