@@ -73,11 +73,13 @@ func (h *ParticipantHandler) ListParticipants(c *gin.Context) {
 	participants := make([]response.ParticipantResponse, 0, len(output.Participants))
 	for _, p := range output.Participants {
 		participants = append(participants, response.ParticipantResponse{
-			ID:        p.ID.String(),
-			MSISDN:    p.MSISDN,
-			Points:    p.Points,
-			CreatedAt: util.FormatTimeOrEmpty(p.CreatedAt, time.RFC3339),
-			UpdatedAt: util.FormatTimeOrEmpty(p.UpdatedAt, time.RFC3339),
+			ID:             p.ID.String(),
+			MSISDN:         p.MSISDN,
+			Points:         p.Points,
+			RechargeAmount: p.RechargeAmount,
+			RechargeDate:   util.FormatTimeOrEmpty(p.RechargeDate, "2006-01-02"),
+			CreatedAt:      util.FormatTimeOrEmpty(p.CreatedAt, time.RFC3339),
+			UpdatedAt:      util.FormatTimeOrEmpty(p.UpdatedAt, time.RFC3339),
 		})
 	}
 	
@@ -96,11 +98,18 @@ func (h *ParticipantHandler) ListParticipants(c *gin.Context) {
 
 // GetParticipantStats handles GET /api/admin/participants/stats
 func (h *ParticipantHandler) GetParticipantStats(c *gin.Context) {
-	// Prepare input - GetParticipantStatsInput has no fields in the application layer
-	input := participantApp.GetParticipantStatsInput{}
+	// Parse date parameters
+	startDate := c.DefaultQuery("start_date", time.Now().Format("2006-01-02"))
+	endDate := c.DefaultQuery("end_date", time.Now().Format("2006-01-02"))
+	
+	// Prepare input with required fields from the application layer
+	input := participantApp.GetParticipantStatsInput{
+		StartDate: startDate,
+		EndDate:   endDate,
+	}
 	
 	// Get participant stats
-	output, err := h.getParticipantStatsService.GetParticipantStats(c.Request.Context())
+	output, err := h.getParticipantStatsService.GetParticipantStats(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
@@ -109,13 +118,16 @@ func (h *ParticipantHandler) GetParticipantStats(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response - output.Date doesn't exist in GetParticipantStatsOutput
+	// Prepare response
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.ParticipantStatsResponse{
-			Date:              time.Now().Format("2006-01-02"), // Use current date since output.Date doesn't exist
+			Date:              output.StartDate, // Use StartDate from output
 			TotalParticipants: output.TotalParticipants,
 			TotalPoints:       output.TotalPoints,
+			AveragePoints:     output.AveragePoints,
+			StartDate:         output.StartDate,
+			EndDate:           output.EndDate,
 		},
 	})
 }
@@ -161,13 +173,15 @@ func (h *ParticipantHandler) ListUploadAudits(c *gin.Context) {
 		audits = append(audits, response.UploadAuditResponse{
 			ID:             a.ID.String(),
 			UploadedBy:     a.UploadedBy.String(),
-			UploadedAt:     util.FormatTimeOrEmpty(a.UploadedAt, time.RFC3339),
+			UploadedAt:     util.FormatTimeOrEmpty(a.UploadDate, time.RFC3339), // Using UploadDate from domain entity
 			FileName:       a.FileName,
 			Status:         a.Status,
 			TotalRows:      a.TotalRows,
 			SuccessfulRows: a.SuccessfulRows,
-			ErrorRows:      a.ErrorRows,
+			ErrorRows:      a.ErrorCount, // Using ErrorCount from domain entity
 			ErrorDetails:   errorDetails,
+			CreatedAt:      util.FormatTimeOrEmpty(a.CreatedAt, time.RFC3339),
+			UpdatedAt:      util.FormatTimeOrEmpty(a.UpdatedAt, time.RFC3339),
 		})
 	}
 	
@@ -208,9 +222,12 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 	// Prepare input
 	participants := make([]participantApp.ParticipantInput, 0, len(req.Participants))
 	for _, p := range req.Participants {
+		// Only use fields that exist in ParticipantInput domain entity
 		participants = append(participants, participantApp.ParticipantInput{
-			MSISDN: p.MSISDN,
-			Points: p.Points,
+			MSISDN:         p.MSISDN,
+			Points:         p.Points,
+			RechargeAmount: 0, // Default value
+			RechargeDate:   time.Now(), // Default value
 		})
 	}
 	

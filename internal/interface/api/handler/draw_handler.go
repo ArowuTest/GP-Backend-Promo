@@ -113,7 +113,7 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 			DrawID:        output.DrawID.String(),
 			MSISDN:        w.MSISDN,
 			PrizeTierID:   w.PrizeTierID.String(),
-			PrizeTierName: w.PrizeTierName, // Changed from PrizeName to PrizeTierName
+			PrizeTierName: w.PrizeTierName, // Using PrizeTierName from domain entity
 			PrizeValue:    util.FormatFloat(w.PrizeValue), // w.PrizeValue is float64
 			Status:        "PendingNotification",
 			IsRunnerUp:    false,
@@ -529,7 +529,6 @@ func (h *DrawHandler) UpdateWinnerPaymentStatus(c *gin.Context) {
 		Success: true,
 		Data: response.WinnerResponse{
 			ID:            output.ID.String(),
-			DrawID:        output.DrawID.String(),
 			MSISDN:        output.MSISDN,
 			PrizeTierID:   output.PrizeTierID.String(),
 			PrizeTierName: output.PrizeTierName,
@@ -537,7 +536,7 @@ func (h *DrawHandler) UpdateWinnerPaymentStatus(c *gin.Context) {
 			Status:        output.Status,
 			PaymentStatus: output.PaymentStatus,
 			PaymentNotes:  output.PaymentNotes,
-			PaidAt:        output.PaidAt,
+			PaidAt:        util.FormatTimeOrEmpty(output.PaidAt, time.RFC3339),
 			IsRunnerUp:    output.IsRunnerUp,
 			RunnerUpRank:  output.RunnerUpRank,
 			CreatedAt:     util.FormatTimeOrEmpty(output.CreatedAt, time.RFC3339),
