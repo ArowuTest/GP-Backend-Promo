@@ -107,14 +107,14 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
-		// w.PrizeValue is a float64 in the application layer, so this is correct
+		// w.PrizeValue is a float64 in the application layer
 		winners = append(winners, response.WinnerResponse{
 			ID:            w.ID.String(),
 			DrawID:        output.DrawID.String(),
 			MSISDN:        w.MSISDN,
 			PrizeTierID:   w.PrizeTierID.String(),
-			PrizeTierName: w.PrizeName,
-			PrizeValue:    util.FormatFloat(w.PrizeValue),
+			PrizeTierName: w.PrizeTierName, // Changed from PrizeName to PrizeTierName
+			PrizeValue:    util.FormatFloat(w.PrizeValue), // w.PrizeValue is float64
 			Status:        "PendingNotification",
 			IsRunnerUp:    false,
 			RunnerUpRank:  0,
@@ -169,7 +169,7 @@ func (h *DrawHandler) GetDrawByID(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
-		// w.PrizeValue is a float64 in the application layer, so this is correct
+		// w.PrizeValue is a float64 in the application layer
 		prizeValueStr := util.FormatFloat(w.PrizeValue)
 		
 		winners = append(winners, response.WinnerResponse{
@@ -237,7 +237,7 @@ func (h *DrawHandler) ListDraws(c *gin.Context) {
 	for _, d := range output.Draws {
 		winners := make([]response.WinnerResponse, 0, len(d.Winners))
 		for _, w := range d.Winners {
-			// w.PrizeValue is a float64 in the application layer, so this is correct
+			// w.PrizeValue is a float64 in the application layer
 			prizeValueStr := util.FormatFloat(w.PrizeValue)
 			
 			winners = append(winners, response.WinnerResponse{
@@ -319,7 +319,7 @@ func (h *DrawHandler) ListWinners(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
-		// w.PrizeValue is a float64 in the application layer, so this is correct
+		// w.PrizeValue is a float64 in the application layer
 		prizeValueStr := util.FormatFloat(w.PrizeValue)
 		
 		// Create response with available fields
@@ -527,21 +527,5 @@ func (h *DrawHandler) UpdateWinnerPaymentStatus(c *gin.Context) {
 	// Prepare response
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
-		Data: response.WinnerResponse{
-			ID:            output.ID.String(),
-			DrawID:        output.DrawID.String(),
-			MSISDN:        output.MSISDN,
-			PrizeTierID:   output.PrizeTierID.String(),
-			PrizeTierName: output.PrizeTierName,
-			PrizeValue:    util.FormatFloat(output.PrizeValue),
-			Status:        output.Status,
-			PaymentStatus: output.PaymentStatus,
-			PaymentNotes:  output.PaymentNotes,
-			PaidAt:        output.PaidAt,
-			IsRunnerUp:    output.IsRunnerUp,
-			RunnerUpRank:  output.RunnerUpRank,
-			CreatedAt:     util.FormatTimeOrEmpty(output.CreatedAt, time.RFC3339),
-			UpdatedAt:     util.FormatTimeOrEmpty(output.UpdatedAt, time.RFC3339),
-		},
-	})
-}
+		Data:
+(Content truncated due to size limit. Use line ranges to read in chunks)

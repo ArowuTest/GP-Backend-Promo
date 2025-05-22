@@ -16,89 +16,28 @@ import (
 
 // ParticipantHandler handles participant-related HTTP requests
 type ParticipantHandler struct {
-	uploadParticipantsService   *participantApp.UploadParticipantsService
-	listParticipantsService     *participantApp.ListParticipantsService
-	getParticipantStatsService  *participantApp.GetParticipantStatsService
-	listUploadAuditsService     *participantApp.ListUploadAuditsService
-	deleteUploadService         *participantApp.DeleteUploadService
+	listParticipantsService    *participantApp.ListParticipantsService
+	getParticipantStatsService *participantApp.GetParticipantStatsService
+	listUploadAuditsService    *participantApp.ListUploadAuditsService
+	uploadParticipantsService  *participantApp.UploadParticipantsService
+	deleteUploadService        *participantApp.DeleteUploadService
 }
 
 // NewParticipantHandler creates a new ParticipantHandler
 func NewParticipantHandler(
-	uploadParticipantsService *participantApp.UploadParticipantsService,
 	listParticipantsService *participantApp.ListParticipantsService,
 	getParticipantStatsService *participantApp.GetParticipantStatsService,
 	listUploadAuditsService *participantApp.ListUploadAuditsService,
+	uploadParticipantsService *participantApp.UploadParticipantsService,
 	deleteUploadService *participantApp.DeleteUploadService,
 ) *ParticipantHandler {
 	return &ParticipantHandler{
-		uploadParticipantsService:   uploadParticipantsService,
-		listParticipantsService:     listParticipantsService,
-		getParticipantStatsService:  getParticipantStatsService,
-		listUploadAuditsService:     listUploadAuditsService,
-		deleteUploadService:         deleteUploadService,
+		listParticipantsService:    listParticipantsService,
+		getParticipantStatsService: getParticipantStatsService,
+		listUploadAuditsService:    listUploadAuditsService,
+		uploadParticipantsService:  uploadParticipantsService,
+		deleteUploadService:        deleteUploadService,
 	}
-}
-
-// UploadParticipants handles POST /api/admin/participants/upload
-func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
-	// Parse the request
-	var req request.UploadParticipantsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
-			Success: false,
-			Error:   "Invalid request: " + err.Error(),
-			Details: "Please provide valid participant data",
-		})
-		return
-	}
-	
-	// Get user ID from context
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
-			Success: false,
-			Error:   "User not authenticated",
-		})
-		return
-	}
-	
-	// Convert request to application layer input
-	participants := make([]participantApp.ParticipantInput, 0, len(req.Participants))
-	for _, p := range req.Participants {
-		participants = append(participants, participantApp.ParticipantInput{
-			MSISDN:         p.MSISDN,
-			RechargeAmount: p.RechargeAmount,
-			RechargeDate:   p.RechargeDate,
-		})
-	}
-	
-	// Prepare input
-	input := participantApp.UploadParticipantsInput{
-		Participants: participants,
-		UploadedBy:   userID.(uuid.UUID),
-	}
-	
-	// Upload participants
-	output, err := h.uploadParticipantsService.UploadParticipants(c.Request.Context(), input)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
-			Success: false,
-			Error:   "Failed to upload participants: " + err.Error(),
-			Details: err.Error(),
-		})
-		return
-	}
-	
-	// Prepare response
-	c.JSON(http.StatusOK, response.SuccessResponse{
-		Success: true,
-		Data: response.UploadParticipantsResponse{
-			TotalUploaded: output.TotalUploaded,
-			UploadID:      output.UploadID.String(),
-			UploadedAt:    util.FormatTimeOrEmpty(output.UploadedAt, time.RFC3339),
-		},
-	})
 }
 
 // ListParticipants handles GET /api/admin/participants
@@ -134,14 +73,11 @@ func (h *ParticipantHandler) ListParticipants(c *gin.Context) {
 	participants := make([]response.ParticipantResponse, 0, len(output.Participants))
 	for _, p := range output.Participants {
 		participants = append(participants, response.ParticipantResponse{
-			ID:             p.ID.String(),
-			MSISDN:         p.MSISDN,
-			Points:         p.Points,
-			RechargeAmount: p.RechargeAmount,
-			RechargeDate:   util.FormatTimeOrEmpty(p.RechargeDate, "2006-01-02"),
-			CreatedAt:      util.FormatTimeOrEmpty(p.CreatedAt, time.RFC3339),
-			UploadID:       p.UploadID.String(),
-			UploadedAt:     util.FormatTimeOrEmpty(p.UploadedAt, time.RFC3339),
+			ID:        p.ID.String(),
+			MSISDN:    p.MSISDN,
+			Points:    p.Points,
+			CreatedAt: util.FormatTimeOrEmpty(p.CreatedAt, time.RFC3339),
+			UpdatedAt: util.FormatTimeOrEmpty(p.UpdatedAt, time.RFC3339),
 		})
 	}
 	
@@ -160,16 +96,11 @@ func (h *ParticipantHandler) ListParticipants(c *gin.Context) {
 
 // GetParticipantStats handles GET /api/admin/participants/stats
 func (h *ParticipantHandler) GetParticipantStats(c *gin.Context) {
-	// Parse date parameter
-	date := c.DefaultQuery("date", time.Now().Format("2006-01-02"))
-	
-	// Prepare input
-	input := participantApp.GetParticipantStatsInput{
-		Date: date,
-	}
+	// Prepare input - GetParticipantStatsInput has no fields in the application layer
+	input := participantApp.GetParticipantStatsInput{}
 	
 	// Get participant stats
-	output, err := h.getParticipantStatsService.GetParticipantStats(c.Request.Context(), input)
+	output, err := h.getParticipantStatsService.GetParticipantStats(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
@@ -178,11 +109,11 @@ func (h *ParticipantHandler) GetParticipantStats(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response
+	// Prepare response - output.Date doesn't exist in GetParticipantStatsOutput
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.ParticipantStatsResponse{
-			Date:              output.Date,
+			Date:              time.Now().Format("2006-01-02"), // Use current date since output.Date doesn't exist
 			TotalParticipants: output.TotalParticipants,
 			TotalPoints:       output.TotalPoints,
 		},
@@ -218,30 +149,96 @@ func (h *ParticipantHandler) ListUploadAudits(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response
-	uploadAudits := make([]response.UploadAuditResponse, 0, len(output.UploadAudits))
-	for _, ua := range output.UploadAudits {
-		uploadAudits = append(uploadAudits, response.UploadAuditResponse{
-			ID:             ua.ID.String(),
-			UploadedBy:     ua.UploadedBy.String(),
-			UploadDate:     util.FormatTimeOrEmpty(ua.UploadDate, time.RFC3339),
-			FileName:       ua.FileName,
-			Status:         ua.Status,
-			TotalRows:      ua.TotalRows,
-			SuccessfulRows: ua.SuccessfulRows,
-			ErrorCount:     ua.ErrorCount,
+	// Prepare response - output.Audits is the correct field name in ListUploadAuditsOutput
+	audits := make([]response.UploadAuditResponse, 0, len(output.Audits))
+	for _, a := range output.Audits {
+		// Parse error details string to slice
+		errorDetails := []string{}
+		if a.ErrorDetailsStr != "" {
+			errorDetails = append(errorDetails, a.ErrorDetailsStr)
+		}
+		
+		audits = append(audits, response.UploadAuditResponse{
+			ID:             a.ID.String(),
+			UploadedBy:     a.UploadedBy.String(),
+			UploadedAt:     util.FormatTimeOrEmpty(a.UploadedAt, time.RFC3339),
+			FileName:       a.FileName,
+			Status:         a.Status,
+			TotalRows:      a.TotalRows,
+			SuccessfulRows: a.SuccessfulRows,
+			ErrorRows:      a.ErrorRows,
+			ErrorDetails:   errorDetails,
 		})
 	}
 	
 	c.JSON(http.StatusOK, response.PaginatedResponse{
 		Success: true,
-		Data:    uploadAudits,
+		Data:    audits,
 		Pagination: response.Pagination{
 			Page:       output.Page,
 			PageSize:   output.PageSize,
 			TotalRows:  int(output.TotalCount),
 			TotalPages: output.TotalPages,
 			TotalItems: int64(output.TotalCount),
+		},
+	})
+}
+
+// UploadParticipants handles POST /api/admin/participants/upload
+func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
+	var req request.UploadParticipantsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid request: " + err.Error(),
+		})
+		return
+	}
+	
+	// Get user ID from context
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
+			Success: false,
+			Error:   "User not authenticated",
+		})
+		return
+	}
+	
+	// Prepare input
+	participants := make([]participantApp.ParticipantInput, 0, len(req.Participants))
+	for _, p := range req.Participants {
+		participants = append(participants, participantApp.ParticipantInput{
+			MSISDN: p.MSISDN,
+			Points: p.Points,
+		})
+	}
+	
+	input := participantApp.UploadParticipantsInput{
+		Participants: participants,
+		UploadedBy:   userID.(uuid.UUID),
+	}
+	
+	// Upload participants
+	output, err := h.uploadParticipantsService.UploadParticipants(c.Request.Context(), input)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Success: false,
+			Error:   "Failed to upload participants: " + err.Error(),
+		})
+		return
+	}
+	
+	// Prepare response
+	c.JSON(http.StatusOK, response.SuccessResponse{
+		Success: true,
+		Data: response.UploadParticipantsResponse{
+			AuditID:              output.AuditID.String(),
+			Status:               "Completed",
+			TotalRowsProcessed:   output.TotalRowsProcessed,
+			SuccessfullyImported: output.SuccessfulRows,
+			ErrorRows:            output.ErrorRows,
+			ErrorDetails:         output.ErrorDetails,
 		},
 	})
 }
@@ -258,24 +255,8 @@ func (h *ParticipantHandler) DeleteUpload(c *gin.Context) {
 		return
 	}
 	
-	// Get user ID from context
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
-			Success: false,
-			Error:   "User not authenticated",
-		})
-		return
-	}
-	
-	// Prepare input
-	input := participantApp.DeleteUploadInput{
-		UploadID:  uploadID,
-		DeletedBy: userID.(uuid.UUID),
-	}
-	
 	// Delete upload
-	output, err := h.deleteUploadService.DeleteUpload(c.Request.Context(), input)
+	err = h.deleteUploadService.DeleteUpload(c.Request.Context(), uploadID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
@@ -287,9 +268,6 @@ func (h *ParticipantHandler) DeleteUpload(c *gin.Context) {
 	// Prepare response
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
-		Data: gin.H{
-			"id":      output.UploadID.String(),
-			"deleted": true,
-		},
+		Data:    "Upload deleted successfully",
 	})
 }
