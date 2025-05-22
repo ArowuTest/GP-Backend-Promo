@@ -60,12 +60,7 @@ func (h *PrizeHandler) CreatePrize(c *gin.Context) {
 	
 	// Prepare input for CreatePrizeStructure service
 	// Note: req.Description and req.ValueNGN don't exist in CreatePrizeTierRequest
-	// Using req.Value instead and converting to int
-	valueInt, err := strconv.Atoi(req.Value)
-	if err != nil {
-		valueInt = 0 // Default value if conversion fails
-	}
-	
+	// Using req.Value instead and keeping it as string
 	input := prizeApp.CreatePrizeStructureInput{
 		Name:        "Prize Structure for " + req.Name,
 		Description: "", // No Description field in CreatePrizeTierRequest
@@ -76,7 +71,7 @@ func (h *PrizeHandler) CreatePrize(c *gin.Context) {
 			{
 				Name:        req.Name,
 				Description: "", // No Description field in CreatePrizeTierRequest
-				Value:       valueInt, // Convert string value to int
+				Value:       req.Value, // Keep as string
 				Quantity:    req.Quantity,
 			},
 		},
@@ -111,7 +106,7 @@ func (h *PrizeHandler) CreatePrize(c *gin.Context) {
 			ID:                prize.ID.String(),
 			Name:              prize.Name,
 			PrizeType:         "Cash", // Default value since it's not in the domain model
-			Value:             strconv.Itoa(prize.Value), // Convert int to string
+			Value:             prize.Value, // Keep as string
 			Quantity:          prize.Quantity,
 			Order:             0, // Default value since it's not in the domain model
 			NumberOfRunnerUps: 1, // Default value
@@ -164,7 +159,7 @@ func (h *PrizeHandler) GetPrizeByID(c *gin.Context) {
 			ID:                prize.ID.String(),
 			Name:              prize.Name,
 			PrizeType:         "Cash", // Default value since it's not in the domain model
-			Value:             strconv.Itoa(prize.Value), // Convert int to string
+			Value:             prize.Value, // Keep as string
 			Quantity:          prize.Quantity,
 			Order:             0, // Default value since it's not in the domain model
 			NumberOfRunnerUps: 1, // Default value
@@ -208,7 +203,7 @@ func (h *PrizeHandler) ListPrizes(c *gin.Context) {
 				ID:                p.ID.String(),
 				Name:              p.Name,
 				PrizeType:         "Cash", // Default value since it's not in the domain model
-				Value:             strconv.Itoa(p.Value), // Convert int to string
+				Value:             p.Value, // Keep as string
 				Quantity:          p.Quantity,
 				Order:             0, // Default value since it's not in the domain model
 				NumberOfRunnerUps: 1, // Default value
@@ -335,7 +330,7 @@ func (h *PrizeHandler) GetPrizeStructureByID(c *gin.Context) {
 			ID:                p.ID.String(),
 			Name:              p.Name,
 			PrizeType:         "Cash", // Default value since it's not in the domain model
-			Value:             strconv.Itoa(p.Value), // Convert int to string
+			Value:             p.Value, // Keep as string
 			Quantity:          p.Quantity,
 			Order:             0, // Default value since it's not in the domain model
 			NumberOfRunnerUps: 1, // Default value
@@ -396,7 +391,7 @@ func (h *PrizeHandler) ListPrizeStructures(c *gin.Context) {
 				ID:                p.ID.String(),
 				Name:              p.Name,
 				PrizeType:         "Cash", // Default value since it's not in the domain model
-				Value:             strconv.Itoa(p.Value), // Convert int to string
+				Value:             p.Value, // Keep as string
 				Quantity:          p.Quantity,
 				Order:             0, // Default value since it's not in the domain model
 				NumberOfRunnerUps: 1, // Default value
@@ -495,18 +490,12 @@ func (h *PrizeHandler) AddPrizeTier(c *gin.Context) {
 		})
 	}
 	
-	// Convert string value to int
-	valueInt, err := strconv.Atoi(req.Value)
-	if err != nil {
-		valueInt = 0 // Default value if conversion fails
-	}
-	
 	// Add new prize tier
 	updateInput.Prizes = append(updateInput.Prizes, prizeApp.UpdatePrizeInput{
 		ID:          uuid.New(), // Generate new ID
 		Name:        req.Name,
 		Description: "", // No Description field in CreatePrizeTierRequest
-		Value:       valueInt, // Convert string value to int
+		Value:       req.Value, // Keep as string
 		Quantity:    req.Quantity,
 	})
 	

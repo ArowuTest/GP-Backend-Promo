@@ -273,7 +273,7 @@ func (h *ParticipantHandler) DeleteUpload(c *gin.Context) {
 	}
 	
 	// Delete upload - capture both return values
-	result, err := h.deleteUploadService.DeleteUpload(c.Request.Context(), input)
+	output, err := h.deleteUploadService.DeleteUpload(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
@@ -282,12 +282,12 @@ func (h *ParticipantHandler) DeleteUpload(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response
+	// Prepare response - extract the Deleted field from the output struct
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.DeleteConfirmationResponse{
 			ID:      uploadID.String(),
-			Deleted: result,
+			Deleted: output.Deleted, // Use the Deleted field from the output struct
 		},
 	})
 }
