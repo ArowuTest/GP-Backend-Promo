@@ -59,17 +59,24 @@ func (h *PrizeHandler) CreatePrize(c *gin.Context) {
 	}
 	
 	// Prepare input for CreatePrizeStructure service
+	// Note: req.Description and req.ValueNGN don't exist in CreatePrizeTierRequest
+	// Using req.Value instead and converting to int
+	valueInt, err := strconv.Atoi(req.Value)
+	if err != nil {
+		valueInt = 0 // Default value if conversion fails
+	}
+	
 	input := prizeApp.CreatePrizeStructureInput{
 		Name:        "Prize Structure for " + req.Name,
-		Description: req.Description,
+		Description: "", // No Description field in CreatePrizeTierRequest
 		StartDate:   time.Now().Format("2006-01-02"),
 		EndDate:     time.Now().AddDate(1, 0, 0).Format("2006-01-02"),
 		CreatedBy:   userID.(uuid.UUID),
 		Prizes: []prizeApp.PrizeInput{
 			{
 				Name:        req.Name,
-				Description: req.Description,
-				Value:       req.ValueNGN,
+				Description: "", // No Description field in CreatePrizeTierRequest
+				Value:       valueInt, // Convert string value to int
 				Quantity:    req.Quantity,
 			},
 		},
@@ -97,19 +104,17 @@ func (h *PrizeHandler) CreatePrize(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response
+	// Prepare response - PrizeTierResponse doesn't have Description or CreatedAt fields
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.PrizeTierResponse{
-			ID:          prize.ID.String(),
-			Name:        prize.Name,
-			Description: prize.Description,
-			PrizeType:   "Cash", // Default value since it's not in the domain model
-			ValueNGN:    prize.Value,
-			Quantity:    prize.Quantity,
-			Order:       0, // Default value since it's not in the domain model
-			CreatedAt:   time.Now().Format(time.RFC3339),
-			UpdatedAt:   time.Now().Format(time.RFC3339),
+			ID:                prize.ID.String(),
+			Name:              prize.Name,
+			PrizeType:         "Cash", // Default value since it's not in the domain model
+			Value:             strconv.Itoa(prize.Value), // Convert int to string
+			Quantity:          prize.Quantity,
+			Order:             0, // Default value since it's not in the domain model
+			NumberOfRunnerUps: 1, // Default value
 		},
 	})
 }
@@ -152,19 +157,17 @@ func (h *PrizeHandler) GetPrizeByID(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response
+	// Prepare response - PrizeTierResponse doesn't have Description or CreatedAt fields
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.PrizeTierResponse{
-			ID:          prize.ID.String(),
-			Name:        prize.Name,
-			Description: prize.Description,
-			PrizeType:   "Cash", // Default value since it's not in the domain model
-			ValueNGN:    prize.Value,
-			Quantity:    prize.Quantity,
-			Order:       0, // Default value since it's not in the domain model
-			CreatedAt:   time.Now().Format(time.RFC3339),
-			UpdatedAt:   time.Now().Format(time.RFC3339),
+			ID:                prize.ID.String(),
+			Name:              prize.Name,
+			PrizeType:         "Cash", // Default value since it's not in the domain model
+			Value:             strconv.Itoa(prize.Value), // Convert int to string
+			Quantity:          prize.Quantity,
+			Order:             0, // Default value since it's not in the domain model
+			NumberOfRunnerUps: 1, // Default value
 		},
 	})
 }
@@ -202,15 +205,13 @@ func (h *PrizeHandler) ListPrizes(c *gin.Context) {
 	for _, ps := range output.PrizeStructures {
 		for _, p := range ps.Prizes {
 			allPrizes = append(allPrizes, response.PrizeTierResponse{
-				ID:          p.ID.String(),
-				Name:        p.Name,
-				Description: p.Description,
-				PrizeType:   "Cash", // Default value since it's not in the domain model
-				ValueNGN:    p.Value,
-				Quantity:    p.Quantity,
-				Order:       0, // Default value since it's not in the domain model
-				CreatedAt:   time.Now().Format(time.RFC3339),
-				UpdatedAt:   time.Now().Format(time.RFC3339),
+				ID:                p.ID.String(),
+				Name:              p.Name,
+				PrizeType:         "Cash", // Default value since it's not in the domain model
+				Value:             strconv.Itoa(p.Value), // Convert int to string
+				Quantity:          p.Quantity,
+				Order:             0, // Default value since it's not in the domain model
+				NumberOfRunnerUps: 1, // Default value
 			})
 		}
 	}
@@ -259,12 +260,18 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 		return
 	}
 	
+	// Handle optional ValidTo field
+	var endDate string
+	if req.ValidTo != nil {
+		endDate = *req.ValidTo
+	}
+	
 	// Prepare input
 	input := prizeApp.CreatePrizeStructureInput{
 		Name:        req.Name,
 		Description: req.Description,
 		StartDate:   req.ValidFrom,
-		EndDate:     req.ValidTo,
+		EndDate:     endDate,
 		CreatedBy:   userID.(uuid.UUID),
 		Prizes:      []prizeApp.PrizeInput{}, // Empty prizes, will be added later
 	}
@@ -283,15 +290,14 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.PrizeStructureResponse{
-			ID:          output.ID.String(),
-			Name:        output.Name,
-			Description: output.Description,
-			ValidFrom:   output.StartDate,
-			ValidTo:     output.EndDate,
-			IsActive:    true, // Default value since it's not in the domain model
-			PrizeTiers:  []response.PrizeTierResponse{}, // Empty slice since we just created it
-			CreatedAt:   time.Now().Format(time.RFC3339),
-			UpdatedAt:   time.Now().Format(time.RFC3339),
+			ID:             output.ID.String(),
+			Name:           output.Name,
+			Description:    output.Description,
+			ValidFrom:      output.StartDate,
+			ValidTo:        output.EndDate,
+			IsActive:       true, // Default value since it's not in the domain model
+			Prizes:         []response.PrizeTierResponse{}, // Empty slice since we just created it
+			ApplicableDays: []string{}, // Empty slice since it's not provided
 		},
 	})
 }
@@ -326,15 +332,13 @@ func (h *PrizeHandler) GetPrizeStructureByID(c *gin.Context) {
 	prizeTiers := make([]response.PrizeTierResponse, 0, len(output.Prizes))
 	for _, p := range output.Prizes {
 		prizeTiers = append(prizeTiers, response.PrizeTierResponse{
-			ID:          p.ID.String(),
-			Name:        p.Name,
-			Description: p.Description,
-			PrizeType:   "Cash", // Default value since it's not in the domain model
-			ValueNGN:    p.Value,
-			Quantity:    p.Quantity,
-			Order:       0, // Default value since it's not in the domain model
-			CreatedAt:   time.Now().Format(time.RFC3339),
-			UpdatedAt:   time.Now().Format(time.RFC3339),
+			ID:                p.ID.String(),
+			Name:              p.Name,
+			PrizeType:         "Cash", // Default value since it's not in the domain model
+			Value:             strconv.Itoa(p.Value), // Convert int to string
+			Quantity:          p.Quantity,
+			Order:             0, // Default value since it's not in the domain model
+			NumberOfRunnerUps: 1, // Default value
 		})
 	}
 	
@@ -342,15 +346,14 @@ func (h *PrizeHandler) GetPrizeStructureByID(c *gin.Context) {
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.PrizeStructureResponse{
-			ID:          output.ID.String(),
-			Name:        output.Name,
-			Description: output.Description,
-			ValidFrom:   util.FormatTimeOrEmpty(output.StartDate, "2006-01-02"),
-			ValidTo:     util.FormatTimeOrEmpty(output.EndDate, "2006-01-02"),
-			IsActive:    true, // Default value since it's not in the domain model
-			PrizeTiers:  prizeTiers,
-			CreatedAt:   time.Now().Format(time.RFC3339),
-			UpdatedAt:   time.Now().Format(time.RFC3339),
+			ID:             output.ID.String(),
+			Name:           output.Name,
+			Description:    output.Description,
+			ValidFrom:      util.FormatTimeOrEmpty(output.StartDate, "2006-01-02"),
+			ValidTo:        util.FormatTimeOrEmpty(output.EndDate, "2006-01-02"),
+			IsActive:       true, // Default value since it's not in the domain model
+			Prizes:         prizeTiers,
+			ApplicableDays: []string{}, // Empty slice since it's not provided
 		},
 	})
 }
@@ -390,28 +393,25 @@ func (h *PrizeHandler) ListPrizeStructures(c *gin.Context) {
 		prizeTiers := make([]response.PrizeTierResponse, 0, len(ps.Prizes))
 		for _, p := range ps.Prizes {
 			prizeTiers = append(prizeTiers, response.PrizeTierResponse{
-				ID:          p.ID.String(),
-				Name:        p.Name,
-				Description: p.Description,
-				PrizeType:   "Cash", // Default value since it's not in the domain model
-				ValueNGN:    p.Value,
-				Quantity:    p.Quantity,
-				Order:       0, // Default value since it's not in the domain model
-				CreatedAt:   time.Now().Format(time.RFC3339),
-				UpdatedAt:   time.Now().Format(time.RFC3339),
+				ID:                p.ID.String(),
+				Name:              p.Name,
+				PrizeType:         "Cash", // Default value since it's not in the domain model
+				Value:             strconv.Itoa(p.Value), // Convert int to string
+				Quantity:          p.Quantity,
+				Order:             0, // Default value since it's not in the domain model
+				NumberOfRunnerUps: 1, // Default value
 			})
 		}
 		
 		structures = append(structures, response.PrizeStructureResponse{
-			ID:          ps.ID.String(),
-			Name:        ps.Name,
-			Description: ps.Description,
-			ValidFrom:   util.FormatTimeOrEmpty(ps.StartDate, "2006-01-02"),
-			ValidTo:     util.FormatTimeOrEmpty(ps.EndDate, "2006-01-02"),
-			IsActive:    true, // Default value since it's not in the domain model
-			PrizeTiers:  prizeTiers,
-			CreatedAt:   time.Now().Format(time.RFC3339),
-			UpdatedAt:   time.Now().Format(time.RFC3339),
+			ID:             ps.ID.String(),
+			Name:           ps.Name,
+			Description:    ps.Description,
+			ValidFrom:      util.FormatTimeOrEmpty(ps.StartDate, "2006-01-02"),
+			ValidTo:        util.FormatTimeOrEmpty(ps.EndDate, "2006-01-02"),
+			IsActive:       true, // Default value since it's not in the domain model
+			Prizes:         prizeTiers,
+			ApplicableDays: []string{}, // Empty slice since it's not provided
 		})
 	}
 	
@@ -440,7 +440,7 @@ func (h *PrizeHandler) AddPrizeTier(c *gin.Context) {
 		return
 	}
 	
-	var req request.AddPrizeTierRequest
+	var req request.CreatePrizeTierRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
@@ -495,12 +495,18 @@ func (h *PrizeHandler) AddPrizeTier(c *gin.Context) {
 		})
 	}
 	
+	// Convert string value to int
+	valueInt, err := strconv.Atoi(req.Value)
+	if err != nil {
+		valueInt = 0 // Default value if conversion fails
+	}
+	
 	// Add new prize tier
 	updateInput.Prizes = append(updateInput.Prizes, prizeApp.UpdatePrizeInput{
 		ID:          uuid.New(), // Generate new ID
 		Name:        req.Name,
-		Description: req.Description,
-		Value:       req.ValueNGN,
+		Description: "", // No Description field in CreatePrizeTierRequest
+		Value:       valueInt, // Convert string value to int
 		Quantity:    req.Quantity,
 	})
 	

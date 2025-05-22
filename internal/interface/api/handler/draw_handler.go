@@ -107,16 +107,13 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
-		// Convert float64 PrizeValue to string for response
-		prizeValueStr := util.FormatFloat(w.PrizeValue)
-		
 		winners = append(winners, response.WinnerResponse{
 			ID:            w.ID.String(),
 			DrawID:        output.DrawID.String(),
 			MSISDN:        w.MSISDN,
 			PrizeTierID:   w.PrizeTierID.String(),
-			PrizeTierName: w.PrizeTierName,
-			PrizeValue:    prizeValueStr,
+			PrizeTierName: w.PrizeName, // Map PrizeName to PrizeTierName
+			PrizeValue:    w.PrizeValue, // PrizeValue is already a string in WinnerOutput
 			Status:        "PendingNotification",
 			IsRunnerUp:    false,
 			RunnerUpRank:  0,
@@ -171,16 +168,13 @@ func (h *DrawHandler) GetDrawByID(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
-		// Convert float64 PrizeValue to string for response
-		prizeValueStr := util.FormatFloat(w.PrizeValue)
-		
 		winners = append(winners, response.WinnerResponse{
 			ID:            w.ID.String(),
 			DrawID:        output.ID.String(),
 			MSISDN:        w.MSISDN,
 			PrizeTierID:   w.PrizeTierID.String(),
-			PrizeTierName: w.PrizeTierName,
-			PrizeValue:    prizeValueStr,
+			PrizeTierName: w.PrizeTierName, // Using PrizeTierName from domain entity
+			PrizeValue:    w.PrizeValue,    // Using PrizeValue from domain entity
 			Status:        w.Status,
 			IsRunnerUp:    w.IsRunnerUp,
 			RunnerUpRank:  w.RunnerUpRank,
@@ -239,16 +233,13 @@ func (h *DrawHandler) ListDraws(c *gin.Context) {
 	for _, d := range output.Draws {
 		winners := make([]response.WinnerResponse, 0, len(d.Winners))
 		for _, w := range d.Winners {
-			// Convert float64 PrizeValue to string for response
-			prizeValueStr := util.FormatFloat(w.PrizeValue)
-			
 			winners = append(winners, response.WinnerResponse{
 				ID:            w.ID.String(),
 				DrawID:        d.ID.String(),
 				MSISDN:        w.MSISDN,
 				PrizeTierID:   w.PrizeTierID.String(),
-				PrizeTierName: w.PrizeTierName,
-				PrizeValue:    prizeValueStr,
+				PrizeTierName: w.PrizeTierName, // Using PrizeTierName from domain entity
+				PrizeValue:    w.PrizeValue,    // Using PrizeValue from domain entity
 				Status:        w.Status,
 				IsRunnerUp:    w.IsRunnerUp,
 				RunnerUpRank:  w.RunnerUpRank,
@@ -321,16 +312,13 @@ func (h *DrawHandler) ListWinners(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
-		// Convert float64 PrizeValue to string for response
-		prizeValueStr := util.FormatFloat(w.PrizeValue)
-		
 		// Create response with available fields
 		winnerResponse := response.WinnerResponse{
 			ID:            w.ID.String(),
 			MSISDN:        w.MSISDN,
 			PrizeTierID:   w.PrizeTierID.String(),
-			PrizeTierName: w.PrizeTierName,
-			PrizeValue:    prizeValueStr,
+			PrizeTierName: w.PrizeTierName, // Using PrizeTierName from domain entity
+			PrizeValue:    w.PrizeValue,    // Using PrizeValue from domain entity
 			IsRunnerUp:    w.IsRunnerUp,
 			RunnerUpRank:  w.RunnerUpRank,
 			CreatedAt:     util.FormatTimeOrEmpty(w.CreatedAt, time.RFC3339),
@@ -525,19 +513,20 @@ func (h *DrawHandler) UpdateWinnerPaymentStatus(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response - PaidAt is a string in the application layer output
+	// Prepare response
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.WinnerResponse{
 			ID:            output.ID.String(),
+			DrawID:        output.DrawID.String(),
 			MSISDN:        output.MSISDN,
 			PrizeTierID:   output.PrizeTierID.String(),
 			PrizeTierName: output.PrizeTierName,
-			PrizeValue:    util.FormatFloat(output.PrizeValue), // Convert float64 to string
+			PrizeValue:    output.PrizeValue,
 			Status:        output.Status,
 			PaymentStatus: output.PaymentStatus,
 			PaymentNotes:  output.PaymentNotes,
-			PaidAt:        output.PaidAt, // PaidAt is already a string in the application layer
+			PaidAt:        output.PaidAt,
 			IsRunnerUp:    output.IsRunnerUp,
 			RunnerUpRank:  output.RunnerUpRank,
 			CreatedAt:     util.FormatTimeOrEmpty(output.CreatedAt, time.RFC3339),

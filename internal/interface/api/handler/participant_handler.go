@@ -267,8 +267,13 @@ func (h *ParticipantHandler) DeleteUpload(c *gin.Context) {
 		return
 	}
 	
-	// Delete upload
-	err = h.deleteUploadService.DeleteUpload(c.Request.Context(), uploadID)
+	// Create DeleteUploadInput struct instead of passing UUID directly
+	input := participantApp.DeleteUploadInput{
+		UploadID: uploadID,
+	}
+	
+	// Delete upload - capture both return values
+	result, err := h.deleteUploadService.DeleteUpload(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
@@ -280,6 +285,9 @@ func (h *ParticipantHandler) DeleteUpload(c *gin.Context) {
 	// Prepare response
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
-		Data:    "Upload deleted successfully",
+		Data: response.DeleteConfirmationResponse{
+			ID:      uploadID.String(),
+			Deleted: result,
+		},
 	})
 }
