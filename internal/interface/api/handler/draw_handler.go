@@ -107,16 +107,14 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
-		// Convert PrizeValue from float64 to string for response
-		prizeValueStr := util.FormatFloat(w.PrizeValue)
-		
+		// Convert PrizeValue from float64 to string for response DTO
 		winners = append(winners, response.WinnerResponse{
 			ID:            w.ID.String(),
 			DrawID:        output.DrawID.String(),
 			MSISDN:        w.MSISDN,
 			PrizeTierID:   w.PrizeTierID.String(),
-			PrizeTierName: w.PrizeName, // Map PrizeName to PrizeTierName
-			PrizeValue:    prizeValueStr, // Use converted string value
+			PrizeTierName: w.PrizeTierName,
+			PrizeValue:    util.FormatFloat(w.PrizeValue),
 			Status:        "PendingNotification",
 			IsRunnerUp:    false,
 			RunnerUpRank:  0,
@@ -171,16 +169,14 @@ func (h *DrawHandler) GetDrawByID(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
-		// Convert PrizeValue from float64 to string for response
-		prizeValueStr := util.FormatFloat(w.PrizeValue)
-		
+		// Convert PrizeValue from float64 to string for response DTO
 		winners = append(winners, response.WinnerResponse{
 			ID:            w.ID.String(),
 			DrawID:        output.ID.String(),
 			MSISDN:        w.MSISDN,
 			PrizeTierID:   w.PrizeTierID.String(),
-			PrizeTierName: w.PrizeTierName, // Using PrizeTierName from domain entity
-			PrizeValue:    prizeValueStr, // Use converted string value
+			PrizeTierName: w.PrizeTierName,
+			PrizeValue:    util.FormatFloat(w.PrizeValue),
 			Status:        w.Status,
 			IsRunnerUp:    w.IsRunnerUp,
 			RunnerUpRank:  w.RunnerUpRank,
@@ -239,16 +235,14 @@ func (h *DrawHandler) ListDraws(c *gin.Context) {
 	for _, d := range output.Draws {
 		winners := make([]response.WinnerResponse, 0, len(d.Winners))
 		for _, w := range d.Winners {
-			// Convert PrizeValue from float64 to string for response
-			prizeValueStr := util.FormatFloat(w.PrizeValue)
-			
+			// Convert PrizeValue from float64 to string for response DTO
 			winners = append(winners, response.WinnerResponse{
 				ID:            w.ID.String(),
 				DrawID:        d.ID.String(),
 				MSISDN:        w.MSISDN,
 				PrizeTierID:   w.PrizeTierID.String(),
-				PrizeTierName: w.PrizeTierName, // Using PrizeTierName from domain entity
-				PrizeValue:    prizeValueStr, // Use converted string value
+				PrizeTierName: w.PrizeTierName,
+				PrizeValue:    util.FormatFloat(w.PrizeValue),
 				Status:        w.Status,
 				IsRunnerUp:    w.IsRunnerUp,
 				RunnerUpRank:  w.RunnerUpRank,
@@ -321,16 +315,13 @@ func (h *DrawHandler) ListWinners(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
-		// Convert PrizeValue from float64 to string for response
-		prizeValueStr := util.FormatFloat(w.PrizeValue)
-		
-		// Create response with available fields
+		// Convert PrizeValue from float64 to string for response DTO
 		winnerResponse := response.WinnerResponse{
 			ID:            w.ID.String(),
 			MSISDN:        w.MSISDN,
 			PrizeTierID:   w.PrizeTierID.String(),
-			PrizeTierName: w.PrizeTierName, // Using PrizeTierName from domain entity
-			PrizeValue:    prizeValueStr, // Use converted string value
+			PrizeTierName: w.PrizeTierName,
+			PrizeValue:    util.FormatFloat(w.PrizeValue),
 			IsRunnerUp:    w.IsRunnerUp,
 			RunnerUpRank:  w.RunnerUpRank,
 			CreatedAt:     util.FormatTimeOrEmpty(w.CreatedAt, time.RFC3339),
@@ -525,26 +516,23 @@ func (h *DrawHandler) UpdateWinnerPaymentStatus(c *gin.Context) {
 		return
 	}
 	
-	// Convert PrizeValue from float64 to string for response
-	prizeValueStr := util.FormatFloat(output.PrizeValue)
-	
 	// Prepare response
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.WinnerResponse{
 			ID:            output.ID.String(),
-			DrawID:        output.DrawID.String(),
 			MSISDN:        output.MSISDN,
 			PrizeTierID:   output.PrizeTierID.String(),
 			PrizeTierName: output.PrizeTierName,
-			PrizeValue:    prizeValueStr, // Use converted string value
+			PrizeValue:    util.FormatFloat(output.PrizeValue),
 			Status:        output.Status,
 			PaymentStatus: output.PaymentStatus,
 			PaymentNotes:  output.PaymentNotes,
-			PaidAt:        output.PaidAt,
+			PaidAt:        util.FormatTimeOrEmpty(output.PaidAt, time.RFC3339),
 			IsRunnerUp:    output.IsRunnerUp,
 			RunnerUpRank:  output.RunnerUpRank,
 			CreatedAt:     util.FormatTimeOrEmpty(output.CreatedAt, time.RFC3339),
+			UpdatedAt:     util.FormatTimeOrEmpty(output.UpdatedAt, time.RFC3339),
 		},
 	})
 }
