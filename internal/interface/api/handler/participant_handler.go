@@ -216,15 +216,13 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 		return
 	}
 	
-	// Prepare input
+	// Prepare input - using only fields that exist in the application layer ParticipantInput
 	participants := make([]participantApp.ParticipantInput, 0, len(req.Participants))
 	for _, p := range req.Participants {
-		// Only use fields that exist in ParticipantInput domain entity
 		participants = append(participants, participantApp.ParticipantInput{
 			MSISDN:         p.MSISDN,
-			Points:         p.Points,
-			RechargeAmount: 0, // Default value
-			RechargeDate:   time.Now(), // Default value
+			RechargeAmount: p.RechargeAmount,
+			RechargeDate:   p.RechargeDate, // This is a string in both request and application layer
 		})
 	}
 	
@@ -243,16 +241,16 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response
+	// Prepare response - using only fields that exist in the response DTO
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
-		Data: response.UploadParticipantsResponse{
-			AuditID:              output.AuditID.String(),
-			Status:               "Completed",
-			TotalRowsProcessed:   output.TotalRowsProcessed,
-			SuccessfullyImported: output.SuccessfulRows,
-			ErrorRows:            output.ErrorRows,
-			ErrorDetails:         output.ErrorDetails,
+		Data: response.UploadResponse{
+			AuditID:           output.UploadID.String(), // Map UploadID to AuditID
+			Status:            "Completed",
+			TotalRowsProcessed: output.TotalUploaded,
+			SuccessfulRows:    output.TotalUploaded,
+			ErrorCount:        0, // Default value
+			ErrorDetails:      []string{},
 		},
 	})
 }
