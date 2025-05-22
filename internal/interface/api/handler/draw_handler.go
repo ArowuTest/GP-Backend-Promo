@@ -107,14 +107,16 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
-		// w.PrizeValue is a float64 in the application layer
+		// Convert float64 PrizeValue to string for response
+		prizeValueStr := util.FormatFloat(w.PrizeValue)
+		
 		winners = append(winners, response.WinnerResponse{
 			ID:            w.ID.String(),
 			DrawID:        output.DrawID.String(),
 			MSISDN:        w.MSISDN,
 			PrizeTierID:   w.PrizeTierID.String(),
-			PrizeTierName: w.PrizeTierName, // Using PrizeTierName from domain entity
-			PrizeValue:    util.FormatFloat(w.PrizeValue), // w.PrizeValue is float64
+			PrizeTierName: w.PrizeTierName,
+			PrizeValue:    prizeValueStr,
 			Status:        "PendingNotification",
 			IsRunnerUp:    false,
 			RunnerUpRank:  0,
@@ -169,7 +171,7 @@ func (h *DrawHandler) GetDrawByID(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
-		// w.PrizeValue is a float64 in the application layer
+		// Convert float64 PrizeValue to string for response
 		prizeValueStr := util.FormatFloat(w.PrizeValue)
 		
 		winners = append(winners, response.WinnerResponse{
@@ -237,7 +239,7 @@ func (h *DrawHandler) ListDraws(c *gin.Context) {
 	for _, d := range output.Draws {
 		winners := make([]response.WinnerResponse, 0, len(d.Winners))
 		for _, w := range d.Winners {
-			// w.PrizeValue is a float64 in the application layer
+			// Convert float64 PrizeValue to string for response
 			prizeValueStr := util.FormatFloat(w.PrizeValue)
 			
 			winners = append(winners, response.WinnerResponse{
@@ -319,7 +321,7 @@ func (h *DrawHandler) ListWinners(c *gin.Context) {
 	// Prepare response
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
-		// w.PrizeValue is a float64 in the application layer
+		// Convert float64 PrizeValue to string for response
 		prizeValueStr := util.FormatFloat(w.PrizeValue)
 		
 		// Create response with available fields
@@ -332,7 +334,6 @@ func (h *DrawHandler) ListWinners(c *gin.Context) {
 			IsRunnerUp:    w.IsRunnerUp,
 			RunnerUpRank:  w.RunnerUpRank,
 			CreatedAt:     util.FormatTimeOrEmpty(w.CreatedAt, time.RFC3339),
-			UpdatedAt:     util.FormatTimeOrEmpty(w.UpdatedAt, time.RFC3339),
 			// Set default values for fields that might not exist
 			DrawID:        "",
 			Status:        "PendingNotification",
@@ -524,23 +525,9 @@ func (h *DrawHandler) UpdateWinnerPaymentStatus(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response
+	// Prepare response - PaidAt is a string in the application layer output
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.WinnerResponse{
-			ID:            output.ID.String(),
-			MSISDN:        output.MSISDN,
-			PrizeTierID:   output.PrizeTierID.String(),
-			PrizeTierName: output.PrizeTierName,
-			PrizeValue:    util.FormatFloat(output.PrizeValue), // output.PrizeValue is float64
-			Status:        output.Status,
-			PaymentStatus: output.PaymentStatus,
-			PaymentNotes:  output.PaymentNotes,
-			PaidAt:        util.FormatTimeOrEmpty(output.PaidAt, time.RFC3339),
-			IsRunnerUp:    output.IsRunnerUp,
-			RunnerUpRank:  output.RunnerUpRank,
-			CreatedAt:     util.FormatTimeOrEmpty(output.CreatedAt, time.RFC3339),
-			UpdatedAt:     util.FormatTimeOrEmpty(output.UpdatedAt, time.RFC3339),
-		},
-	})
-}
+			ID:            output.ID.
+(Content truncated due to size limit. Use line ranges to read in chunks)

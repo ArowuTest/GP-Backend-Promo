@@ -79,7 +79,7 @@ func (h *ParticipantHandler) ListParticipants(c *gin.Context) {
 			RechargeAmount: p.RechargeAmount,
 			RechargeDate:   util.FormatTimeOrEmpty(p.RechargeDate, "2006-01-02"),
 			CreatedAt:      util.FormatTimeOrEmpty(p.CreatedAt, time.RFC3339),
-			UpdatedAt:      util.FormatTimeOrEmpty(p.UpdatedAt, time.RFC3339),
+			// Note: UpdatedAt field is not in ParticipantResponse DTO
 		})
 	}
 	
@@ -118,16 +118,14 @@ func (h *ParticipantHandler) GetParticipantStats(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response
+	// Prepare response - only use fields that exist in ParticipantStatsResponse DTO
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.ParticipantStatsResponse{
-			Date:              output.StartDate, // Use StartDate from output
+			Date:              output.StartDate, // Use StartDate as Date
 			TotalParticipants: output.TotalParticipants,
 			TotalPoints:       output.TotalPoints,
-			AveragePoints:     output.AveragePoints,
-			StartDate:         output.StartDate,
-			EndDate:           output.EndDate,
+			// Note: AveragePoints, StartDate, EndDate fields are not in ParticipantStatsResponse DTO
 		},
 	})
 }
@@ -173,15 +171,14 @@ func (h *ParticipantHandler) ListUploadAudits(c *gin.Context) {
 		audits = append(audits, response.UploadAuditResponse{
 			ID:             a.ID.String(),
 			UploadedBy:     a.UploadedBy.String(),
-			UploadedAt:     util.FormatTimeOrEmpty(a.UploadDate, time.RFC3339), // Using UploadDate from domain entity
+			UploadDate:     util.FormatTimeOrEmpty(a.UploadDate, time.RFC3339), // Using UploadDate from domain entity
 			FileName:       a.FileName,
 			Status:         a.Status,
 			TotalRows:      a.TotalRows,
 			SuccessfulRows: a.SuccessfulRows,
-			ErrorRows:      a.ErrorCount, // Using ErrorCount from domain entity
+			ErrorCount:     a.ErrorCount, // Using ErrorCount instead of ErrorRows
 			ErrorDetails:   errorDetails,
-			CreatedAt:      util.FormatTimeOrEmpty(a.CreatedAt, time.RFC3339),
-			UpdatedAt:      util.FormatTimeOrEmpty(a.UpdatedAt, time.RFC3339),
+			// Note: CreatedAt and UpdatedAt fields are not in UploadAuditResponse DTO
 		})
 	}
 	
