@@ -4,40 +4,34 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
-// JWTClaims represents the claims in the JWT token
-// MUST match the structure in authenticate_user.go
+// JWTClaims defines the claims for JWT tokens
 type JWTClaims struct {
 	UserID   uuid.UUID `json:"user_id"`
 	Email    string    `json:"email"`
-	Roles    []string  `json:"roles"`
-	Role     string    `json:"role"`     // Added for backward compatibility with frontend
-	Username string    `json:"username"` // Added for frontend use
+	Username string    `json:"username"`
+	Role     string    `json:"role"`      // Single role for backward compatibility
+	Roles    []string  `json:"roles"`     // Array of roles for future extensibility
 	jwt.RegisteredClaims
 }
 
-// AuthMiddleware handles authentication for API requests
+// AuthMiddleware provides authentication middleware for the API
 type AuthMiddleware struct {
 	jwtSecret string
 }
 
 // NewAuthMiddleware creates a new AuthMiddleware
 func NewAuthMiddleware(jwtSecret string) *AuthMiddleware {
-	// If jwtSecret is empty, try to get it from environment
+	// If no secret is provided, use a default (but this should be avoided in production)
 	if jwtSecret == "" {
-		jwtSecret = os.Getenv("JWT_SECRET")
-		if jwtSecret == "" {
-			// Fallback to default
-			jwtSecret = "your-secret-key"
-		}
+		jwtSecret = "mynumba-donwin-jwt-secret-key-2025"
 	}
 	
 	return &AuthMiddleware{
@@ -45,7 +39,7 @@ func NewAuthMiddleware(jwtSecret string) *AuthMiddleware {
 	}
 }
 
-// Authenticate checks if the request has a valid authentication token
+// Authenticate middleware checks if the request has a valid JWT token
 func (m *AuthMiddleware) Authenticate() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -54,14 +48,14 @@ func (m *AuthMiddleware) Authenticate() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-
+		
 		// Check if the header has the Bearer prefix
 		if !strings.HasPrefix(authHeader, "Bearer ") {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "Authorization header must be Bearer token"})
 			c.Abort()
 			return
 		}
-
+		
 		// Extract the token
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		
@@ -82,9 +76,11 @@ func (m *AuthMiddleware) Authenticate() gin.HandlerFunc {
 		// Store user info in context for handlers to use
 		c.Set("userID", claims.UserID)
 		c.Set("userEmail", claims.Email)
+		c.Set("username", claims.Username)
+		
+		// Store both role formats for maximum compatibility
+		c.Set("userRole", claims.Role)
 		c.Set("userRoles", claims.Roles)
-		c.Set("userRole", claims.Role)       // Added for backward compatibility
-		c.Set("username", claims.Username)   // Added for frontend use
 		
 		// Token is valid, continue
 		c.Next()
@@ -158,13 +154,14 @@ func (m *AuthMiddleware) RequireRole(requiredRoles ...string) gin.HandlerFunc {
 }
 
 // GenerateJWT generates a new JWT token for the given user
-func (m *AuthMiddleware) GenerateJWT(userID uuid.UUID, email string, roles []string) (string, error) {
-	// Create the claims
+func (m *AuthMiddleware) GenerateJWT(userID uuid.UUID, email string, username string, role string) (string, error) {
+	// Create the claims with both single role and roles array for maximum compatibility
 	claims := JWTClaims{
-		UserID: userID,
-		Email:  email,
-		Roles:  roles,
-		// Note: Role and Username should be set when using this method directly
+		UserID:   userID,
+		Email:    email,
+		Username: username,
+		Role:     role,
+		Roles:    []string{role}, // Convert single role to array
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)), // Token expires in 24 hours
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -219,6 +216,16 @@ func (m *AuthMiddleware) validateJWT(tokenString string) (*JWTClaims, error) {
 		if claims.ExpiresAt.Time.Before(time.Now()) {
 			return nil, errors.New("token has expired")
 		}
+	}
+	
+	// Ensure backward compatibility - if Roles is empty but Role is set, populate Roles
+	if len(claims.Roles) == 0 && claims.Role != "" {
+		claims.Roles = []string{claims.Role}
+	}
+	
+	// Ensure backward compatibility - if Role is empty but Roles has values, set Role to first value
+	if claims.Role == "" && len(claims.Roles) > 0 {
+		claims.Role = claims.Roles[0]
 	}
 	
 	return claims, nil

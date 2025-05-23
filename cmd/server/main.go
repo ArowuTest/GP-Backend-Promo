@@ -47,6 +47,7 @@ func main() {
 	// Set up application services
 	logAuditService := auditApp.NewLogAuditService(auditRepo)
 	getAuditLogsService := auditApp.NewGetAuditLogsService(auditRepo)
+	getDataUploadAuditsService := auditApp.NewGetDataUploadAuditsService(auditRepo)
 
 	// Draw services
 	executeDrawService := drawApp.NewDrawService(drawRepo, participantRepo, prizeRepo, logAuditService)
@@ -60,6 +61,9 @@ func main() {
 	// Participant services
 	uploadParticipantsService := participantApp.NewUploadParticipantsService(participantRepo, logAuditService)
 	getParticipantStatsService := participantApp.NewGetParticipantStatsService(participantRepo)
+	listParticipantsService := participantApp.NewListParticipantsService(participantRepo)
+	listUploadAuditsService := participantApp.NewListUploadAuditsService(participantRepo)
+	deleteUploadService := participantApp.NewDeleteUploadService(participantRepo)
 
 	// Prize services
 	createPrizeStructureService := prizeApp.NewCreatePrizeStructureService(prizeRepo, logAuditService)
@@ -88,7 +92,7 @@ func main() {
 	// Set up handlers
 	auditHandler := handler.NewAuditHandler(
 		getAuditLogsService,
-		nil, // Keep as nil for now to avoid interface contract issues
+		getDataUploadAuditsService,
 	)
 	drawHandler := handler.NewDrawHandler(
 		executeDrawService,
@@ -100,11 +104,11 @@ func main() {
 		updateWinnerPaymentStatusService,
 	)
 	participantHandler := handler.NewParticipantHandler(
-		nil, // Keep as nil for now to avoid interface contract issues
+		listParticipantsService,
 		getParticipantStatsService,
-		nil, // Keep as nil for now to avoid interface contract issues
+		listUploadAuditsService,
 		uploadParticipantsService,
-		nil, // Keep as nil for now to avoid interface contract issues
+		deleteUploadService,
 	)
 	prizeHandler := handler.NewPrizeHandler(
 		createPrizeStructureService,

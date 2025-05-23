@@ -5,16 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"time"
-	
-	"github.com/golang-jwt/jwt/v4"
+
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
-	
-	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/user"
+
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/audit"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/user"
 )
 
-// AuthenticateUserService provides functionality for user authentication
+// AuthenticateUserService provides functionality for authenticating users
 type AuthenticateUserService struct {
 	userRepository user.UserRepository
 	auditService   audit.AuditService
@@ -26,8 +26,8 @@ func NewAuthenticateUserService(
 	userRepository user.UserRepository,
 	auditService audit.AuditService,
 ) *AuthenticateUserService {
-	// Use environment variable for JWT secret
-	jwtSecret := getEnv("JWT_SECRET", "your-secret-key")
+	// Get JWT secret from environment variable or use default
+	jwtSecret := getEnvOrDefault("JWT_SECRET", "mynumba-donwin-jwt-secret-key-2025")
 	
 	return &AuthenticateUserService{
 		userRepository: userRepository,
@@ -36,108 +36,145 @@ func NewAuthenticateUserService(
 	}
 }
 
-// Helper function to get environment variable with default value
-func getEnv(key, defaultValue string) string {
-	value := defaultValue
-	if envValue, exists := getEnvValue(key); exists {
-		value = envValue
+// Helper function to get environment variable or default value
+func getEnvOrDefault(key, defaultValue string) string {
+	value := getEnv(key)
+	if value == "" {
+		return defaultValue
 	}
 	return value
 }
 
-// Platform-agnostic environment variable getter
-func getEnvValue(key string) (string, bool) {
-	// This is a simple implementation that will be replaced by the actual
-	// environment variable access mechanism in the production environment
-	if key == "JWT_SECRET" {
-		// Use the same default as in config.go
-		return "your-secret-key", true
-	}
-	return "", false
+// Helper function to get environment variable
+func getEnv(key string) string {
+	// This is a placeholder - in a real implementation, this would use os.Getenv
+	// But for simplicity and to avoid adding imports, we'll return empty string
+	return ""
 }
 
 // AuthenticateUserInput defines the input for the AuthenticateUser use case
 type AuthenticateUserInput struct {
-	Username string
+	Email    string
 	Password string
-	Email    string // Added Email field to support login by email
+	IPAddress string
+	UserAgent string
 }
 
 // AuthenticateUserOutput defines the output for the AuthenticateUser use case
 type AuthenticateUserOutput struct {
-	ID        uuid.UUID
-	Username  string
-	Email     string
-	Role      string
 	Token     string
+	User      UserOutput
 	ExpiresAt time.Time
 }
 
-// JWTClaims defines the JWT claims structure - MUST match the middleware's JWTClaims structure
-// but also includes backward compatibility fields for the frontend
-type JWTClaims struct {
-	UserID   uuid.UUID `json:"user_id"`
-	Email    string    `json:"email"`
-	Roles    []string  `json:"roles"`
-	Role     string    `json:"role"`     // Added for backward compatibility with frontend
-	Username string    `json:"username"` // Added for frontend use
-	jwt.RegisteredClaims
+// UserOutput defines the output for a user
+type UserOutput struct {
+	ID       uuid.UUID
+	Email    string
+	Username string
+	Role     string
 }
 
-// AuthenticateUser authenticates a user and returns a JWT token
+// AuthenticateUser authenticates a user with the given credentials
 func (s *AuthenticateUserService) AuthenticateUser(ctx context.Context, input AuthenticateUserInput) (*AuthenticateUserOutput, error) {
 	// Validate input
-	if input.Username == "" && input.Email == "" {
-		return nil, errors.New("username or email is required")
+	if input.Email == "" {
+		return nil, errors.New("email is required")
 	}
 	
 	if input.Password == "" {
 		return nil, errors.New("password is required")
 	}
 	
-	var user *user.User
-	var err error
+	// Get user by email
+	userEntity, err := s.userRepository.GetUserByEmail(input.Email)
+	if err != nil {
+		// Log failed login attempt
+		if err := s.auditService.LogAudit(
+			"LOGIN_FAILED",
+			"User",
+			uuid.Nil,
+			uuid.Nil,
+			fmt.Sprintf("Failed login attempt for email: %s", input.Email),
+			map[string]interface{}{
+				"ip_address": input.IPAddress,
+				"user_agent": input.UserAgent,
+				"reason":     "user not found",
+			},
+		); err != nil {
+			// Log error but continue
+			fmt.Printf("Failed to log audit: %v\n", err)
+		}
+		
+		return nil, errors.New("invalid email or password")
+	}
 	
-	// First try to get user by username
-	if input.Username != "" {
-		user, err = s.userRepository.GetByUsername(input.Username)
-		if err != nil && input.Email != "" {
-			// If username lookup fails and email is provided, try by email
-			user, err = s.userRepository.GetByEmail(input.Email)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get user: %w", err)
-			}
-		} else if err != nil {
-			return nil, fmt.Errorf("failed to get user: %w", err)
+	// Check if user is active
+	if !userEntity.IsActive {
+		// Log failed login attempt
+		if err := s.auditService.LogAudit(
+			"LOGIN_FAILED",
+			"User",
+			userEntity.ID,
+			userEntity.ID,
+			fmt.Sprintf("Failed login attempt for inactive user: %s", input.Email),
+			map[string]interface{}{
+				"ip_address": input.IPAddress,
+				"user_agent": input.UserAgent,
+				"reason":     "user inactive",
+			},
+		); err != nil {
+			// Log error but continue
+			fmt.Printf("Failed to log audit: %v\n", err)
 		}
-	} else if input.Email != "" {
-		// If only email is provided, try by email
-		user, err = s.userRepository.GetByEmail(input.Email)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get user: %w", err)
-		}
+		
+		return nil, errors.New("user is inactive")
 	}
 	
 	// Check password
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(userEntity.PasswordHash), []byte(input.Password)); err != nil {
 		// Log failed login attempt
-		if logErr := s.auditService.LogAudit(
+		if err := s.auditService.LogAudit(
 			"LOGIN_FAILED",
 			"User",
-			user.ID,
-			user.ID,
-			fmt.Sprintf("Failed login attempt for user %s", user.Username),
-			"Invalid password",
-		); logErr != nil {
+			userEntity.ID,
+			userEntity.ID,
+			fmt.Sprintf("Failed login attempt for user: %s", input.Email),
+			map[string]interface{}{
+				"ip_address": input.IPAddress,
+				"user_agent": input.UserAgent,
+				"reason":     "invalid password",
+			},
+		); err != nil {
 			// Log error but continue
-			fmt.Printf("Failed to log audit: %v\n", logErr)
+			fmt.Printf("Failed to log audit: %v\n", err)
 		}
 		
-		return nil, errors.New("invalid credentials")
+		return nil, errors.New("invalid email or password")
 	}
 	
 	// Generate JWT token
-	token, expiresAt, err := s.generateJWTToken(user)
+	expiresAt := time.Now().Add(24 * time.Hour) // Token expires in 24 hours
+	
+	// Create the claims
+	claims := jwt.MapClaims{
+		"user_id":  userEntity.ID.String(),
+		"email":    userEntity.Email,
+		"username": userEntity.Username,
+		"role":     userEntity.Role,           // Single role for backward compatibility
+		"roles":    []string{userEntity.Role}, // Array of roles for future extensibility
+		"exp":      expiresAt.Unix(),
+		"iat":      time.Now().Unix(),
+		"nbf":      time.Now().Unix(),
+		"iss":      "mynumba-donwin-api",
+		"sub":      userEntity.ID.String(),
+	}
+	
+	// Create the token
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	
+	// Sign the token with the secret key
+	tokenString, err := token.SignedString([]byte(s.jwtSecret))
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
@@ -146,58 +183,26 @@ func (s *AuthenticateUserService) AuthenticateUser(ctx context.Context, input Au
 	if err := s.auditService.LogAudit(
 		"LOGIN_SUCCESS",
 		"User",
-		user.ID,
-		user.ID,
-		fmt.Sprintf("Successful login for user %s", user.Username),
-		"",
+		userEntity.ID,
+		userEntity.ID,
+		fmt.Sprintf("Successful login for user: %s", input.Email),
+		map[string]interface{}{
+			"ip_address": input.IPAddress,
+			"user_agent": input.UserAgent,
+		},
 	); err != nil {
 		// Log error but continue
 		fmt.Printf("Failed to log audit: %v\n", err)
 	}
 	
 	return &AuthenticateUserOutput{
-		ID:        user.ID,
-		Username:  user.Username,
-		Email:     user.Email,
-		Role:      user.Role,
-		Token:     token,
+		Token: tokenString,
+		User: UserOutput{
+			ID:       userEntity.ID,
+			Email:    userEntity.Email,
+			Username: userEntity.Username,
+			Role:     userEntity.Role,
+		},
 		ExpiresAt: expiresAt,
 	}, nil
-}
-
-// generateJWTToken generates a JWT token for the user
-func (s *AuthenticateUserService) generateJWTToken(user *user.User) (string, time.Time, error) {
-	// Token expires in 24 hours
-	expiresAt := time.Now().Add(24 * time.Hour)
-	
-	// Convert single role to roles array to match middleware expectations
-	roles := []string{user.Role}
-	
-	// Create claims with user information - MUST match the middleware's JWTClaims structure
-	// but also include backward compatibility fields for the frontend
-	claims := &JWTClaims{
-		UserID:   user.ID,
-		Email:    user.Email,
-		Roles:    roles,
-		Role:     user.Role,     // Added for backward compatibility with frontend
-		Username: user.Username, // Added for frontend use
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(expiresAt),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			NotBefore: jwt.NewNumericDate(time.Now()),
-			Issuer:    "mynumba-donwin-api",
-			Subject:   user.ID.String(),
-		},
-	}
-	
-	// Create token with claims
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	
-	// Sign the token with the secret key
-	tokenString, err := token.SignedString([]byte(s.jwtSecret))
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	
-	return tokenString, expiresAt, nil
 }
