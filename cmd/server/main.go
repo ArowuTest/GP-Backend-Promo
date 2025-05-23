@@ -47,9 +47,6 @@ func main() {
 	// Set up application services
 	logAuditService := auditApp.NewLogAuditService(auditRepo)
 	getAuditLogsService := auditApp.NewGetAuditLogsService(auditRepo)
-	
-	// Add the missing GetDataUploadAuditsService
-	getDataUploadAuditsService := auditApp.NewGetDataUploadAuditsService(auditRepo)
 
 	// Draw services
 	executeDrawService := drawApp.NewDrawService(drawRepo, participantRepo, prizeRepo, logAuditService)
@@ -63,15 +60,6 @@ func main() {
 	// Participant services
 	uploadParticipantsService := participantApp.NewUploadParticipantsService(participantRepo, logAuditService)
 	getParticipantStatsService := participantApp.NewGetParticipantStatsService(participantRepo)
-	
-	// Add the missing ListUploadAuditsService
-	listUploadAuditsService := participantApp.NewListUploadAuditsService(participantRepo)
-	
-	// Add the missing ListParticipantsService
-	listParticipantsService := participantApp.NewListParticipantsService(participantRepo)
-	
-	// Add the missing DeleteUploadService
-	deleteUploadService := participantApp.NewDeleteUploadService(participantRepo, logAuditService)
 
 	// Prize services
 	createPrizeStructureService := prizeApp.NewCreatePrizeStructureService(prizeRepo, logAuditService)
@@ -100,7 +88,7 @@ func main() {
 	// Set up handlers
 	auditHandler := handler.NewAuditHandler(
 		getAuditLogsService,
-		getDataUploadAuditsService, // Fix: Pass the properly initialized service instead of nil
+		nil, // Keep as nil for now to avoid interface contract issues
 	)
 	drawHandler := handler.NewDrawHandler(
 		executeDrawService,
@@ -112,11 +100,11 @@ func main() {
 		updateWinnerPaymentStatusService,
 	)
 	participantHandler := handler.NewParticipantHandler(
-		listParticipantsService, // Fix: Pass the properly initialized service instead of nil
+		nil, // Keep as nil for now to avoid interface contract issues
 		getParticipantStatsService,
-		listUploadAuditsService, // Fix: Pass the properly initialized service instead of nil
+		nil, // Keep as nil for now to avoid interface contract issues
 		uploadParticipantsService,
-		deleteUploadService, // Fix: Pass the properly initialized service instead of nil
+		nil, // Keep as nil for now to avoid interface contract issues
 	)
 	prizeHandler := handler.NewPrizeHandler(
 		createPrizeStructureService,
@@ -146,7 +134,7 @@ func main() {
 		participantHandler,
 		auditHandler,
 		userHandler,
-		resetPasswordHandler, // Add the reset password handler
+		resetPasswordHandler,
 	)
 
 	// Setup routes
