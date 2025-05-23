@@ -77,7 +77,8 @@ func NewContainer(db *gorm.DB) *Container {
 	
 	return container
 }
-	// Initialize repositories
+
+// Initialize repositories
 func (c *Container) initRepositories() {
 	c.UserRepository = pgorm.NewGormUserRepository(c.DB)
 	c.DrawRepository = pgorm.NewGormDrawRepository(c.DB)
@@ -101,59 +102,60 @@ func (c *Container) initServices() {
 	c.PrizeService = prize.NewCreatePrizeStructureService(c.PrizeRepository, c.AuditService)
 	c.ResetPasswordService = user.NewResetPasswordService(c.UserRepository, c.AuditService)
 }
-	// Initialize middleware
+
+// Initialize middleware
 func (c *Container) initMiddleware() {
 	c.AuthMiddleware = middleware.NewAuthMiddleware("mynumba-donwin-jwt-secret-key-2025") // Production JWT secret
 	c.CORSMiddleware = middleware.NewCORSMiddleware(
-		[]string{"https://gp-admin-promo.vercel.app"}, // explicitly allow the frontend domain
-		[]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}, // allowedMethods
-		[]string{"Content-Type", "Authorization", "Accept"}, // allowedHeaders - added Accept
-		[]string{}, // exposedHeaders
-		true, // allowCredentials
-	)
+		[]string{"https://gp-admin-promo.vercel.app"},
+		[]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		[]string{"Content-Type", "Authorization", "Accept"},
+		[]string{},
+		true)
 	c.ErrorMiddleware = middleware.NewErrorMiddleware(false) // Set to true for debug mode
 }
-	// Initialize handlers
+
+// Initialize handlers
 func (c *Container) initHandlers() {
 	// Note: These are simplified handler initializations that need to be expanded
 	// with all required service dependencies in a production environment
 	c.DrawHandler = handler.NewDrawHandler(
-		c.DrawService, 
-		nil, // GetDrawByIDService
-		nil, // ListDrawsService
-		nil, // ListWinnersService
-		nil, // GetEligibilityStatsService
-		nil, // InvokeRunnerUpService
-		nil, // UpdateWinnerPaymentStatusService
-	)
+		c.DrawService,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil)
+		
 	c.PrizeHandler = handler.NewPrizeHandler(
-		c.PrizeService, // CreatePrizeStructureService
-		nil, // GetPrizeStructureService
-		nil, // ListPrizeStructuresService
-		nil, // UpdatePrizeStructureService
-	)
+		c.PrizeService,
+		nil,
+		nil,
+		nil)
+		
 	c.ParticipantHandler = handler.NewParticipantHandler(
-		nil, // ListParticipantsService
-		nil, // GetParticipantStatsService
-		nil, // ListUploadAuditsService
-		c.ParticipantService, // UploadParticipantsService
-		nil, // DeleteUploadService
-	)
+		nil,
+		nil,
+		nil,
+		c.ParticipantService,
+		nil)
+		
 	// Create audit-related services for handler
 	getAuditLogsService := audit.NewGetAuditLogsService(c.AuditRepository)
 	getDataUploadAuditsService := audit.NewGetDataUploadAuditsService(c.AuditRepository)
 	
 	c.AuditHandler = handler.NewAuditHandler(
-		getAuditLogsService, // GetAuditLogsService
-		getDataUploadAuditsService // GetDataUploadAuditsService
-	)
+		getAuditLogsService,
+		getDataUploadAuditsService)
+		
 	c.UserHandler = handler.NewUserHandler(
-		c.AuthService, // AuthenticateUserService
-		nil, // CreateUserService
-		nil, // UpdateUserService
-		nil, // GetUserService
-		nil, // ListUsersService
-	)
+		c.AuthService,
+		nil,
+		nil,
+		nil,
+		nil)
+		
 	c.ResetPasswordHandler = handler.NewResetPasswordHandler(c.ResetPasswordService)
 }
 
@@ -169,8 +171,7 @@ func (c *Container) initRouter() {
 		c.ParticipantHandler,
 		c.AuditHandler,
 		c.UserHandler,
-		c.ResetPasswordHandler,
-	)
+		c.ResetPasswordHandler)
 }
 
 // Setup configures the application

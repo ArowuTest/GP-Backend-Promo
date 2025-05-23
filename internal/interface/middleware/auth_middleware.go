@@ -13,6 +13,7 @@ import (
 )
 
 // JWTClaims represents the claims in the JWT token
+// MUST match the structure in authenticate_user.go
 type JWTClaims struct {
 	UserID uuid.UUID `json:"user_id"`
 	Email  string    `json:"email"`
@@ -55,7 +56,13 @@ func (m *AuthMiddleware) Authenticate() gin.HandlerFunc {
 		// Parse and validate the JWT token
 		claims, err := m.validateJWT(tokenString)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "Invalid token", "details": err.Error()})
+			// Enhanced error logging for debugging token issues
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false, 
+				"error": "Invalid token", 
+				"details": err.Error(),
+				"message": "Your session has expired or is invalid. Please log in again.",
+			})
 			c.Abort()
 			return
 		}
@@ -162,6 +169,13 @@ func (m *AuthMiddleware) validateJWT(tokenString string) (*JWTClaims, error) {
 	claims, ok := token.Claims.(*JWTClaims)
 	if !ok {
 		return nil, errors.New("invalid claims")
+	}
+	
+	// Verify expiration time
+	if claims.ExpiresAt != nil {
+		if claims.ExpiresAt.Time.Before(time.Now()) {
+			return nil, errors.New("token has expired")
+		}
 	}
 	
 	return claims, nil

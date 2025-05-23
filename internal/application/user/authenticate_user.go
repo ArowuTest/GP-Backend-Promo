@@ -50,12 +50,11 @@ type AuthenticateUserOutput struct {
 	ExpiresAt time.Time
 }
 
-// Claims defines the JWT claims
-type Claims struct {
-	UserID   string `json:"user_id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Role     string `json:"role"`
+// JWTClaims defines the JWT claims structure - MUST match the middleware's JWTClaims structure
+type JWTClaims struct {
+	UserID uuid.UUID `json:"user_id"`
+	Email  string    `json:"email"`
+	Roles  []string  `json:"roles"`
 	jwt.RegisteredClaims
 }
 
@@ -145,12 +144,14 @@ func (s *AuthenticateUserService) generateJWTToken(user *user.User) (string, tim
 	// Token expires in 24 hours
 	expiresAt := time.Now().Add(24 * time.Hour)
 	
-	// Create claims with user information
-	claims := &Claims{
-		UserID:   user.ID.String(),
-		Username: user.Username,
-		Email:    user.Email,
-		Role:     user.Role,
+	// Convert single role to roles array to match middleware expectations
+	roles := []string{user.Role}
+	
+	// Create claims with user information - MUST match the middleware's JWTClaims structure
+	claims := &JWTClaims{
+		UserID: user.ID,
+		Email:  user.Email,
+		Roles:  roles,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
