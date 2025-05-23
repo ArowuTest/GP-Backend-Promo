@@ -15,9 +15,11 @@ import (
 // JWTClaims represents the claims in the JWT token
 // MUST match the structure in authenticate_user.go
 type JWTClaims struct {
-	UserID uuid.UUID `json:"user_id"`
-	Email  string    `json:"email"`
-	Roles  []string  `json:"roles"`
+	UserID   uuid.UUID `json:"user_id"`
+	Email    string    `json:"email"`
+	Roles    []string  `json:"roles"`
+	Role     string    `json:"role"`     // Added for backward compatibility with frontend
+	Username string    `json:"username"` // Added for frontend use
 	jwt.RegisteredClaims
 }
 
@@ -71,6 +73,8 @@ func (m *AuthMiddleware) Authenticate() gin.HandlerFunc {
 		c.Set("userID", claims.UserID)
 		c.Set("userEmail", claims.Email)
 		c.Set("userRoles", claims.Roles)
+		c.Set("userRole", claims.Role)       // Added for backward compatibility
+		c.Set("username", claims.Username)   // Added for frontend use
 		
 		// Token is valid, continue
 		c.Next()
@@ -122,6 +126,7 @@ func (m *AuthMiddleware) GenerateJWT(userID uuid.UUID, email string, roles []str
 		UserID: userID,
 		Email:  email,
 		Roles:  roles,
+		// Note: Role and Username should be set when using this method directly
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)), // Token expires in 24 hours
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

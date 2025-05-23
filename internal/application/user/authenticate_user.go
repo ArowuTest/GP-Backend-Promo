@@ -51,10 +51,13 @@ type AuthenticateUserOutput struct {
 }
 
 // JWTClaims defines the JWT claims structure - MUST match the middleware's JWTClaims structure
+// but also includes backward compatibility fields for the frontend
 type JWTClaims struct {
 	UserID uuid.UUID `json:"user_id"`
 	Email  string    `json:"email"`
 	Roles  []string  `json:"roles"`
+	Role   string    `json:"role"`     // Added for backward compatibility with frontend
+	Username string  `json:"username"` // Added for frontend use
 	jwt.RegisteredClaims
 }
 
@@ -148,10 +151,13 @@ func (s *AuthenticateUserService) generateJWTToken(user *user.User) (string, tim
 	roles := []string{user.Role}
 	
 	// Create claims with user information - MUST match the middleware's JWTClaims structure
+	// but also include backward compatibility fields for the frontend
 	claims := &JWTClaims{
-		UserID: user.ID,
-		Email:  user.Email,
-		Roles:  roles,
+		UserID:   user.ID,
+		Email:    user.Email,
+		Roles:    roles,
+		Role:     user.Role,     // Added for backward compatibility with frontend
+		Username: user.Username, // Added for frontend use
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
