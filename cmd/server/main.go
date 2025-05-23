@@ -47,6 +47,9 @@ func main() {
 	// Set up application services
 	logAuditService := auditApp.NewLogAuditService(auditRepo)
 	getAuditLogsService := auditApp.NewGetAuditLogsService(auditRepo)
+	
+	// Add the missing GetDataUploadAuditsService
+	getDataUploadAuditsService := auditApp.NewGetDataUploadAuditsService(auditRepo)
 
 	// Draw services
 	executeDrawService := drawApp.NewDrawService(drawRepo, participantRepo, prizeRepo, logAuditService)
@@ -60,6 +63,15 @@ func main() {
 	// Participant services
 	uploadParticipantsService := participantApp.NewUploadParticipantsService(participantRepo, logAuditService)
 	getParticipantStatsService := participantApp.NewGetParticipantStatsService(participantRepo)
+	
+	// Add the missing ListUploadAuditsService
+	listUploadAuditsService := participantApp.NewListUploadAuditsService(participantRepo)
+	
+	// Add the missing ListParticipantsService
+	listParticipantsService := participantApp.NewListParticipantsService(participantRepo)
+	
+	// Add the missing DeleteUploadService
+	deleteUploadService := participantApp.NewDeleteUploadService(participantRepo, logAuditService)
 
 	// Prize services
 	createPrizeStructureService := prizeApp.NewCreatePrizeStructureService(prizeRepo, logAuditService)
@@ -88,7 +100,7 @@ func main() {
 	// Set up handlers
 	auditHandler := handler.NewAuditHandler(
 		getAuditLogsService,
-		nil, // getDataUploadAuditsService is required but not available, using nil temporarily
+		getDataUploadAuditsService, // Fix: Pass the properly initialized service instead of nil
 	)
 	drawHandler := handler.NewDrawHandler(
 		executeDrawService,
@@ -100,11 +112,11 @@ func main() {
 		updateWinnerPaymentStatusService,
 	)
 	participantHandler := handler.NewParticipantHandler(
-		nil, // listParticipantsService is required but not available, using nil temporarily
+		listParticipantsService, // Fix: Pass the properly initialized service instead of nil
 		getParticipantStatsService,
-		nil, // listUploadAuditsService is required but not available, using nil temporarily
+		listUploadAuditsService, // Fix: Pass the properly initialized service instead of nil
 		uploadParticipantsService,
-		nil, // deleteUploadService is required but not available, using nil temporarily
+		deleteUploadService, // Fix: Pass the properly initialized service instead of nil
 	)
 	prizeHandler := handler.NewPrizeHandler(
 		createPrizeStructureService,

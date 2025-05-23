@@ -94,31 +94,38 @@ func (m *AuthMiddleware) Authenticate() gin.HandlerFunc {
 // RequireRole checks if the authenticated user has one of the required roles
 func (m *AuthMiddleware) RequireRole(requiredRoles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get user roles from context (set by Authenticate middleware)
+		// Initialize an empty roles slice
+		var userRoles []string
+		
+		// First try to get roles array from context
 		rolesInterface, exists := c.Get("userRoles")
-		if !exists {
-			// Try to get single role for backward compatibility
-			roleInterface, exists := c.Get("userRole")
-			if !exists {
-				c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "Unauthorized", "details": "Authentication required"})
-				c.Abort()
-				return
+		if exists {
+			// Try to convert to string slice
+			roles, ok := rolesInterface.([]string)
+			if ok && len(roles) > 0 {
+				userRoles = roles
 			}
-			
-			// Convert single role to roles array
-			role, ok := roleInterface.(string)
-			if !ok {
-				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "Internal Server Error", "details": "Invalid role format"})
-				c.Abort()
-				return
-			}
-			
-			rolesInterface = []string{role}
 		}
 		
-		roles, ok := rolesInterface.([]string)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "Internal Server Error", "details": "Invalid role format"})
+		// If userRoles is still empty, try to get single role
+		if len(userRoles) == 0 {
+			roleInterface, exists := c.Get("userRole")
+			if exists {
+				// Try to convert to string
+				role, ok := roleInterface.(string)
+				if ok && role != "" {
+					userRoles = []string{role}
+				}
+			}
+		}
+		
+		// If still no roles found, return unauthorized
+		if len(userRoles) == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false, 
+				"error": "Unauthorized", 
+				"details": "Authentication required or no role assigned",
+			})
 			c.Abort()
 			return
 		}
@@ -126,14 +133,21 @@ func (m *AuthMiddleware) RequireRole(requiredRoles ...string) gin.HandlerFunc {
 		// Check if user has any of the required roles
 		hasRequiredRole := false
 		for _, requiredRole := range requiredRoles {
-			if contains(roles, requiredRole) {
+			if contains(userRoles, requiredRole) {
 				hasRequiredRole = true
 				break
 			}
 		}
 		
 		if !hasRequiredRole {
-			c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "Forbidden", "details": "Insufficient permissions"})
+			// Add debug information to help diagnose role issues
+			c.JSON(http.StatusForbidden, gin.H{
+				"success": false, 
+				"error": "Forbidden", 
+				"details": "Insufficient permissions",
+				"user_roles": userRoles,
+				"required_roles": requiredRoles,
+			})
 			c.Abort()
 			return
 		}
