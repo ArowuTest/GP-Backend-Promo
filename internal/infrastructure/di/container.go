@@ -100,9 +100,9 @@ func (c *Container) initServices() {
 func (c *Container) initMiddleware() {
 	c.AuthMiddleware = middleware.NewAuthMiddleware("your-auth-token-here") // Use a proper auth token in production
 	c.CORSMiddleware = middleware.NewCORSMiddleware(
-		[]string{"*"}, // allowedOrigins
+		[]string{"https://gp-admin-promo.vercel.app"}, // explicitly allow the frontend domain
 		[]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}, // allowedMethods
-		[]string{"Content-Type", "Authorization"}, // allowedHeaders
+		[]string{"Content-Type", "Authorization", "Accept"}, // allowedHeaders - added Accept
 		[]string{}, // exposedHeaders
 		true, // allowCredentials
 	)
