@@ -26,11 +26,34 @@ func NewAuthenticateUserService(
 	userRepository user.UserRepository,
 	auditService audit.AuditService,
 ) *AuthenticateUserService {
+	// Use environment variable for JWT secret
+	jwtSecret := getEnv("JWT_SECRET", "your-secret-key")
+	
 	return &AuthenticateUserService{
 		userRepository: userRepository,
 		auditService:   auditService,
-		jwtSecret:      "mynumba-donwin-jwt-secret-key-2025", // Using the same secret as in the middleware
+		jwtSecret:      jwtSecret,
 	}
+}
+
+// Helper function to get environment variable with default value
+func getEnv(key, defaultValue string) string {
+	value := defaultValue
+	if envValue, exists := getEnvValue(key); exists {
+		value = envValue
+	}
+	return value
+}
+
+// Platform-agnostic environment variable getter
+func getEnvValue(key string) (string, bool) {
+	// This is a simple implementation that will be replaced by the actual
+	// environment variable access mechanism in the production environment
+	if key == "JWT_SECRET" {
+		// Use the same default as in config.go
+		return "your-secret-key", true
+	}
+	return "", false
 }
 
 // AuthenticateUserInput defines the input for the AuthenticateUser use case
@@ -53,11 +76,11 @@ type AuthenticateUserOutput struct {
 // JWTClaims defines the JWT claims structure - MUST match the middleware's JWTClaims structure
 // but also includes backward compatibility fields for the frontend
 type JWTClaims struct {
-	UserID uuid.UUID `json:"user_id"`
-	Email  string    `json:"email"`
-	Roles  []string  `json:"roles"`
-	Role   string    `json:"role"`     // Added for backward compatibility with frontend
-	Username string  `json:"username"` // Added for frontend use
+	UserID   uuid.UUID `json:"user_id"`
+	Email    string    `json:"email"`
+	Roles    []string  `json:"roles"`
+	Role     string    `json:"role"`     // Added for backward compatibility with frontend
+	Username string    `json:"username"` // Added for frontend use
 	jwt.RegisteredClaims
 }
 

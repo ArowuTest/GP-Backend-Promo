@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -30,6 +31,15 @@ type AuthMiddleware struct {
 
 // NewAuthMiddleware creates a new AuthMiddleware
 func NewAuthMiddleware(jwtSecret string) *AuthMiddleware {
+	// If jwtSecret is empty, try to get it from environment
+	if jwtSecret == "" {
+		jwtSecret = os.Getenv("JWT_SECRET")
+		if jwtSecret == "" {
+			// Fallback to default
+			jwtSecret = "your-secret-key"
+		}
+	}
+	
 	return &AuthMiddleware{
 		jwtSecret: jwtSecret,
 	}
@@ -87,9 +97,23 @@ func (m *AuthMiddleware) RequireRole(requiredRoles ...string) gin.HandlerFunc {
 		// Get user roles from context (set by Authenticate middleware)
 		rolesInterface, exists := c.Get("userRoles")
 		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "Unauthorized", "details": "Authentication required"})
-			c.Abort()
-			return
+			// Try to get single role for backward compatibility
+			roleInterface, exists := c.Get("userRole")
+			if !exists {
+				c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "Unauthorized", "details": "Authentication required"})
+				c.Abort()
+				return
+			}
+			
+			// Convert single role to roles array
+			role, ok := roleInterface.(string)
+			if !ok {
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "Internal Server Error", "details": "Invalid role format"})
+				c.Abort()
+				return
+			}
+			
+			rolesInterface = []string{role}
 		}
 		
 		roles, ok := rolesInterface.([]string)
