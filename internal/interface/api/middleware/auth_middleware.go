@@ -106,7 +106,6 @@ func (m *AuthMiddleware) Authenticate() gin.HandlerFunc {
 }
 
 // RequireRole checks if the user has the required role
-// Fixed to handle case-insensitive role comparison
 func (m *AuthMiddleware) RequireRole(roles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get user role from context
@@ -132,14 +131,10 @@ func (m *AuthMiddleware) RequireRole(roles ...string) gin.HandlerFunc {
 			return
 		}
 
-		// Convert user role to lowercase for case-insensitive comparison
-		userRole := strings.ToLower(role)
-
-		// Check if user has one of the required roles (case-insensitive)
+		// Check if user has one of the required roles
 		hasRole := false
 		for _, r := range roles {
-			// Convert required role to lowercase for comparison
-			if userRole == strings.ToLower(r) {
+			if role == r {
 				hasRole = true
 				break
 			}

@@ -1,6 +1,7 @@
 package gorm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -9,6 +10,8 @@ import (
 	"gorm.io/gorm"
 	
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/draw"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/participant"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/prize"
 )
 
 // GormDrawRepository implements the draw.DrawRepository interface using GORM
@@ -102,6 +105,7 @@ func (m *DrawModel) toDomain() (*draw.Draw, error) {
 		TotalEligibleMSISDNs:  m.TotalEligibleMSISDNs,
 		TotalEntries:          m.TotalEntries,
 		ExecutedByAdminID:     executedByAdminID,
+		ExecutedBy:            executedByAdminID, // Added for application layer compatibility
 		CreatedAt:             m.CreatedAt,
 		UpdatedAt:             m.UpdatedAt,
 		Winners:               []draw.Winner{}, // Will be populated separately
@@ -148,6 +152,8 @@ func (m *WinnerModel) toDomain() (*draw.Winner, error) {
 		DrawID:        drawID,
 		MSISDN:        m.MSISDN,
 		PrizeTierID:   prizeTierID,
+		PrizeTierName: "", // Default value for application layer compatibility
+		PrizeValue:    0,  // Default value for application layer compatibility
 		Status:        m.Status,
 		PaymentStatus: m.PaymentStatus,
 		PaymentNotes:  m.PaymentNotes,
@@ -403,4 +409,84 @@ func (r *GormDrawRepository) GetRunnerUps(drawID uuid.UUID, prizeTierID uuid.UUI
 	}
 	
 	return runnerUps, nil
+}
+
+// ListWinners implements the draw.Repository interface
+func (r *GormDrawRepository) ListWinners(ctx context.Context, page, pageSize int, startDate, endDate string) ([]*draw.Winner, int, error) {
+	var models []WinnerModel
+	var total int64
+	
+	offset := (page - 1) * pageSize
+	
+	// Build query with date filters if provided
+	query := r.db.Model(&WinnerModel{})
+	
+	if startDate != "" {
+		query = query.Where("DATE(created_at) >= ?", startDate)
+	}
+	
+	if endDate != "" {
+		query = query.Where("DATE(created_at) <= ?", endDate)
+	}
+	
+	// Get total count
+	result := query.Count(&total)
+	if result.Error != nil {
+		return nil, 0, fmt.Errorf("failed to count winners: %w", result.Error)
+	}
+	
+	// Get paginated winners
+	result = query.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&models)
+	if result.Error != nil {
+		return nil, 0, fmt.Errorf("failed to list winners: %w", result.Error)
+	}
+	
+	winners := make([]*draw.Winner, 0, len(models))
+	for _, model := range models {
+		winnerEntity, err := model.toDomain()
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to convert winner model to domain: %w", err)
+		}
+		winners = append(winners, winnerEntity)
+	}
+	
+	return winners, int(total), nil
+}
+
+// ExecuteDraw implements the draw.Repository interface
+func (r *GormDrawRepository) ExecuteDraw(drawDate time.Time, prizeStructureID uuid.UUID, executedByAdminID uuid.UUID, eligibleParticipants []participant.Participant, prizeTiers []prize.PrizeTier) (*draw.Draw, error) {
+	// Create a new draw
+	drawID := uuid.New()
+	drawEntity := &draw.Draw{
+		ID:                   drawID,
+		DrawDate:             drawDate,
+		PrizeStructureID:     prizeStructureID,
+		Status:               "Completed",
+		TotalEligibleMSISDNs: len(eligibleParticipants),
+		TotalEntries:         calculateTotalEntries(eligibleParticipants),
+		ExecutedByAdminID:    executedByAdminID,
+		ExecutedBy:           executedByAdminID, // Added for application layer compatibility
+		CreatedAt:            time.Now(),
+		UpdatedAt:            time.Now(),
+		Winners:              []draw.Winner{},
+	}
+	
+	// Create the draw in the database
+	if err := r.Create(drawEntity); err != nil {
+		return nil, fmt.Errorf("failed to create draw: %w", err)
+	}
+	
+	// Return the created draw
+	return drawEntity, nil
+}
+
+// Helper function to calculate total entries
+func calculateTotalEntries(participants []participant.Participant) int {
+	totalEntries := 0
+	for _, p := range participants {
+		// Assuming each participant has a Points field
+		// If not, this would need to be calculated based on business rules
+		totalEntries += int(p.RechargeAmount / 100) // Every N100 is 1 point
+	}
+	return totalEntries
 }

@@ -3,30 +3,27 @@ package draw
 import (
 	"context"
 	"time"
-	
 	"github.com/google/uuid"
 )
 
 // UpdateWinnerPaymentStatusInput represents input for UpdateWinnerPaymentStatus
 type UpdateWinnerPaymentStatusInput struct {
-	WinnerID      uuid.UUID
+	WinnerID      string
 	PaymentStatus string
-	Notes         string
-	UpdatedBy     uuid.UUID
+	PaymentNotes  string
+	Notes         string // Added for handler compatibility
+	UpdatedBy     uuid.UUID // Added for handler compatibility
 }
 
 // UpdateWinnerPaymentStatusOutput represents output for UpdateWinnerPaymentStatus
 type UpdateWinnerPaymentStatusOutput struct {
+	Success       bool
 	ID            uuid.UUID
-	DrawID        uuid.UUID
 	MSISDN        string
 	PrizeTierID   uuid.UUID
-	PrizeTierName string
-	PrizeValue    float64
 	Status        string
 	PaymentStatus string
 	PaymentNotes  string
-	PaidAt        string
 	IsRunnerUp    bool
 	RunnerUpRank  int
 	CreatedAt     time.Time
@@ -46,33 +43,46 @@ func NewUpdateWinnerPaymentStatusService(repository Repository) *UpdateWinnerPay
 }
 
 // UpdateWinnerPaymentStatus updates a winner's payment status
-func (s *UpdateWinnerPaymentStatusService) UpdateWinnerPaymentStatus(ctx context.Context, input UpdateWinnerPaymentStatusInput) (UpdateWinnerPaymentStatusOutput, error) {
-	// Implementation using domain types
-	winner, err := s.repository.UpdateWinnerPaymentStatus(ctx, input.WinnerID, input.PaymentStatus, input.Notes, input.UpdatedBy)
+func (s *UpdateWinnerPaymentStatusService) UpdateWinnerPaymentStatus(ctx context.Context, input UpdateWinnerPaymentStatusInput) (*UpdateWinnerPaymentStatusOutput, error) {
+	// Parse winner ID
+	winnerID, err := uuid.Parse(input.WinnerID)
 	if err != nil {
-		return UpdateWinnerPaymentStatusOutput{}, err
+		return nil, err
 	}
-	
-	// Convert paidAt to string format if needed
-	paidAtStr := ""
-	if winner.PaidAt != nil {
-		paidAtStr = winner.PaidAt.Format("2006-01-02 15:04:05")
+
+	// Get winner from repository
+	winner, err := s.repository.GetWinnerByID(winnerID)
+	if err != nil {
+		return nil, err
 	}
+
+	// Update payment status
+	winner.PaymentStatus = input.PaymentStatus
 	
-	return UpdateWinnerPaymentStatusOutput{
+	// Use Notes if PaymentNotes is empty (for backward compatibility)
+	if input.PaymentNotes != "" {
+		winner.PaymentNotes = input.PaymentNotes
+	} else {
+		winner.PaymentNotes = input.Notes
+	}
+
+	// Save changes
+	err = s.repository.UpdateWinner(winner)
+	if err != nil {
+		return nil, err
+	}
+
+	return &UpdateWinnerPaymentStatusOutput{
+		Success:       true,
 		ID:            winner.ID,
-		DrawID:        winner.DrawID,
 		MSISDN:        winner.MSISDN,
 		PrizeTierID:   winner.PrizeTierID,
-		PrizeTierName: winner.PrizeTierName,
-		PrizeValue:    winner.PrizeValue,
 		Status:        winner.Status,
 		PaymentStatus: winner.PaymentStatus,
 		PaymentNotes:  winner.PaymentNotes,
-		PaidAt:        paidAtStr,
 		IsRunnerUp:    winner.IsRunnerUp,
 		RunnerUpRank:  winner.RunnerUpRank,
 		CreatedAt:     winner.CreatedAt,
-		UpdatedAt:     winner.UpdatedAt,
+		UpdatedAt:     time.Now(),
 	}, nil
 }

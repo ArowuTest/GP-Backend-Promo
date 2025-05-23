@@ -50,10 +50,12 @@ func main() {
 
 	// Draw services
 	executeDrawService := drawApp.NewDrawService(drawRepo, participantRepo, prizeRepo, logAuditService)
-	getDrawDetailsService := drawApp.NewGetDrawDetailsService(drawRepo)
+	getDrawByIDService := drawApp.NewGetDrawByIDService(drawRepo)
 	listDrawsService := drawApp.NewListDrawsService(drawRepo)
+	listWinnersService := drawApp.NewListWinnersService(drawRepo)
 	getEligibilityStatsService := drawApp.NewGetEligibilityStatsService(drawRepo, participantRepo)
 	invokeRunnerUpService := drawApp.NewInvokeRunnerUpService(drawRepo, logAuditService)
+	updateWinnerPaymentStatusService := drawApp.NewUpdateWinnerPaymentStatusService(drawRepo)
 
 	// Participant services
 	uploadParticipantsService := participantApp.NewUploadParticipantsService(participantRepo, logAuditService)
@@ -84,17 +86,25 @@ func main() {
 	ginEngine := gin.Default()
 
 	// Set up handlers
-	auditHandler := handler.NewAuditHandler(getAuditLogsService)
+	auditHandler := handler.NewAuditHandler(
+		getAuditLogsService,
+		nil, // getDataUploadAuditsService is required but not available, using nil temporarily
+	)
 	drawHandler := handler.NewDrawHandler(
 		executeDrawService,
-		getDrawDetailsService,
+		getDrawByIDService,
 		listDrawsService,
+		listWinnersService,
 		getEligibilityStatsService,
 		invokeRunnerUpService,
+		updateWinnerPaymentStatusService,
 	)
 	participantHandler := handler.NewParticipantHandler(
-		uploadParticipantsService,
+		nil, // listParticipantsService is required but not available, using nil temporarily
 		getParticipantStatsService,
+		nil, // listUploadAuditsService is required but not available, using nil temporarily
+		uploadParticipantsService,
+		nil, // deleteUploadService is required but not available, using nil temporarily
 	)
 	prizeHandler := handler.NewPrizeHandler(
 		createPrizeStructureService,

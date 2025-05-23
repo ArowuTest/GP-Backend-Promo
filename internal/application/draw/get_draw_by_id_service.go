@@ -5,12 +5,12 @@ import (
 	"time"
 	
 	"github.com/google/uuid"
-	drawDomain "github.com/ArowuTest/GP-Backend-Promo/internal/domain/draw"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/draw"
 )
 
 // GetDrawByIDInput represents input for GetDrawByID
 type GetDrawByIDInput struct {
-	ID uuid.UUID
+	ID string
 }
 
 // GetDrawByIDOutput represents output for GetDrawByID
@@ -22,12 +22,13 @@ type GetDrawByIDOutput struct {
 	TotalEligibleMSISDNs int
 	TotalEntries         int
 	ExecutedBy           uuid.UUID
-	Winners              []drawDomain.Winner
+	Winners              []draw.Winner
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+	Draw                 *draw.Draw // Keep the original field for backward compatibility
 }
 
-// GetDrawByIDService handles retrieving a draw by ID
+// GetDrawByIDService handles retrieving draw details by ID
 type GetDrawByIDService struct {
 	repository Repository
 }
@@ -40,29 +41,30 @@ func NewGetDrawByIDService(repository Repository) *GetDrawByIDService {
 }
 
 // GetDrawByID retrieves a draw by ID
-func (s *GetDrawByIDService) GetDrawByID(ctx context.Context, input GetDrawByIDInput) (GetDrawByIDOutput, error) {
-	// Implementation using domain types
-	draw, winners, err := s.repository.GetDrawByID(ctx, input.ID)
+func (s *GetDrawByIDService) GetDrawByID(ctx context.Context, input GetDrawByIDInput) (*GetDrawByIDOutput, error) {
+	// Parse ID to UUID
+	id, err := parseUUID(input.ID)
 	if err != nil {
-		return GetDrawByIDOutput{}, err
+		return nil, err
 	}
 	
-	// Convert to output format
-	winnerOutputs := make([]drawDomain.Winner, len(winners))
-	for i, winner := range winners {
-		winnerOutputs[i] = *winner
+	// Get draw from repository
+	drawEntity, err := s.repository.GetByID(id)
+	if err != nil {
+		return nil, err
 	}
 	
-	return GetDrawByIDOutput{
-		ID:                   draw.ID,
-		DrawDate:             draw.DrawDate,
-		PrizeStructureID:     draw.PrizeStructureID,
-		Status:               draw.Status,
-		TotalEligibleMSISDNs: draw.TotalEligibleMSISDNs,
-		TotalEntries:         draw.TotalEntries,
-		ExecutedBy:           draw.ExecutedByAdminID, // Map from domain field
-		Winners:              winnerOutputs,
-		CreatedAt:            draw.CreatedAt,
-		UpdatedAt:            draw.UpdatedAt,
+	return &GetDrawByIDOutput{
+		ID:                   drawEntity.ID,
+		DrawDate:             drawEntity.DrawDate,
+		PrizeStructureID:     drawEntity.PrizeStructureID,
+		Status:               drawEntity.Status,
+		TotalEligibleMSISDNs: drawEntity.TotalEligibleMSISDNs,
+		TotalEntries:         drawEntity.TotalEntries,
+		ExecutedBy:           drawEntity.ExecutedBy,
+		Winners:              drawEntity.Winners,
+		CreatedAt:            drawEntity.CreatedAt,
+		UpdatedAt:            drawEntity.UpdatedAt,
+		Draw:                 drawEntity,
 	}, nil
 }

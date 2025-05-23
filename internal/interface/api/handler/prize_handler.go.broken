@@ -1,0 +1,83 @@
+package handler
+
+import (
+"net/http"
+"strconv"
+"time"
+
+"github.com/gin-gonic/gin"
+"github.com/google/uuid"
+
+prizeApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/prize"
+"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/request"
+"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
+"github.com/ArowuTest/GP-Backend-Promo/internal/pkg/util"
+)
+
+// PrizeHandler handles prize-related requests
+type PrizeHandler struct {
+createPrizeService         *prizeApp.CreatePrizeService
+getPrizeByIDService        *prizeApp.GetPrizeByIDService
+listPrizesService          *prizeApp.ListPrizesService
+createPrizeStructureService *prizeApp.CreatePrizeStructureService
+getPrizeStructureByIDService *prizeApp.GetPrizeStructureByIDService
+listPrizeStructuresService  *prizeApp.ListPrizeStructuresService
+updatePrizeStructureService *prizeApp.UpdatePrizeStructureService
+}
+
+// NewPrizeHandler creates a new PrizeHandler
+func NewPrizeHandler(
+createPrizeService *prizeApp.CreatePrizeService,
+getPrizeByIDService *prizeApp.GetPrizeByIDService,
+listPrizesService *prizeApp.ListPrizesService,
+createPrizeStructureService *prizeApp.CreatePrizeStructureService,
+getPrizeStructureByIDService *prizeApp.GetPrizeStructureByIDService,
+listPrizeStructuresService *prizeApp.ListPrizeStructuresService,
+updatePrizeStructureService *prizeApp.UpdatePrizeStructureService,
+) *PrizeHandler {
+return &PrizeHandler{
+       getPrizeByIDService,
+createPrizeStructureService,
+dles POST /api/admin/prize-structures/:id/prize-tiers
+func (h *PrizeHandler) AddPrizeTier(c *gin.Context) {
+// Parse prize structure ID
+prizeStructureID, err := uuid.Parse(c.Param("id"))
+if err != nil {
+(http.StatusBadRequest, response.ErrorResponse{
+valid prize structure ID format",
+
+}
+
+var req request.AddPrizeTierRequest
+if err := c.ShouldBindJSON(&req); err != nil {
+(http.StatusBadRequest, response.ErrorResponse{
+valid request: " + err.Error(),
+
+}
+
+// Get user ID from context
+userID, exists := c.Get("userID")
+if !exists {
+(http.StatusUnauthorized, response.ErrorResponse{
+ot authenticated",
+
+}
+
+// Create prize tier
+input := prizeApp.AddPrizeTierInput{
+ame:             req.Name,
+.PrizeType,
+ req.Value,
+tity:         req.Quantity,
+ req.Order,
+h.updatePrizeStructureService.AddPrizeTier(c.Request.Context(), input)
+if err != nil {
+(http.StatusInternalServerError, response.ErrorResponse{
+err.Error(),
+
+}
+
+c.JSON(http.StatusOK, response.SuccessResponse{
+successfully",
+})
+}
