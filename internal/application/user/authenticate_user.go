@@ -29,7 +29,7 @@ func NewAuthenticateUserService(
 	return &AuthenticateUserService{
 		userRepository: userRepository,
 		auditService:   auditService,
-		jwtSecret:      "your-secret-key", // In production, this should be loaded from environment variables
+		jwtSecret:      "mynumba-donwin-jwt-secret-key-2025", // Using the same secret as in the middleware
 	}
 }
 
@@ -155,7 +155,7 @@ func (s *AuthenticateUserService) generateJWTToken(user *user.User) (string, tim
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
-			Issuer:    "gp-backend-promo",
+			Issuer:    "mynumba-donwin-api",
 			Subject:   user.ID.String(),
 		},
 	}

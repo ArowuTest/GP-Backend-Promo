@@ -90,6 +90,11 @@ func (c *Container) initRepositories() {
 func (c *Container) initServices() {
 	logAuditService := audit.NewLogAuditService(c.AuditRepository)
 	c.AuditService = audit.NewAuditService(logAuditService)
+	
+	// Create audit-related services
+	getAuditLogsService := audit.NewGetAuditLogsService(c.AuditRepository)
+	getDataUploadAuditsService := audit.NewGetDataUploadAuditsService(c.AuditRepository)
+	
 	c.AuthService = user.NewAuthenticateUserService(c.UserRepository, c.AuditService)
 	c.DrawService = draw.NewDrawService(c.DrawRepository, c.ParticipantRepository, c.PrizeRepository, c.AuditService)
 	c.ParticipantService = participant.NewUploadParticipantsService(c.ParticipantRepository, c.AuditService)
@@ -98,7 +103,7 @@ func (c *Container) initServices() {
 }
 	// Initialize middleware
 func (c *Container) initMiddleware() {
-	c.AuthMiddleware = middleware.NewAuthMiddleware("your-auth-token-here") // Use a proper auth token in production
+	c.AuthMiddleware = middleware.NewAuthMiddleware("mynumba-donwin-jwt-secret-key-2025") // Production JWT secret
 	c.CORSMiddleware = middleware.NewCORSMiddleware(
 		[]string{"https://gp-admin-promo.vercel.app"}, // explicitly allow the frontend domain
 		[]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}, // allowedMethods
@@ -134,9 +139,13 @@ func (c *Container) initHandlers() {
 		c.ParticipantService, // UploadParticipantsService
 		nil, // DeleteUploadService
 	)
+	// Create audit-related services for handler
+	getAuditLogsService := audit.NewGetAuditLogsService(c.AuditRepository)
+	getDataUploadAuditsService := audit.NewGetDataUploadAuditsService(c.AuditRepository)
+	
 	c.AuditHandler = handler.NewAuditHandler(
-		nil, // GetAuditLogsService
-		nil, // GetDataUploadAuditsService
+		getAuditLogsService, // GetAuditLogsService
+		getDataUploadAuditsService // GetDataUploadAuditsService
 	)
 	c.UserHandler = handler.NewUserHandler(
 		c.AuthService, // AuthenticateUserService
