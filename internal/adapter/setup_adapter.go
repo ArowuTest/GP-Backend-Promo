@@ -90,13 +90,13 @@ func NewSetupAdapter(
 		deleteUploadService,
 	)
 
-	// Create user adapter
+	// Create user adapter - fixed parameter order to match constructor signature
 	userAdapter := NewUserServiceAdapter(
 		authenticateUserService,
 		createUserService,
+		updateUserService,
 		getUserService,
 		listUsersService,
-		updateUserService,
 	)
 	
 	return &SetupAdapter{

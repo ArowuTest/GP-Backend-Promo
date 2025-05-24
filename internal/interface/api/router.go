@@ -81,14 +81,14 @@ func (r *Router) Setup() {
 			draws.GET("/eligibility-stats", r.drawHandler.GetEligibilityStats)
 			draws.POST("/execute", r.authMiddleware.RequireRole("super_admin"), r.drawHandler.ExecuteDraw)
 			draws.POST("/invoke-runner-up", r.authMiddleware.RequireRole("super_admin", "admin"), r.drawHandler.InvokeRunnerUp)
-			draws.GET("", r.drawHandler.ListDraws)
+			draws.GET("", r.drawHandler.GetDraws)
 			draws.GET("/:id", r.drawHandler.GetDrawByID)
 		}
 
 		// Winner routes
 		winners := admin.Group("/winners")
 		{
-			winners.GET("", r.drawHandler.ListWinners)
+			winners.GET("", r.drawHandler.GetWinners)
 			winners.PUT("/:id/payment-status", r.authMiddleware.RequireRole("super_admin", "admin"), r.drawHandler.UpdateWinnerPaymentStatus)
 		}
 
@@ -108,7 +108,7 @@ func (r *Router) Setup() {
 			participants.POST("/upload", r.authMiddleware.RequireRole("super_admin", "admin", "senior_user"), r.participantHandler.UploadParticipants)
 			participants.GET("/stats", r.participantHandler.GetParticipantStats)
 			participants.GET("/uploads", r.participantHandler.ListUploadAudits)
-			participants.GET("", r.participantHandler.ListParticipants)
+			participants.GET("", r.participantHandler.GetParticipants)
 			participants.DELETE("/uploads/:id", r.authMiddleware.RequireRole("super_admin", "admin"), r.participantHandler.DeleteUpload)
 		}
 
@@ -127,7 +127,7 @@ func (r *Router) Setup() {
 			users.PUT("/:id", r.authMiddleware.RequireRole("super_admin"), r.userHandler.UpdateUser)
 			
 			// Add the new reset password endpoint
-			users.POST("/reset-password", r.authMiddleware.RequireRole("super_admin", "admin"), r.resetPasswordHandler.Handle)
+			users.POST("/reset-password", r.authMiddleware.RequireRole("super_admin", "admin"), r.resetPasswordHandler.ResetPassword)
 		}
 	}
 }

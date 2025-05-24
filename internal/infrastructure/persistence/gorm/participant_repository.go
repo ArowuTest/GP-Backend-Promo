@@ -1,6 +1,7 @@
 package gorm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -49,6 +50,8 @@ type UploadAuditModel struct {
 	ErrorDetailsStr string   `gorm:"column:error_details"`
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	DeletedBy       *string   `gorm:"type:uuid"`
+	DeletedAt       *time.Time
 }
 
 // TableName returns the table name for the ParticipantModel
@@ -192,6 +195,12 @@ func (r *GormParticipantRepository) GetByMSISDN(msisdn string) (*participant.Par
 	return participantEntity, nil
 }
 
+// GetParticipantByMSISDN implements the application.participant.Repository interface
+func (r *GormParticipantRepository) GetParticipantByMSISDN(ctx context.Context, msisdn string) (*participant.Participant, error) {
+	// Delegate to the domain layer implementation
+	return r.GetByMSISDN(msisdn)
+}
+
 // GetByMSISDNAndDate implements the participant.ParticipantRepository interface
 func (r *GormParticipantRepository) GetByMSISDNAndDate(msisdn string, date time.Time) (*participant.Participant, error) {
 	var model ParticipantModel
@@ -244,6 +253,23 @@ func (r *GormParticipantRepository) List(page, pageSize int) ([]participant.Part
 	}
 	
 	return participants, int(total), nil
+}
+
+// ListParticipants implements the application.participant.Repository interface
+func (r *GormParticipantRepository) ListParticipants(ctx context.Context, page, pageSize int) ([]*participant.Participant, int, error) {
+	// Call the domain layer implementation and convert the result
+	participants, total, err := r.List(page, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+	
+	// Convert slice of values to slice of pointers
+	result := make([]*participant.Participant, 0, len(participants))
+	for i := range participants {
+		result = append(result, &participants[i])
+	}
+	
+	return result, total, nil
 }
 
 // ListByDate implements the participant.ParticipantRepository interface
@@ -329,6 +355,12 @@ func (r *GormParticipantRepository) GetStats(date time.Time) (int, int, float64,
 	return int(totalParticipants), int(totalPoints), float64(totalUploads), nil
 }
 
+// GetParticipantStats implements the application.participant.Repository interface
+func (r *GormParticipantRepository) GetParticipantStats(ctx context.Context, date time.Time) (int, int, float64, error) {
+	// Delegate to the domain layer implementation
+	return r.GetStats(date)
+}
+
 // CreateBatch implements the participant.ParticipantRepository interface
 func (r *GormParticipantRepository) CreateBatch(participants []*participant.Participant) (int, []string, error) {
 	tx := r.db.Begin()
@@ -364,6 +396,44 @@ func (r *GormParticipantRepository) DeleteByUploadID(uploadID uuid.UUID) error {
 	result := r.db.Where("upload_id = ?", uploadID.String()).Delete(&ParticipantModel{})
 	if result.Error != nil {
 		return fmt.Errorf("failed to delete participants: %w", result.Error)
+	}
+	
+	return nil
+}
+
+// DeleteUpload implements the application.participant.Repository interface
+// Updated to include context parameter as required by the application layer
+func (r *GormParticipantRepository) DeleteUpload(ctx context.Context, uploadID uuid.UUID, deletedBy uuid.UUID) error {
+	tx := r.db.Begin()
+	if tx.Error != nil {
+		return fmt.Errorf("failed to begin transaction: %w", tx.Error)
+	}
+	
+	// Delete participants with this upload ID
+	if err := r.DeleteByUploadID(uploadID); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to delete participants: %w", err)
+	}
+	
+	// Mark the upload audit as deleted
+	deletedByStr := deletedBy.String()
+	now := time.Now()
+	
+	result := tx.Model(&UploadAuditModel{}).
+		Where("id = ?", uploadID.String()).
+		Updates(map[string]interface{}{
+			"deleted_by": deletedByStr,
+			"deleted_at": now,
+			"status":     "Deleted",
+		})
+	
+	if result.Error != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to update upload audit: %w", result.Error)
+	}
+	
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 	
 	return nil
@@ -406,4 +476,87 @@ func (r *GormParticipantRepository) GetStatsByDate(date time.Time) (int, int, er
 func (r *GormParticipantRepository) BulkCreate(participants []*participant.Participant) (int, []string, error) {
 	// This is an alias for CreateBatch for backward compatibility
 	return r.CreateBatch(participants)
+}
+
+// UploadParticipants implements the application.participant.Repository interface
+func (r *GormParticipantRepository) UploadParticipants(ctx context.Context, participants []*participant.ParticipantInput, uploadedBy uuid.UUID, fileName string) (*participant.UploadAudit, error) {
+	// Create a new upload audit record
+	uploadID := uuid.New()
+	now := time.Now()
+	
+	// Convert participant inputs to domain participants
+	domainParticipants := make([]*participant.Participant, 0, len(participants))
+	for _, p := range participants {
+		domainParticipants = append(domainParticipants, &participant.Participant{
+			ID:             uuid.New(),
+			MSISDN:         p.MSISDN,
+			Points:         p.Points,
+			RechargeAmount: p.RechargeAmount,
+			RechargeDate:   p.RechargeDate,
+			UploadID:       uploadID,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		})
+	}
+	
+	// Create participants in batch
+	successCount, errorDetails, err := r.CreateBatch(domainParticipants)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create participants: %w", err)
+	}
+	
+	// Create upload audit record
+	audit := &participant.UploadAudit{
+		ID:             uploadID,
+		UploadedBy:     uploadedBy,
+		UploadDate:     now,
+		FileName:       fileName,
+		Status:         "Completed",
+		TotalRows:      len(participants),
+		SuccessfulRows: successCount,
+		ErrorCount:     len(errorDetails),
+		ErrorDetails:   errorDetails,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	
+	// Save audit record to database
+	auditModel := toUploadAuditModel(audit)
+	result := r.db.Create(auditModel)
+	if result.Error != nil {
+		return nil, fmt.Errorf("failed to create upload audit: %w", result.Error)
+	}
+	
+	return audit, nil
+}
+
+// ListUploadAudits implements the application.participant.Repository interface
+func (r *GormParticipantRepository) ListUploadAudits(ctx context.Context, page, pageSize int) ([]*participant.UploadAudit, int, error) {
+	var models []UploadAuditModel
+	var total int64
+	
+	offset := (page - 1) * pageSize
+	
+	// Get total count
+	result := r.db.Model(&UploadAuditModel{}).Count(&total)
+	if result.Error != nil {
+		return nil, 0, fmt.Errorf("failed to count upload audits: %w", result.Error)
+	}
+	
+	// Get paginated upload audits
+	result = r.db.Order("upload_date DESC").Offset(offset).Limit(pageSize).Find(&models)
+	if result.Error != nil {
+		return nil, 0, fmt.Errorf("failed to list upload audits: %w", result.Error)
+	}
+	
+	audits := make([]*participant.UploadAudit, 0, len(models))
+	for _, model := range models {
+		audit, err := model.toDomain()
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to convert upload audit model to domain: %w", err)
+		}
+		audits = append(audits, audit)
+	}
+	
+	return audits, int(total), nil
 }

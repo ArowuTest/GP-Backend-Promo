@@ -14,25 +14,25 @@ import (
 type UserServiceAdapter struct {
 	authenticateUserService user.AuthenticateUserService
 	createUserService       user.CreateUserService
+	updateUserService       user.UpdateUserService
 	getUserService          user.GetUserService
 	listUsersService        user.ListUsersService
-	updateUserService       user.UpdateUserService
 }
 
 // NewUserServiceAdapter creates a new UserServiceAdapter
 func NewUserServiceAdapter(
 	authenticateUserService *user.AuthenticateUserService,
 	createUserService *user.CreateUserService,
+	updateUserService *user.UpdateUserService,
 	getUserService *user.GetUserService,
 	listUsersService *user.ListUsersService,
-	updateUserService *user.UpdateUserService,
 ) *UserServiceAdapter {
 	return &UserServiceAdapter{
 		authenticateUserService: *authenticateUserService,
 		createUserService:       *createUserService,
+		updateUserService:       *updateUserService,
 		getUserService:          *getUserService,
 		listUsersService:        *listUsersService,
-		updateUserService:       *updateUserService,
 	}
 }
 

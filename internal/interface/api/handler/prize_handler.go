@@ -13,7 +13,6 @@ import (
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/prize"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/request"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
-	"github.com/ArowuTest/GP-Backend-Promo/internal/pkg/util"
 )
 
 // PrizeHandler handles prize-related HTTP requests
@@ -569,11 +568,8 @@ func (h *PrizeHandler) DeletePrizeStructure(c *gin.Context) {
 		}
 	}
 
-	// Create input using a local struct instead of undefined prizeApp.DeletePrizeStructureInput
-	appInput := struct {
-		ID        uuid.UUID
-		DeletedBy uuid.UUID
-	}{
+	// Create input for application layer
+	appInput := prizeApp.DeletePrizeStructureInput{
 		ID:        prizeStructureID,
 		DeletedBy: userID,
 	}
@@ -591,9 +587,5 @@ func (h *PrizeHandler) DeletePrizeStructure(c *gin.Context) {
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Message: "Prize structure deleted successfully",
-		Data: response.DeleteConfirmationResponse{
-			ID:      prizeStructureID.String(),
-			Deleted: true,
-		},
 	})
 }

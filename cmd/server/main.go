@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/adapter"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/infrastructure/config"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/infrastructure/persistence/gorm"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/api"
@@ -70,6 +71,7 @@ func main() {
 	getPrizeStructureService := prizeApp.NewGetPrizeStructureService(prizeRepo)
 	listPrizeStructuresService := prizeApp.NewListPrizeStructuresService(prizeRepo)
 	updatePrizeStructureService := prizeApp.NewUpdatePrizeStructureService(prizeRepo, logAuditService)
+	deletePrizeStructureService := prizeApp.NewDeletePrizeStructureService(prizeRepo)
 
 	// User services
 	authenticateUserService := userApp.NewAuthenticateUserService(userRepo, logAuditService)
@@ -89,39 +91,53 @@ func main() {
 	// Set up gin engine
 	ginEngine := gin.Default()
 
+	// Set up service adapters
+	drawServiceAdapter := adapter.NewDrawServiceAdapter(
+		executeDrawService,
+		getDrawByIDService,
+		listDrawsService,
+		getEligibilityStatsService,
+		invokeRunnerUpService,
+		updateWinnerPaymentStatusService,
+		listWinnersService,
+	)
+	
+	participantServiceAdapter := adapter.NewParticipantServiceAdapter(
+		uploadParticipantsService,
+		getParticipantStatsService,
+		listUploadAuditsService,
+		listParticipantsService,
+		deleteUploadService,
+	)
+
 	// Set up handlers
 	auditHandler := handler.NewAuditHandler(
 		getAuditLogsService,
 		getDataUploadAuditsService,
 	)
-	drawHandler := handler.NewDrawHandler(
-		executeDrawService,
-		getDrawByIDService,
-		listDrawsService,
-		listWinnersService,
-		getEligibilityStatsService,
-		invokeRunnerUpService,
-		updateWinnerPaymentStatusService,
-	)
+	
+	drawHandler := handler.NewDrawHandler(drawServiceAdapter)
+	
 	participantHandler := handler.NewParticipantHandler(
-		listParticipantsService,
+		participantServiceAdapter,
 		getParticipantStatsService,
-		listUploadAuditsService,
-		uploadParticipantsService,
-		deleteUploadService,
 	)
+	
 	prizeHandler := handler.NewPrizeHandler(
 		createPrizeStructureService,
 		getPrizeStructureService,
 		listPrizeStructuresService,
 		updatePrizeStructureService,
+		deletePrizeStructureService,
 	)
+	
+	// Fix the parameter order to match the handler constructor
 	userHandler := handler.NewUserHandler(
-		authenticateUserService,
 		createUserService,
 		updateUserService,
 		getUserService,
 		listUsersService,
+		authenticateUserService,
 	)
 	
 	// Password reset handler

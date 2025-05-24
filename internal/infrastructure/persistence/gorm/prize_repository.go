@@ -33,6 +33,8 @@ type PrizeStructureModel struct {
 	ValidTo     *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	DeletedBy   *string   `gorm:"type:uuid"`
+	DeletedAt   *time.Time
 }
 
 // PrizeTierModel is the GORM model for prize tiers
@@ -418,7 +420,8 @@ func (r *GormPrizeRepository) UpdatePrizeStructure(prizeStructure *prizeDomain.P
 }
 
 // DeletePrizeStructure implements the prize.PrizeRepository interface
-func (r *GormPrizeRepository) DeletePrizeStructure(id uuid.UUID) error {
+// Updated to match the domain interface signature with deletedBy parameter
+func (r *GormPrizeRepository) DeletePrizeStructure(id uuid.UUID, deletedBy uuid.UUID) error {
 	tx := r.db.Begin()
 	if tx.Error != nil {
 		return fmt.Errorf("failed to begin transaction: %w", tx.Error)
@@ -431,8 +434,18 @@ func (r *GormPrizeRepository) DeletePrizeStructure(id uuid.UUID) error {
 		return fmt.Errorf("failed to delete prize tiers: %w", result.Error)
 	}
 	
-	// Delete prize structure
-	result = tx.Delete(&PrizeStructureModel{}, "id = ?", id.String())
+	// Update prize structure with deletedBy information
+	deletedByStr := deletedBy.String()
+	now := time.Now()
+	
+	// Use Update instead of Delete to track who deleted it
+	result = tx.Model(&PrizeStructureModel{}).
+		Where("id = ?", id.String()).
+		Updates(map[string]interface{}{
+			"deleted_by": deletedByStr,
+			"deleted_at": now,
+		})
+	
 	if result.Error != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to delete prize structure: %w", result.Error)

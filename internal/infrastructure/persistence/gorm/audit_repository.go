@@ -1,6 +1,7 @@
 package gorm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -169,6 +170,12 @@ func (r *GormAuditRepository) Create(auditLog *audit.AuditLog) error {
 	return nil
 }
 
+// CreateAuditLog implements the application.audit.Repository interface
+func (r *GormAuditRepository) CreateAuditLog(ctx context.Context, auditLog *audit.AuditLog) error {
+	// Delegate to the domain layer implementation
+	return r.Create(auditLog)
+}
+
 // CreateSystemAuditLog implements the audit.AuditRepository interface
 func (r *GormAuditRepository) CreateSystemAuditLog(systemAuditLog *audit.SystemAuditLog) error {
 	model := toSystemAuditLogModel(systemAuditLog)
@@ -197,6 +204,12 @@ func (r *GormAuditRepository) GetByID(id uuid.UUID) (*audit.AuditLog, error) {
 	}
 	
 	return auditLogEntity, nil
+}
+
+// GetAuditLogByID implements the application.audit.Repository interface
+func (r *GormAuditRepository) GetAuditLogByID(ctx context.Context, id uuid.UUID) (*audit.AuditLog, error) {
+	// Delegate to the domain layer implementation
+	return r.GetByID(id)
 }
 
 // GetSystemAuditLogByID implements the audit.AuditRepository interface
@@ -270,6 +283,23 @@ func (r *GormAuditRepository) List(filters audit.AuditLogFilters, page, pageSize
 	}
 	
 	return auditLogs, int(total), nil
+}
+
+// ListAuditLogs implements the application.audit.Repository interface
+func (r *GormAuditRepository) ListAuditLogs(ctx context.Context, filters audit.AuditLogFilters, page, pageSize int) ([]*audit.AuditLog, int, error) {
+	// Call the domain layer implementation and convert the result
+	auditLogs, total, err := r.List(filters, page, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+	
+	// Convert slice of values to slice of pointers
+	result := make([]*audit.AuditLog, 0, len(auditLogs))
+	for i := range auditLogs {
+		result = append(result, &auditLogs[i])
+	}
+	
+	return result, total, nil
 }
 
 // ListSystemAuditLogs implements the audit.AuditRepository interface
@@ -354,4 +384,65 @@ func (r *GormAuditRepository) GetByUserID(userID uuid.UUID) ([]audit.AuditLog, e
 	}
 	
 	return auditLogs, nil
+}
+
+// GetDataUploadAudits implements the application.audit.Repository interface
+func (r *GormAuditRepository) GetDataUploadAudits(ctx context.Context, page, pageSize int, startDate, endDate time.Time) ([]*audit.DataUploadAudit, int, error) {
+	var models []AuditLogModel
+	var total int64
+	
+	offset := (page - 1) * pageSize
+	
+	// Build query with filters
+	query := r.db.Model(&AuditLogModel{}).Where("entity_type = ?", "PARTICIPANT_UPLOAD")
+	
+	if !startDate.IsZero() {
+		query = query.Where("created_at >= ?", startDate)
+	}
+	
+	if !endDate.IsZero() {
+		query = query.Where("created_at <= ?", endDate)
+	}
+	
+	// Get total count
+	result := query.Count(&total)
+	if result.Error != nil {
+		return nil, 0, fmt.Errorf("failed to count data upload audits: %w", result.Error)
+	}
+	
+	// Get paginated data upload audits
+	result = query.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&models)
+	if result.Error != nil {
+		return nil, 0, fmt.Errorf("failed to list data upload audits: %w", result.Error)
+	}
+	
+	// Convert to domain entities
+	dataUploadAudits := make([]*audit.DataUploadAudit, 0, len(models))
+	for _, model := range models {
+		auditLogEntity, err := model.toDomain()
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to convert audit log model to domain: %w", err)
+		}
+		
+		// Convert AuditLog to DataUploadAudit using the correct field names from the domain entity
+		dataUploadAudit := &audit.DataUploadAudit{
+			ID:                  auditLogEntity.ID,
+			UploadedBy:          auditLogEntity.UserID,
+			UploadedAt:          auditLogEntity.CreatedAt,
+			FileName:            "", // Not available in AuditLog
+			TotalUploaded:       0, // Not available in AuditLog
+			SuccessfullyImported: 0, // Not available in AuditLog
+			DuplicatesSkipped:   0, // Not available in AuditLog
+			ErrorsEncountered:   0, // Not available in AuditLog
+			Status:              "Completed", // Default status
+			Details:             "", // Not available in AuditLog
+			OperationType:       "Upload", // Default operation type
+			CreatedAt:           auditLogEntity.CreatedAt,
+			UpdatedAt:           time.Now(),
+		}
+		
+		dataUploadAudits = append(dataUploadAudits, dataUploadAudit)
+	}
+	
+	return dataUploadAudits, int(total), nil
 }

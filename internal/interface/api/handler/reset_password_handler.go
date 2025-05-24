@@ -25,6 +25,14 @@ func NewResetPasswordHandler(
 	}
 }
 
+// Handle returns a gin handler function for CORS compatibility
+// This method is required by the router but delegates to other methods
+func (h *ResetPasswordHandler) Handle() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+	}
+}
+
 // ResetPassword handles POST /api/admin/users/reset-password
 func (h *ResetPasswordHandler) ResetPassword(c *gin.Context) {
 	var req request.AdminResetPasswordRequest

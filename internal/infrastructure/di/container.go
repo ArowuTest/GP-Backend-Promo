@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	
+	"github.com/ArowuTest/GP-Backend-Promo/internal/adapter"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/application/user"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/application/draw"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/application/participant"
@@ -89,109 +90,83 @@ func (c *Container) initRepositories() {
 
 // Initialize services
 func (c *Container) initServices() {
+	// Create audit service first as it's needed by other services
 	logAuditService := audit.NewLogAuditService(c.AuditRepository)
 	c.AuditService = audit.NewAuditService(logAuditService)
 	
-	// Create audit-related services
-	getAuditLogsService := audit.NewGetAuditLogsService(c.AuditRepository)
-	getDataUploadAuditsService := audit.NewGetDataUploadAuditsService(c.AuditRepository)
-	
+	// Create user services
 	c.AuthService = user.NewAuthenticateUserService(c.UserRepository, c.AuditService)
-	c.DrawService = draw.NewDrawService(c.DrawRepository, c.ParticipantRepository, c.PrizeRepository, c.AuditService)
-	c.ParticipantService = participant.NewUploadParticipantsService(c.ParticipantRepository, c.AuditService)
-	c.PrizeService = prize.NewCreatePrizeStructureService(c.PrizeRepository, c.AuditService)
 	c.ResetPasswordService = user.NewResetPasswordService(c.UserRepository, c.AuditService)
+	
+	// Create draw services
+	c.DrawService = draw.NewDrawService(c.DrawRepository, c.ParticipantRepository, c.PrizeRepository, c.AuditService)
+	
+	// Create participant services
+	c.ParticipantService = participant.NewUploadParticipantsService(c.ParticipantRepository, c.AuditService)
+	
+	// Create prize services
+	c.PrizeService = prize.NewCreatePrizeStructureService(c.PrizeRepository, c.AuditService)
 }
 
 // Initialize middleware
 func (c *Container) initMiddleware() {
 	c.AuthMiddleware = middleware.NewAuthMiddleware("mynumba-donwin-jwt-secret-key-2025") // Production JWT secret
-	c.CORSMiddleware = middleware.NewCORSMiddleware(
-		[]string{"https://gp-admin-promo.vercel.app"},
-		[]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		[]string{"Content-Type", "Authorization", "Accept"},
-		[]string{},
-		true)
+	c.CORSMiddleware = middleware.Default() // Use default CORS middleware
 	c.ErrorMiddleware = middleware.NewErrorMiddleware(false) // Set to true for debug mode
 }
 
 // Initialize handlers
 func (c *Container) initHandlers() {
-	// Create service adapters for handlers
+	// Create draw adapter and handler
 	drawServiceAdapter := adapter.NewDrawServiceAdapter(
 		c.DrawService,
 		draw.NewGetDrawByIDService(c.DrawRepository),
 		draw.NewListDrawsService(c.DrawRepository),
 		draw.NewGetEligibilityStatsService(c.DrawRepository, c.ParticipantRepository),
-		draw.NewInvokeRunnerUpService(c.DrawRepository),
+		draw.NewInvokeRunnerUpService(c.DrawRepository, c.AuditService),
 		draw.NewUpdateWinnerPaymentStatusService(c.DrawRepository),
 		draw.NewListWinnersService(c.DrawRepository))
-		
-	prizeServiceAdapter := adapter.NewPrizeServiceAdapter(
-		c.PrizeService,
-		prize.NewGetPrizeStructureService(c.PrizeRepository),
-		prize.NewListPrizeStructuresService(c.PrizeRepository),
-		prize.NewUpdatePrizeStructureService(c.PrizeRepository, c.AuditService),
-		prize.NewDeletePrizeStructureService(c.PrizeRepository, c.AuditService))
-		
-	participantServiceAdapter := adapter.NewParticipantServiceAdapter(
-		participant.NewGetParticipantService(c.ParticipantRepository),
-		participant.NewListParticipantsService(c.ParticipantRepository),
-		participant.NewDeleteParticipantService(c.ParticipantRepository, c.AuditService),
-		c.ParticipantService,
-		participant.NewGetParticipantStatsService(c.ParticipantRepository))
-		
-	// Create audit-related services for handler
-	getAuditLogsService := audit.NewGetAuditLogsServiceImpl(c.AuditRepository)
-	getDataUploadAuditsService := audit.NewGetDataUploadAuditsService(c.AuditRepository)
-	
-	// Create audit service adapter
-	auditServiceAdapter := adapter.NewAuditServiceAdapter(
-		c.AuditService,
-		getAuditLogsService)
-		
-	// Initialize handlers with adapters
 	c.DrawHandler = handler.NewDrawHandler(drawServiceAdapter)
+	
+	// Create prize handler
 	c.PrizeHandler = handler.NewPrizeHandler(
 		c.PrizeService,
 		prize.NewGetPrizeStructureService(c.PrizeRepository),
 		prize.NewListPrizeStructuresService(c.PrizeRepository),
 		prize.NewUpdatePrizeStructureService(c.PrizeRepository, c.AuditService),
-		prize.NewDeletePrizeStructureService(c.PrizeRepository, c.AuditService))
-		
-	c.ParticipantHandler = handler.NewParticipantHandler(
-		participant.NewGetParticipantService(c.ParticipantRepository),
-		participant.NewListParticipantsService(c.ParticipantRepository),
-		participant.NewDeleteParticipantService(c.ParticipantRepository, c.AuditService),
-		c.ParticipantService,
-		participant.NewGetParticipantStatsService(c.ParticipantRepository))
-		
-	c.AuditHandler = handler.NewAuditHandler(
-		getAuditLogsService,
-		getDataUploadAuditsService)
-		
-	// Create user service adapter
-	userServiceAdapter := adapter.NewUserServiceAdapter(
-		c.AuthService,
-		user.NewCreateUserService(c.UserRepository, c.AuditService),
-		user.NewGetUserService(c.UserRepository),
-		user.NewUpdateUserService(c.UserRepository, c.AuditService),
-		user.NewDeleteUserService(c.UserRepository, c.AuditService),
-		user.NewListUsersService(c.UserRepository))
-		
-	c.UserHandler = handler.NewUserHandler(
-		c.AuthService,
-		user.NewCreateUserService(c.UserRepository, c.AuditService),
-		user.NewGetUserService(c.UserRepository),
-		user.NewUpdateUserService(c.UserRepository, c.AuditService),
-		user.NewListUsersService(c.UserRepository))
-		
-	c.ResetPasswordHandler = handler.NewResetPasswordHandler(c.ResetPasswordService)
-	}
+		prize.NewDeletePrizeStructureService(c.PrizeRepository))
 	
-	// Initialize router
-	func (c *Container) initRouter() {
-		c.Router = api.NewRouter(
+	// Create participant adapter and handler
+	participantServiceAdapter := adapter.NewParticipantServiceAdapter(
+		c.ParticipantService,
+		participant.NewGetParticipantStatsService(c.ParticipantRepository),
+		participant.NewListUploadAuditsService(c.ParticipantRepository),
+		participant.NewListParticipantsService(c.ParticipantRepository),
+		participant.NewDeleteUploadService(c.ParticipantRepository))
+	c.ParticipantHandler = handler.NewParticipantHandler(
+		participantServiceAdapter,
+		participant.NewGetParticipantStatsService(c.ParticipantRepository))
+	
+	// Create audit handler
+	c.AuditHandler = handler.NewAuditHandler(
+		audit.NewGetAuditLogsService(c.AuditRepository),
+		audit.NewGetDataUploadAuditsService(c.AuditRepository))
+	
+	// Create user handler with correct parameter order
+	c.UserHandler = handler.NewUserHandler(
+		user.NewCreateUserService(c.UserRepository, c.AuditService),
+		user.NewUpdateUserService(c.UserRepository, c.AuditService),
+		user.NewGetUserService(c.UserRepository),
+		user.NewListUsersService(c.UserRepository),
+		c.AuthService)
+	
+	// Create reset password handler
+	c.ResetPasswordHandler = handler.NewResetPasswordHandler(c.ResetPasswordService)
+}
+	
+// Initialize router
+func (c *Container) initRouter() {
+	c.Router = api.NewRouter(
 		c.Engine,
 		c.AuthMiddleware,
 		c.CORSMiddleware,
