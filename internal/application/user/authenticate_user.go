@@ -28,7 +28,6 @@ func NewAuthenticateUserService(
 ) *AuthenticateUserService {
 	// Get JWT secret from environment variable or use default
 	jwtSecret := getEnvOrDefault("JWT_SECRET", "mynumba-donwin-jwt-secret-key-2025")
-	
 	return &AuthenticateUserService{
 		userRepository: userRepository,
 		auditService:   auditService,
@@ -54,8 +53,8 @@ func getEnv(key string) string {
 
 // AuthenticateUserInput defines the input for the AuthenticateUser use case
 type AuthenticateUserInput struct {
-	Email    string
-	Password string
+	Email     string
+	Password  string
 	IPAddress string
 	UserAgent string
 }
@@ -81,120 +80,101 @@ func (s *AuthenticateUserService) AuthenticateUser(ctx context.Context, input Au
 	if input.Email == "" {
 		return nil, errors.New("email is required")
 	}
-	
 	if input.Password == "" {
 		return nil, errors.New("password is required")
 	}
-	
-	// Get user by email
-	userEntity, err := s.userRepository.GetUserByEmail(input.Email)
+
+	// Get user by email - Changed from GetUserByEmail to GetByEmail to match interface
+	userEntity, err := s.userRepository.GetByEmail(input.Email)
 	if err != nil {
-		// Log failed login attempt
+		// Log failed login attempt - Updated to match AuditService interface
 		if err := s.auditService.LogAudit(
 			"LOGIN_FAILED",
 			"User",
 			uuid.Nil,
 			uuid.Nil,
 			fmt.Sprintf("Failed login attempt for email: %s", input.Email),
-			map[string]interface{}{
-				"ip_address": input.IPAddress,
-				"user_agent": input.UserAgent,
-				"reason":     "user not found",
-			},
+			fmt.Sprintf("ip_address: %s, user_agent: %s, reason: user not found", input.IPAddress, input.UserAgent),
 		); err != nil {
 			// Log error but continue
 			fmt.Printf("Failed to log audit: %v\n", err)
 		}
-		
 		return nil, errors.New("invalid email or password")
 	}
-	
+
 	// Check if user is active
 	if !userEntity.IsActive {
-		// Log failed login attempt
+		// Log failed login attempt - Updated to match AuditService interface
 		if err := s.auditService.LogAudit(
 			"LOGIN_FAILED",
 			"User",
 			userEntity.ID,
 			userEntity.ID,
 			fmt.Sprintf("Failed login attempt for inactive user: %s", input.Email),
-			map[string]interface{}{
-				"ip_address": input.IPAddress,
-				"user_agent": input.UserAgent,
-				"reason":     "user inactive",
-			},
+			fmt.Sprintf("ip_address: %s, user_agent: %s, reason: user inactive", input.IPAddress, input.UserAgent),
 		); err != nil {
 			// Log error but continue
 			fmt.Printf("Failed to log audit: %v\n", err)
 		}
-		
 		return nil, errors.New("user is inactive")
 	}
-	
+
 	// Check password
 	if err := bcrypt.CompareHashAndPassword([]byte(userEntity.PasswordHash), []byte(input.Password)); err != nil {
-		// Log failed login attempt
+		// Log failed login attempt - Updated to match AuditService interface
 		if err := s.auditService.LogAudit(
 			"LOGIN_FAILED",
 			"User",
 			userEntity.ID,
 			userEntity.ID,
 			fmt.Sprintf("Failed login attempt for user: %s", input.Email),
-			map[string]interface{}{
-				"ip_address": input.IPAddress,
-				"user_agent": input.UserAgent,
-				"reason":     "invalid password",
-			},
+			fmt.Sprintf("ip_address: %s, user_agent: %s, reason: invalid password", input.IPAddress, input.UserAgent),
 		); err != nil {
 			// Log error but continue
 			fmt.Printf("Failed to log audit: %v\n", err)
 		}
-		
 		return nil, errors.New("invalid email or password")
 	}
-	
+
 	// Generate JWT token
 	expiresAt := time.Now().Add(24 * time.Hour) // Token expires in 24 hours
-	
+
 	// Create the claims
 	claims := jwt.MapClaims{
 		"user_id":  userEntity.ID.String(),
 		"email":    userEntity.Email,
 		"username": userEntity.Username,
-		"role":     userEntity.Role,           // Single role for backward compatibility
+		"role":     userEntity.Role, // Single role for backward compatibility
 		"roles":    []string{userEntity.Role}, // Array of roles for future extensibility
-		"exp":      expiresAt.Unix(),
-		"iat":      time.Now().Unix(),
-		"nbf":      time.Now().Unix(),
+		"exp":      jwt.NewNumericDate(expiresAt).Unix(), // Updated to use jwt.NewNumericDate
+		"iat":      jwt.NewNumericDate(time.Now()).Unix(), // Updated to use jwt.NewNumericDate
+		"nbf":      jwt.NewNumericDate(time.Now()).Unix(), // Updated to use jwt.NewNumericDate
 		"iss":      "mynumba-donwin-api",
 		"sub":      userEntity.ID.String(),
 	}
-	
+
 	// Create the token
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	
+
 	// Sign the token with the secret key
 	tokenString, err := token.SignedString([]byte(s.jwtSecret))
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
-	
-	// Log successful login
+
+	// Log successful login - Updated to match AuditService interface
 	if err := s.auditService.LogAudit(
 		"LOGIN_SUCCESS",
 		"User",
 		userEntity.ID,
 		userEntity.ID,
 		fmt.Sprintf("Successful login for user: %s", input.Email),
-		map[string]interface{}{
-			"ip_address": input.IPAddress,
-			"user_agent": input.UserAgent,
-		},
+		fmt.Sprintf("ip_address: %s, user_agent: %s", input.IPAddress, input.UserAgent),
 	); err != nil {
 		// Log error but continue
 		fmt.Printf("Failed to log audit: %v\n", err)
 	}
-	
+
 	return &AuthenticateUserOutput{
 		Token: tokenString,
 		User: UserOutput{

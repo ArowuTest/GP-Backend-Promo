@@ -18,6 +18,22 @@ type ErrorResponse struct {
 	Details string `json:"details,omitempty"`
 }
 
+// Pagination defines standard pagination metadata
+type Pagination struct {
+	Page       int   `json:"page"`
+	PageSize   int   `json:"pageSize"`
+	TotalRows  int   `json:"totalRows"`
+	TotalPages int   `json:"totalPages"`
+	TotalItems int64 `json:"totalItems"`
+}
+
+// PaginatedResponse defines a standard paginated response
+type PaginatedResponse struct {
+	Success    bool        `json:"success"`
+	Data       interface{} `json:"data"`
+	Pagination Pagination  `json:"pagination"`
+}
+
 // PrizeStructureResponse defines the response for a prize structure
 type PrizeStructureResponse struct {
 	ID          uuid.UUID       `json:"id"`
@@ -57,15 +73,15 @@ type LoginResponse struct {
 
 // DrawResponse defines the response for a draw
 type DrawResponse struct {
-	ID              uuid.UUID        `json:"id"`
-	Name            string           `json:"name"`
-	Description     string           `json:"description"`
-	DrawDate        string           `json:"drawDate"`
-	Status          string           `json:"status"`
-	PrizeStructure  string           `json:"prizeStructure"`
-	Winners         []WinnerResponse `json:"winners"`
-	CreatedAt       string           `json:"createdAt"`
-	CreatedBy       string           `json:"createdBy"`
+	ID             uuid.UUID        `json:"id"`
+	Name           string           `json:"name"`
+	Description    string           `json:"description"`
+	DrawDate       string           `json:"drawDate"`
+	Status         string           `json:"status"`
+	PrizeStructure string           `json:"prizeStructure"`
+	Winners        []WinnerResponse `json:"winners"`
+	CreatedAt      string           `json:"createdAt"`
+	CreatedBy      string           `json:"createdBy"`
 }
 
 // WinnerResponse defines the response for a winner
@@ -84,26 +100,30 @@ type WinnerResponse struct {
 
 // AuditLogResponse defines the response for an audit log
 type AuditLogResponse struct {
-	ID          uuid.UUID              `json:"id"`
-	UserID      uuid.UUID              `json:"userId"`
-	Username    string                 `json:"username"`
-	Action      string                 `json:"action"`
-	EntityType  string                 `json:"entityType"`
-	EntityID    string                 `json:"entityId"`
-	Description string                 `json:"description"`
-	Metadata    map[string]interface{} `json:"metadata"`
-	IPAddress   string                 `json:"ipAddress"`
-	UserAgent   string                 `json:"userAgent"`
-	CreatedAt   string                 `json:"createdAt"`
+	ID         string `json:"id"`
+	UserID     string `json:"userId"`
+	Username   string `json:"username"`
+	Action     string `json:"action"`
+	EntityType string `json:"entityType"`
+	EntityID   string `json:"entityId"`
+	Summary    string `json:"summary"`
+	Details    string `json:"details"`
+	CreatedAt  string `json:"createdAt"`
 }
 
-// UploadAuditResponse defines the response for an upload audit
-type UploadAuditResponse struct {
-	ID          uuid.UUID `json:"id"`
-	FileName    string    `json:"fileName"`
-	RecordCount int       `json:"recordCount"`
-	UploadedBy  string    `json:"uploadedBy"`
-	UploadedAt  string    `json:"uploadedAt"`
+// DataUploadAuditResponse defines the response for a data upload audit
+type DataUploadAuditResponse struct {
+	ID                   string `json:"id"`
+	UploadedBy           string `json:"uploadedBy"`
+	UploadedAt           string `json:"uploadedAt"`
+	FileName             string `json:"fileName"`
+	TotalUploaded        int    `json:"totalUploaded"`
+	SuccessfullyImported int    `json:"successfullyImported"`
+	DuplicatesSkipped    int    `json:"duplicatesSkipped"`
+	ErrorsEncountered    int    `json:"errorsEncountered"`
+	Status               string `json:"status"`
+	Details              string `json:"details"`
+	OperationType        string `json:"operationType"`
 }
 
 // ParticipantResponse defines the response for a participant

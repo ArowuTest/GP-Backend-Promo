@@ -6,8 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v4"
-	
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
 )
 
@@ -28,7 +27,7 @@ type Claims struct {
 	UserID   string `json:"user_id"`
 	Username string `json:"username"`
 	Role     string `json:"role"`
-	jwt.StandardClaims
+	jwt.RegisteredClaims
 }
 
 // Authenticate validates JWT token and sets user information in context
@@ -86,7 +85,7 @@ func (m *AuthMiddleware) Authenticate() gin.HandlerFunc {
 		}
 
 		// Check token expiration
-		if claims.ExpiresAt < time.Now().Unix() {
+		if claims.ExpiresAt != nil && claims.ExpiresAt.Time.Before(time.Now()) {
 			c.JSON(http.StatusUnauthorized, response.ErrorResponse{
 				Success: false,
 				Error:   "Unauthorized",
@@ -100,7 +99,6 @@ func (m *AuthMiddleware) Authenticate() gin.HandlerFunc {
 		c.Set("userID", claims.UserID)
 		c.Set("username", claims.Username)
 		c.Set("role", claims.Role)
-
 		c.Next()
 	}
 }
@@ -158,26 +156,26 @@ func (m *AuthMiddleware) RequireRole(roles ...string) gin.HandlerFunc {
 func (m *AuthMiddleware) GenerateToken(userID, username, role string, expirationHours int) (string, time.Time, error) {
 	// Set expiration time
 	expirationTime := time.Now().Add(time.Duration(expirationHours) * time.Hour)
-	
+
 	// Create claims
 	claims := &Claims{
 		UserID:   userID,
 		Username: username,
 		Role:     role,
-		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: expirationTime.Unix(),
-			IssuedAt:  time.Now().Unix(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expirationTime),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
-	
+
 	// Create token
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	
+
 	// Sign token
 	tokenString, err := token.SignedString([]byte(m.jwtSecret))
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	
+
 	return tokenString, expirationTime, nil
 }
