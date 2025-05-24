@@ -1,6 +1,7 @@
 package draw
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -46,11 +47,12 @@ type RunnerUpWinnerOutput struct {
 	ID          uuid.UUID
 	MSISDN      string
 	PrizeTierID uuid.UUID
+	PrizeValue  float64
 	Status      string
 }
 
 // InvokeRunnerUp invokes a runner-up to replace a winner
-func (uc *InvokeRunnerUpService) InvokeRunnerUp(input InvokeRunnerUpInput) (*InvokeRunnerUpOutput, error) {
+func (uc *InvokeRunnerUpService) InvokeRunnerUp(ctx context.Context, input InvokeRunnerUpInput) (*InvokeRunnerUpOutput, error) {
 	// Validate input
 	if input.WinnerID == uuid.Nil {
 		return nil, errors.New("winner ID is required")
@@ -119,12 +121,14 @@ func (uc *InvokeRunnerUpService) InvokeRunnerUp(input InvokeRunnerUpInput) (*Inv
 			ID:          originalWinner.ID,
 			MSISDN:      originalWinner.MSISDN,
 			PrizeTierID: originalWinner.PrizeTierID,
+			PrizeValue:  originalWinner.PrizeValue,
 			Status:      originalWinner.Status,
 		},
 		NewWinner: RunnerUpWinnerOutput{
 			ID:          newWinner.ID,
 			MSISDN:      newWinner.MSISDN,
 			PrizeTierID: newWinner.PrizeTierID,
+			PrizeValue:  newWinner.PrizeValue,
 			Status:      newWinner.Status,
 		},
 	}, nil

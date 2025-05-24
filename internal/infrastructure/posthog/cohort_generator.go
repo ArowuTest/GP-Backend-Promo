@@ -10,11 +10,11 @@ import (
 
 // CohortGenerator handles the creation and management of daily cohorts
 type CohortGenerator struct {
-	client *Client
+	client PostHogClientInterface
 }
 
 // NewCohortGenerator creates a new CohortGenerator
-func NewCohortGenerator(client *Client) *CohortGenerator {
+func NewCohortGenerator(client PostHogClientInterface) *CohortGenerator {
 	return &CohortGenerator{
 		client: client,
 	}

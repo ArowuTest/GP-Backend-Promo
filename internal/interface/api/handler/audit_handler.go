@@ -15,13 +15,13 @@ import (
 
 // AuditHandler handles audit-related HTTP requests
 type AuditHandler struct {
-	getAuditLogsService       *auditApp.GetAuditLogsService
+	getAuditLogsService       *auditApp.GetAuditLogsServiceImpl
 	getDataUploadAuditsService *auditApp.GetDataUploadAuditsService
 }
 
 // NewAuditHandler creates a new AuditHandler
 func NewAuditHandler(
-	getAuditLogsService *auditApp.GetAuditLogsService,
+	getAuditLogsService *auditApp.GetAuditLogsServiceImpl,
 	getDataUploadAuditsService *auditApp.GetDataUploadAuditsService,
 ) *AuditHandler {
 	return &AuditHandler{
@@ -58,6 +58,7 @@ func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse{
 				Success: false,
 				Error:   "Invalid user ID format",
+				Details: "User ID must be a valid UUID",
 			})
 			return
 		}
@@ -67,16 +68,14 @@ func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 	startDate := util.ParseTimeOrZero(startDateStr, time.RFC3339)
 	endDate := util.ParseTimeOrZero(endDateStr, time.RFC3339)
 
-	// Prepare input with nested filters structure
+	// Prepare input with flat structure
 	input := auditApp.GetAuditLogsInput{
-		Page:     page,
-		PageSize: pageSize,
-		Filters: auditApp.AuditLogFilters{
-			StartDate: startDate,
-			EndDate:   endDate,
-			UserID:    userID,
-			Action:    action,
-		},
+		Page:      page,
+		PageSize:  pageSize,
+		StartDate: &startDate,
+		EndDate:   &endDate,
+		PerformedBy: &userID,
+		Action:    action,
 	}
 
 	// Get audit logs
@@ -93,10 +92,10 @@ func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 	auditLogs := make([]response.AuditLogResponse, 0, len(output.AuditLogs))
 	for _, al := range output.AuditLogs {
 		// Convert UUID to string for all ID fields
-		entityIDStr := al.EntityID
+		entityIDStr := al.EntityID.String()
 		
 		// Extract details from metadata if available
-		details := al.Description
+		details := ""
 		if al.Metadata != nil {
 			if detailsVal, ok := al.Metadata["details"]; ok {
 				if detailsStr, ok := detailsVal.(string); ok {
@@ -107,12 +106,12 @@ func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 
 		auditLogs = append(auditLogs, response.AuditLogResponse{
 			ID:         al.ID.String(),
-			UserID:     al.UserID.String(),
-			Username:   al.Username,
+			UserID:     al.PerformedBy.String(),
+			Username:   "", // Not available in output
 			Action:     al.Action,
-			EntityType: al.EntityType,
+			EntityType: al.Entity,
 			EntityID:   entityIDStr,
-			Summary:    al.Description,
+			Summary:    "", // Not available in output
 			Details:    details,
 			CreatedAt:  util.FormatTimeOrEmpty(al.CreatedAt, time.RFC3339),
 		})

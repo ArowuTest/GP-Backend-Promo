@@ -45,7 +45,9 @@ type CreateUserOutput struct {
 	Username  string
 	Email     string
 	Role      string
+	IsActive  bool
 	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // CreateUser creates a new user
@@ -113,6 +115,8 @@ func (s *CreateUserService) CreateUser(ctx context.Context, input CreateUserInpu
 		Username:  user.Username,
 		Email:     user.Email,
 		Role:      user.Role,
+		IsActive:  true, // Default to active for new users
 		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
 	}, nil
 }

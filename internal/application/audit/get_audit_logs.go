@@ -10,23 +10,16 @@ import (
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/audit"
 )
 
-// GetAuditLogsService provides functionality for retrieving audit logs
-type GetAuditLogsService struct {
+// GetAuditLogsServiceImpl provides functionality for retrieving audit logs
+type GetAuditLogsServiceImpl struct {
 	auditRepository audit.AuditRepository
 }
 
 // NewGetAuditLogsService creates a new GetAuditLogsService
-func NewGetAuditLogsService(auditRepository audit.AuditRepository) *GetAuditLogsService {
-	return &GetAuditLogsService{
+func NewGetAuditLogsService(auditRepository audit.AuditRepository) *GetAuditLogsServiceImpl {
+	return &GetAuditLogsServiceImpl{
 		auditRepository: auditRepository,
 	}
-}
-
-// GetAuditLogsInput defines the input for the GetAuditLogs use case
-type GetAuditLogsInput struct {
-	Page     int
-	PageSize int
-	Filters  AuditLogFilters
 }
 
 // AuditLogFilters defines the filters for retrieving audit logs
@@ -39,17 +32,8 @@ type AuditLogFilters struct {
 	EndDate     time.Time
 }
 
-// GetAuditLogsOutput defines the output for the GetAuditLogs use case
-type GetAuditLogsOutput struct {
-	AuditLogs   []audit.AuditLog
-	TotalCount  int
-	Page        int
-	PageSize    int
-	TotalPages  int
-}
-
 // GetAuditLogs retrieves a paginated list of audit logs
-func (s *GetAuditLogsService) GetAuditLogs(ctx context.Context, input GetAuditLogsInput) (*GetAuditLogsOutput, error) {
+func (s *GetAuditLogsServiceImpl) GetAuditLogs(ctx context.Context, input GetAuditLogsInput) (*GetAuditLogsOutput, error) {
 	if input.Page < 1 {
 		input.Page = 1
 	}
@@ -60,13 +44,26 @@ func (s *GetAuditLogsService) GetAuditLogs(ctx context.Context, input GetAuditLo
 	
 	// Convert to domain filters
 	filters := audit.AuditLogFilters{
-		Action:     input.Filters.Action,
-		EntityType: input.Filters.EntityType,
-		UserID:     input.Filters.UserID,
-		StartDate:  input.Filters.StartDate,
-		EndDate:    input.Filters.EndDate,
+		Action:     input.Action,
+		EntityType: input.EntityType,
 		Page:       input.Page,
 		PageSize:   input.PageSize,
+	}
+	
+	if input.StartDate != nil {
+		filters.StartDate = *input.StartDate
+	}
+	
+	if input.EndDate != nil {
+		filters.EndDate = *input.EndDate
+	}
+	
+	if input.EntityID != nil {
+		// Skip setting EntityID if it's not defined in domain struct
+	}
+	
+	if input.PerformedBy != nil {
+		filters.UserID = *input.PerformedBy
 	}
 	
 	auditLogs, totalCount, err := s.auditRepository.List(filters, input.Page, input.PageSize)
@@ -79,8 +76,22 @@ func (s *GetAuditLogsService) GetAuditLogs(ctx context.Context, input GetAuditLo
 		totalPages++
 	}
 	
+	// Convert domain audit logs to application output
+	auditLogOutputs := make([]AuditLogOutput, 0, len(auditLogs))
+	for _, log := range auditLogs {
+		auditLogOutputs = append(auditLogOutputs, AuditLogOutput{
+			ID:          log.ID,
+			Action:      log.Action,
+			Entity:      log.EntityType,
+			EntityID:    uuid.MustParse(log.EntityID),
+			Metadata:    log.Metadata,
+			PerformedBy: log.UserID,
+			CreatedAt:   log.CreatedAt,
+		})
+	}
+	
 	return &GetAuditLogsOutput{
-		AuditLogs:  auditLogs,
+		AuditLogs:  auditLogOutputs,
 		TotalCount: totalCount,
 		Page:       input.Page,
 		PageSize:   input.PageSize,

@@ -35,15 +35,20 @@ type GetPrizeStructureOutput struct {
 	StartDate   time.Time
 	EndDate     time.Time
 	Prizes      []PrizeOutput
+	IsActive    bool
+	CreatedBy   uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // PrizeOutput defines the output for a prize tier
 type PrizeOutput struct {
-	ID          uuid.UUID
-	Name        string
-	Description string
-	Value       string
-	Quantity    int
+	ID                uuid.UUID
+	Name              string
+	Description       string
+	Value             float64
+	Quantity          int
+	NumberOfRunnerUps int
 }
 
 // GetPrizeStructure retrieves a prize structure by ID
@@ -61,11 +66,12 @@ func (s *GetPrizeStructureService) GetPrizeStructure(ctx context.Context, input 
 	prizeOutputs := make([]PrizeOutput, 0, len(prizeStructure.Prizes))
 	for _, prize := range prizeStructure.Prizes {
 		prizeOutputs = append(prizeOutputs, PrizeOutput{
-			ID:          prize.ID,
-			Name:        prize.Name,
-			Description: prize.Description,
-			Value:       prize.Value,
-			Quantity:    prize.Quantity,
+			ID:                prize.ID,
+			Name:              prize.Name,
+			Description:       prize.Description,
+			Value:             prize.Value,
+			Quantity:          prize.Quantity,
+			NumberOfRunnerUps: prize.NumberOfRunnerUps,
 		})
 	}
 	
@@ -76,5 +82,9 @@ func (s *GetPrizeStructureService) GetPrizeStructure(ctx context.Context, input 
 		StartDate:   prizeStructure.StartDate,
 		EndDate:     prizeStructure.EndDate,
 		Prizes:      prizeOutputs,
+		IsActive:    prizeStructure.IsActive,
+		CreatedBy:   prizeStructure.CreatedBy,
+		CreatedAt:   prizeStructure.CreatedAt,
+		UpdatedAt:   prizeStructure.UpdatedAt,
 	}, nil
 }

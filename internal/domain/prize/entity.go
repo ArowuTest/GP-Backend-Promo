@@ -3,6 +3,7 @@ package prize
 import (
 	"errors"
 	"time"
+	"context"
 
 	"github.com/google/uuid"
 )
@@ -18,6 +19,7 @@ type PrizeStructure struct {
 	StartDate   time.Time
 	EndDate     time.Time
 	CreatedBy   uuid.UUID
+	UpdatedBy   uuid.UUID
 	Prizes      []PrizeTier
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -25,28 +27,30 @@ type PrizeStructure struct {
 
 // Prize represents a prize tier within a prize structure
 type Prize struct {
-	ID               uuid.UUID
-	PrizeStructureID uuid.UUID
-	Name             string
-	Description      string
-	Value            string // Monetary value as string to support different formats
-	Quantity         int
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                uuid.UUID
+	PrizeStructureID  uuid.UUID
+	Name              string
+	Description       string
+	Value             float64 // Changed from string to float64 for consistency
+	Quantity          int
+	NumberOfRunnerUps int
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // PrizeTier represents a prize tier within a prize structure
 type PrizeTier struct {
-	ID               uuid.UUID
-	PrizeStructureID uuid.UUID
-	Rank             int
-	Name             string
-	Description      string
-	Value            string // Monetary value as string to support different formats
-	ValueNGN         float64
-	Quantity         int
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                uuid.UUID
+	PrizeStructureID  uuid.UUID
+	Rank              int
+	Name              string
+	Description       string
+	Value             float64 // Changed from string to float64 for consistency
+	ValueNGN          float64
+	Quantity          int
+	NumberOfRunnerUps int
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // PrizeRepository defines the interface for prize structure data access
@@ -55,7 +59,7 @@ type PrizeRepository interface {
 	GetPrizeStructureByID(id uuid.UUID) (*PrizeStructure, error)
 	ListPrizeStructures(page, pageSize int) ([]PrizeStructure, int, error)
 	UpdatePrizeStructure(prizeStructure *PrizeStructure) error
-	DeletePrizeStructure(id uuid.UUID) error
+	DeletePrizeStructure(id uuid.UUID, deletedBy uuid.UUID) error
 	GetActivePrizeStructure(date time.Time) (*PrizeStructure, error)
 	
 	CreatePrize(prize *Prize) error
@@ -69,6 +73,27 @@ type PrizeRepository interface {
 	ListPrizeTiersByStructureID(structureID uuid.UUID) ([]PrizeTier, error)
 	UpdatePrizeTier(prizeTier *PrizeTier) error
 	DeletePrizeTier(id uuid.UUID) error
+}
+
+// CreatePrizeInput defines the input for creating a prize tier
+type CreatePrizeInput struct {
+	Name              string
+	Description       string
+	Value             float64
+	Quantity          int
+	NumberOfRunnerUps int
+}
+
+// DeletePrizeStructureInput represents the input for deleting a prize structure
+type DeletePrizeStructureInput struct {
+	ID        uuid.UUID
+	DeletedBy uuid.UUID
+}
+
+// DeletePrizeStructureOutput represents the output from deleting a prize structure
+type DeletePrizeStructureOutput struct {
+	ID      uuid.UUID
+	Success bool
 }
 
 // PrizeError represents domain-specific errors for the prize domain
@@ -157,4 +182,9 @@ func ValidatePrizeTier(pt *PrizeTier) error {
 	}
 	
 	return nil
+}
+
+// DeletePrizeStructureService defines the service for deleting prize structures
+type DeletePrizeStructureService interface {
+	DeletePrizeStructure(ctx context.Context, input DeletePrizeStructureInput) error
 }

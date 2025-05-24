@@ -55,13 +55,13 @@ type PrizeResponse struct {
 	NumberOfRunnerUps int       `json:"numberOfRunnerUps"`
 }
 
-// UserResponse defines the response for a user
-type UserResponse struct {
-	ID       uuid.UUID `json:"id"`
-	Email    string    `json:"email"`
-	Username string    `json:"username"`
-	Role     string    `json:"role"`
-	IsActive bool      `json:"isActive"`
+// UserResponseBase defines the base response for a user (used internally)
+type UserResponseBase struct {
+	ID       uuid.UUID `json:"-"`
+	Email    string    `json:"-"`
+	Username string    `json:"-"`
+	Role     string    `json:"-"`
+	IsActive bool      `json:"-"`
 }
 
 // LoginResponse defines the response for user login

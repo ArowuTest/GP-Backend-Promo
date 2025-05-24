@@ -42,7 +42,7 @@ type PrizeTierModel struct {
 	Rank             int
 	Name             string
 	Description      string
-	Value            string
+	Value            float64
 	ValueNGN         float64
 	Quantity         int
 	CreatedAt        time.Time
@@ -55,7 +55,7 @@ type PrizeModel struct {
 	PrizeStructureID string    `gorm:"type:uuid;index"`
 	Name             string
 	Description      string
-	Value            string
+	Value            float64
 	Quantity         int
 	CreatedAt        time.Time
 	UpdatedAt        time.Time

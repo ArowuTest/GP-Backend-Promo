@@ -27,7 +27,7 @@ func NewResetPasswordHandler(
 
 // ResetPassword handles POST /api/admin/users/reset-password
 func (h *ResetPasswordHandler) ResetPassword(c *gin.Context) {
-	var req request.ResetPasswordRequest
+	var req request.AdminResetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
@@ -69,14 +69,23 @@ func (h *ResetPasswordHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
-	input := userApp.ResetPasswordInput{
-		Email:       req.Email,
-		OldPassword: req.OldPassword,
-		NewPassword: req.NewPassword,
-		RequestedBy: userID,
+	// Parse target user ID
+	targetUserID, err := uuid.Parse(req.UserID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid user ID format",
+		})
+		return
 	}
 
-	err := h.resetPasswordService.ResetPassword(c.Request.Context(), input)
+	input := userApp.ResetPasswordInput{
+		UserID:      targetUserID,
+		NewPassword: req.NewPassword,
+		AdminUserID: userID,
+	}
+
+	_, err = h.resetPasswordService.ResetPassword(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,

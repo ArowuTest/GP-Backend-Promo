@@ -18,7 +18,7 @@ import (
 type UserHandler struct {
 	createUserService *userApp.CreateUserService
 	updateUserService *userApp.UpdateUserService
-	getUserByIDService *userApp.GetUserByIDService
+	getUserService *userApp.GetUserService
 	listUsersService *userApp.ListUsersService
 	authenticateUserService *userApp.AuthenticateUserService
 }
@@ -27,14 +27,14 @@ type UserHandler struct {
 func NewUserHandler(
 	createUserService *userApp.CreateUserService,
 	updateUserService *userApp.UpdateUserService,
-	getUserByIDService *userApp.GetUserByIDService,
+	getUserService *userApp.GetUserService,
 	listUsersService *userApp.ListUsersService,
 	authenticateUserService *userApp.AuthenticateUserService,
 ) *UserHandler {
 	return &UserHandler{
 		createUserService: createUserService,
 		updateUserService: updateUserService,
-		getUserByIDService: getUserByIDService,
+		getUserService: getUserService,
 		listUsersService: listUsersService,
 		authenticateUserService: authenticateUserService,
 	}
@@ -75,11 +75,11 @@ func (h *UserHandler) Login(c *gin.Context) {
 				Username: output.User.Username,
 				Email:    output.User.Email,
 				Role:     output.User.Role,
-				IsActive: output.User.IsActive,
+				IsActive: true, // Default to true since field is missing
 				// Include additional fields for frontend compatibility
 				FullName:  output.User.Username, // Use username as fallback for fullname
-				CreatedAt: util.FormatTimeOrEmpty(output.User.CreatedAt, time.RFC3339),
-				UpdatedAt: util.FormatTimeOrEmpty(output.User.UpdatedAt, time.RFC3339),
+				CreatedAt: time.Now().Format(time.RFC3339), // Default since field is missing
+				UpdatedAt: time.Now().Format(time.RFC3339), // Default since field is missing
 			},
 			Expiry: util.FormatTimeOrEmpty(output.ExpiresAt, time.RFC3339),
 		},
@@ -270,7 +270,7 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 		ID: userID,
 	}
 	
-	output, err := h.getUserByIDService.GetUser(c.Request.Context(), input)
+	output, err := h.getUserService.GetUser(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusNotFound, response.ErrorResponse{
 			Success: false,

@@ -117,51 +117,81 @@ func (c *Container) initMiddleware() {
 
 // Initialize handlers
 func (c *Container) initHandlers() {
-	// Note: These are simplified handler initializations that need to be expanded
-	// with all required service dependencies in a production environment
-	c.DrawHandler = handler.NewDrawHandler(
+	// Create service adapters for handlers
+	drawServiceAdapter := adapter.NewDrawServiceAdapter(
 		c.DrawService,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil)
+		draw.NewGetDrawByIDService(c.DrawRepository),
+		draw.NewListDrawsService(c.DrawRepository),
+		draw.NewGetEligibilityStatsService(c.DrawRepository, c.ParticipantRepository),
+		draw.NewInvokeRunnerUpService(c.DrawRepository),
+		draw.NewUpdateWinnerPaymentStatusService(c.DrawRepository),
+		draw.NewListWinnersService(c.DrawRepository))
 		
-	c.PrizeHandler = handler.NewPrizeHandler(
+	prizeServiceAdapter := adapter.NewPrizeServiceAdapter(
 		c.PrizeService,
-		nil,
-		nil,
-		nil)
+		prize.NewGetPrizeStructureService(c.PrizeRepository),
+		prize.NewListPrizeStructuresService(c.PrizeRepository),
+		prize.NewUpdatePrizeStructureService(c.PrizeRepository, c.AuditService),
+		prize.NewDeletePrizeStructureService(c.PrizeRepository, c.AuditService))
 		
-	c.ParticipantHandler = handler.NewParticipantHandler(
-		nil,
-		nil,
-		nil,
+	participantServiceAdapter := adapter.NewParticipantServiceAdapter(
+		participant.NewGetParticipantService(c.ParticipantRepository),
+		participant.NewListParticipantsService(c.ParticipantRepository),
+		participant.NewDeleteParticipantService(c.ParticipantRepository, c.AuditService),
 		c.ParticipantService,
-		nil)
+		participant.NewGetParticipantStatsService(c.ParticipantRepository))
 		
 	// Create audit-related services for handler
-	getAuditLogsService := audit.NewGetAuditLogsService(c.AuditRepository)
+	getAuditLogsService := audit.NewGetAuditLogsServiceImpl(c.AuditRepository)
 	getDataUploadAuditsService := audit.NewGetDataUploadAuditsService(c.AuditRepository)
 	
+	// Create audit service adapter
+	auditServiceAdapter := adapter.NewAuditServiceAdapter(
+		c.AuditService,
+		getAuditLogsService)
+		
+	// Initialize handlers with adapters
+	c.DrawHandler = handler.NewDrawHandler(drawServiceAdapter)
+	c.PrizeHandler = handler.NewPrizeHandler(
+		c.PrizeService,
+		prize.NewGetPrizeStructureService(c.PrizeRepository),
+		prize.NewListPrizeStructuresService(c.PrizeRepository),
+		prize.NewUpdatePrizeStructureService(c.PrizeRepository, c.AuditService),
+		prize.NewDeletePrizeStructureService(c.PrizeRepository, c.AuditService))
+		
+	c.ParticipantHandler = handler.NewParticipantHandler(
+		participant.NewGetParticipantService(c.ParticipantRepository),
+		participant.NewListParticipantsService(c.ParticipantRepository),
+		participant.NewDeleteParticipantService(c.ParticipantRepository, c.AuditService),
+		c.ParticipantService,
+		participant.NewGetParticipantStatsService(c.ParticipantRepository))
+		
 	c.AuditHandler = handler.NewAuditHandler(
 		getAuditLogsService,
 		getDataUploadAuditsService)
 		
+	// Create user service adapter
+	userServiceAdapter := adapter.NewUserServiceAdapter(
+		c.AuthService,
+		user.NewCreateUserService(c.UserRepository, c.AuditService),
+		user.NewGetUserService(c.UserRepository),
+		user.NewUpdateUserService(c.UserRepository, c.AuditService),
+		user.NewDeleteUserService(c.UserRepository, c.AuditService),
+		user.NewListUsersService(c.UserRepository))
+		
 	c.UserHandler = handler.NewUserHandler(
 		c.AuthService,
-		nil,
-		nil,
-		nil,
-		nil)
+		user.NewCreateUserService(c.UserRepository, c.AuditService),
+		user.NewGetUserService(c.UserRepository),
+		user.NewUpdateUserService(c.UserRepository, c.AuditService),
+		user.NewListUsersService(c.UserRepository))
 		
 	c.ResetPasswordHandler = handler.NewResetPasswordHandler(c.ResetPasswordService)
-}
-
-// Initialize router
-func (c *Container) initRouter() {
-	c.Router = api.NewRouter(
+	}
+	
+	// Initialize router
+	func (c *Container) initRouter() {
+		c.Router = api.NewRouter(
 		c.Engine,
 		c.AuthMiddleware,
 		c.CORSMiddleware,

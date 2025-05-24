@@ -34,8 +34,10 @@ func NewUpdateUserService(
 type UpdateUserInput struct {
 	ID        uuid.UUID
 	Email     string
+	Username  string
 	Password  string // Optional, if empty, password won't be updated
 	Role      string
+	IsActive  bool
 	UpdatedBy uuid.UUID
 }
 
@@ -45,6 +47,8 @@ type UpdateUserOutput struct {
 	Username  string
 	Email     string
 	Role      string
+	IsActive  bool
+	CreatedAt time.Time
 	UpdatedAt time.Time
 }
 
@@ -71,7 +75,11 @@ func (s *UpdateUserService) UpdateUser(ctx context.Context, input UpdateUserInpu
 	
 	// Update user fields
 	user.Email = input.Email
+	if input.Username != "" {
+		user.Username = input.Username
+	}
 	user.Role = input.Role
+	user.IsActive = input.IsActive
 	user.UpdatedAt = time.Now()
 	
 	// Update password if provided
@@ -106,6 +114,8 @@ func (s *UpdateUserService) UpdateUser(ctx context.Context, input UpdateUserInpu
 		Username:  user.Username,
 		Email:     user.Email,
 		Role:      user.Role,
+		IsActive:  user.IsActive,
+		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 	}, nil
 }

@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"fmt"
+	"time"
 	
 	"github.com/google/uuid"
 	
@@ -32,8 +33,9 @@ type GetUserOutput struct {
 	Username  string
 	Email     string
 	Role      string
-	CreatedAt string
-	UpdatedAt string
+	IsActive  bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // GetUser retrieves a user by ID
@@ -52,7 +54,8 @@ func (s *GetUserService) GetUser(ctx context.Context, input GetUserInput) (*GetU
 		Username:  user.Username,
 		Email:     user.Email,
 		Role:      user.Role,
-		CreatedAt: user.CreatedAt.Format("2006-01-02 15:04:05"),
-		UpdatedAt: user.UpdatedAt.Format("2006-01-02 15:04:05"),
+		IsActive:  user.IsActive,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
 	}, nil
 }

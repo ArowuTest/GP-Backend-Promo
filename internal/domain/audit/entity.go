@@ -57,6 +57,7 @@ type AuditLogFilters struct {
 	UserID     uuid.UUID
 	Action     string
 	EntityType string
+	EntityID   string
 	Page       int
 	PageSize   int
 }

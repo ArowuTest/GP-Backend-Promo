@@ -52,7 +52,9 @@ type UploadAudit struct {
 	SuccessfulRows  int
 	ErrorCount      int
 	ErrorDetails    []string
-	ErrorDetailsStr string       // Added for application layer compatibility
+	ErrorMessage    string       // Added for adapter layer compatibility
+	ProcessingTime  string       // Added for adapter layer compatibility
+	RecordCount     int          // Added for adapter layer compatibility
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }

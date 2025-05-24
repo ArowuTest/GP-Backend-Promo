@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
 )
 
@@ -96,7 +97,14 @@ func (m *AuthMiddleware) Authenticate() gin.HandlerFunc {
 		}
 
 		// Set user information in context
-		c.Set("userID", claims.UserID)
+		// Convert userID to UUID for consistent handling
+		userUUID, err := uuid.Parse(claims.UserID)
+		if err == nil {
+			c.Set("userID", userUUID)
+		} else {
+			// Fallback to string if parsing fails
+			c.Set("userID", claims.UserID)
+		}
 		c.Set("username", claims.Username)
 		c.Set("role", claims.Role)
 		c.Next()

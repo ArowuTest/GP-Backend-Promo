@@ -13,12 +13,12 @@ import (
 
 // PostHogDataSource implements the DrawDataSource interface using PostHog as the data source
 type PostHogDataSource struct {
-	client          *Client
+	client          PostHogClientInterface
 	cohortGenerator *CohortGenerator
 }
 
 // NewPostHogDataSource creates a new PostHogDataSource
-func NewPostHogDataSource(client *Client, cohortGenerator *CohortGenerator) *PostHogDataSource {
+func NewPostHogDataSource(client PostHogClientInterface, cohortGenerator *CohortGenerator) *PostHogDataSource {
 	return &PostHogDataSource{
 		client:          client,
 		cohortGenerator: cohortGenerator,

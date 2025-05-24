@@ -16,6 +16,7 @@ type DeleteUploadInput struct {
 type DeleteUploadOutput struct {
 	UploadID uuid.UUID
 	Deleted  bool
+	Success  bool
 }
 
 // DeleteUploadService handles deleting participant uploads
@@ -31,10 +32,11 @@ func NewDeleteUploadService(repository Repository) *DeleteUploadService {
 }
 
 // DeleteUpload deletes a participant upload by ID
-func (s *DeleteUploadService) DeleteUpload(ctx context.Context, input DeleteUploadInput) (DeleteUploadOutput, error) {
+func (s *DeleteUploadService) DeleteUpload(ctx context.Context, input DeleteUploadInput) (*DeleteUploadOutput, error) {
 	// For now, return mock data indicating successful deletion
-	return DeleteUploadOutput{
+	return &DeleteUploadOutput{
 		UploadID: input.UploadID,
 		Deleted:  true,
+		Success:  true,
 	}, nil
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -110,7 +111,39 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 	// Convert prizes
 	prizes := make([]prize.CreatePrizeInput, 0, len(req.Prizes))
 	for _, p := range req.Prizes {
+		// Convert string value to float64
+		value, err := strconv.ParseFloat(p.Value, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid prize value format: " + err.Error(),
+			})
+			return
+		}
+		
 		prizes = append(prizes, prize.CreatePrizeInput{
+			Name:              p.Name,
+			Description:       p.Description,
+			Value:             value, // Using converted float64 value
+			Quantity:          p.Quantity,
+			NumberOfRunnerUps: p.NumberOfRunnerUps,
+		})
+	}
+
+	// Create input for application layer
+	appInput := prizeApp.CreatePrizeStructureInput{
+		Name:        req.Name,
+		Description: req.Description,
+		StartDate:   startDate,
+		EndDate:     endDate,
+		Prizes:      make([]prizeApp.PrizeInput, 0, len(prizes)),
+		CreatedBy:   userID,
+		IsActive:    req.IsActive,
+	}
+	
+	// Convert domain prizes to application prizes
+	for _, p := range prizes {
+		appInput.Prizes = append(appInput.Prizes, prizeApp.PrizeInput{
 			Name:              p.Name,
 			Description:       p.Description,
 			Value:             p.Value,
@@ -119,19 +152,8 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 		})
 	}
 
-	// Create input
-	input := prize.CreatePrizeStructureInput{
-		Name:        req.Name,
-		Description: req.Description,
-		StartDate:   startDate,
-		EndDate:     endDate,
-		Prizes:      prizes,
-		CreatedBy:   userID,
-		IsActive:    req.IsActive,
-	}
-
 	// Create prize structure
-	result, err := h.createPrizeStructureService.CreatePrizeStructure(c.Request.Context(), input)
+	result, err := h.createPrizeStructureService.CreatePrizeStructure(c.Request.Context(), appInput)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
@@ -147,7 +169,7 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 			ID:                p.ID,
 			Name:              p.Name,
 			Description:       p.Description,
-			Value:             p.Value,
+			Value:             fmt.Sprintf("%.2f", p.Value), // Convert float64 to string
 			Quantity:          p.Quantity,
 			NumberOfRunnerUps: p.NumberOfRunnerUps,
 		})
@@ -192,8 +214,13 @@ func (h *PrizeHandler) GetPrizeStructure(c *gin.Context) {
 		return
 	}
 
+	// Create input for application layer
+	appInput := prizeApp.GetPrizeStructureInput{
+		ID: prizeStructureID,
+	}
+
 	// Get prize structure
-	result, err := h.getPrizeStructureService.GetPrizeStructure(c.Request.Context(), prizeStructureID)
+	result, err := h.getPrizeStructureService.GetPrizeStructure(c.Request.Context(), appInput)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
@@ -209,7 +236,7 @@ func (h *PrizeHandler) GetPrizeStructure(c *gin.Context) {
 			ID:                p.ID,
 			Name:              p.Name,
 			Description:       p.Description,
-			Value:             p.Value,
+			Value:             fmt.Sprintf("%.2f", p.Value), // Convert float64 to string
 			Quantity:          p.Quantity,
 			NumberOfRunnerUps: p.NumberOfRunnerUps,
 		})
@@ -272,7 +299,7 @@ func (h *PrizeHandler) ListPrizeStructures(c *gin.Context) {
 				ID:                p.ID,
 				Name:              p.Name,
 				Description:       p.Description,
-				Value:             p.Value,
+				Value:             fmt.Sprintf("%.2f", p.Value), // Convert float64 to string
 				Quantity:          p.Quantity,
 				NumberOfRunnerUps: p.NumberOfRunnerUps,
 			})
@@ -402,9 +429,43 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 				return
 			}
 		}
+		
+		// Convert string value to float64
+		value, err := strconv.ParseFloat(p.Value, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid prize value format: " + err.Error(),
+			})
+			return
+		}
 
 		prizes = append(prizes, prize.UpdatePrizeInput{
 			ID:                prizeID,
+			Name:              p.Name,
+			Description:       p.Description,
+			Value:             value, // Using converted float64 value
+			Quantity:          p.Quantity,
+			NumberOfRunnerUps: p.NumberOfRunnerUps,
+		})
+	}
+
+	// Create input for application layer
+	appInput := prizeApp.UpdatePrizeStructureInput{
+		ID:          prizeStructureID,
+		Name:        req.Name,
+		Description: req.Description,
+		StartDate:   startDate,
+		EndDate:     endDate,
+		Prizes:      make([]prizeApp.UpdatePrizeInput, 0, len(prizes)),
+		UpdatedBy:   userID,
+		IsActive:    req.IsActive,
+	}
+	
+	// Convert domain prizes to application prizes
+	for _, p := range prizes {
+		appInput.Prizes = append(appInput.Prizes, prizeApp.UpdatePrizeInput{
+			ID:                p.ID,
 			Name:              p.Name,
 			Description:       p.Description,
 			Value:             p.Value,
@@ -413,20 +474,8 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 		})
 	}
 
-	// Create input
-	input := prize.UpdatePrizeStructureInput{
-		ID:          prizeStructureID,
-		Name:        req.Name,
-		Description: req.Description,
-		StartDate:   startDate,
-		EndDate:     endDate,
-		Prizes:      prizes,
-		UpdatedBy:   userID,
-		IsActive:    req.IsActive,
-	}
-
 	// Update prize structure
-	result, err := h.updatePrizeStructureService.UpdatePrizeStructure(c.Request.Context(), input)
+	result, err := h.updatePrizeStructureService.UpdatePrizeStructure(c.Request.Context(), appInput)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
@@ -442,7 +491,7 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 			ID:                p.ID,
 			Name:              p.Name,
 			Description:       p.Description,
-			Value:             p.Value,
+			Value:             fmt.Sprintf("%.2f", p.Value), // Convert float64 to string
 			Quantity:          p.Quantity,
 			NumberOfRunnerUps: p.NumberOfRunnerUps,
 		})
@@ -520,14 +569,17 @@ func (h *PrizeHandler) DeletePrizeStructure(c *gin.Context) {
 		}
 	}
 
-	// Create input
-	input := prize.DeletePrizeStructureInput{
+	// Create input using a local struct instead of undefined prizeApp.DeletePrizeStructureInput
+	appInput := struct {
+		ID        uuid.UUID
+		DeletedBy uuid.UUID
+	}{
 		ID:        prizeStructureID,
 		DeletedBy: userID,
 	}
 
 	// Delete prize structure
-	err = h.deletePrizeStructureService.DeletePrizeStructure(c.Request.Context(), input)
+	err = h.deletePrizeStructureService.DeletePrizeStructure(c.Request.Context(), appInput)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,

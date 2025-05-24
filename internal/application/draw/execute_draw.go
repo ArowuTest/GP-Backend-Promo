@@ -58,7 +58,7 @@ type WinnerOutput struct {
 	MSISDN      string
 	PrizeTierID uuid.UUID
 	PrizeName   string
-	PrizeValue  string
+	PrizeValue  float64
 }
 
 // ExecuteDraw executes a draw for the given date and prize structure
@@ -154,7 +154,8 @@ func (uc *ExecuteDrawService) ExecuteDraw(input ExecuteDrawInput) (*ExecuteDrawO
 		}
 		
 		// Find prize tier
-		var prizeName, prizeValue string
+		var prizeName string
+		var prizeValue float64
 		for _, prizeTier := range prizeStructure.Prizes {
 			if prizeTier.ID == winner.PrizeTierID {
 				prizeName = prizeTier.Name

@@ -9,9 +9,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	
-	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/entity"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/draw"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/infrastructure/posthog"
 )
+
+// PostHogClientInterface defines the interface for the PostHog client
+type PostHogClientInterface interface {
+	CreateCohort(ctx context.Context, name string, filters []posthog.Filter) (string, error)
+	GetCohort(ctx context.Context, id string) (posthog.Cohort, error)
+	ListCohorts(ctx context.Context) ([]posthog.Cohort, error)
+	GetCohortPersons(ctx context.Context, cohortID string) ([]posthog.Person, error)
+	CaptureEvent(ctx context.Context, distinctID string, event string, properties map[string]interface{}) error
+}
 
 // MockPostHogClient is a mock implementation of the PostHog client
 type MockPostHogClient struct {
@@ -109,14 +118,14 @@ func TestPostHogDataSource_RecordDrawResult(t *testing.T) {
 	
 	// Create test winners
 	drawID := uuid.New().String()
-	testWinners := []entity.Winner{
+	testWinners := []draw.Winner{
 		{
 			ID:            uuid.New(),
 			DrawID:        uuid.New(),
 			MSISDN:        "2347012345678",
 			PrizeTierID:   uuid.New(),
 			PrizeTierName: "First Prize",
-			PrizeValue:    "₦100,000",
+			PrizeValue:    100000.0,
 			Status:        "PENDING",
 			IsRunnerUp:    false,
 			RunnerUpRank:  0,
@@ -129,7 +138,7 @@ func TestPostHogDataSource_RecordDrawResult(t *testing.T) {
 			MSISDN:        "2347087654321",
 			PrizeTierID:   uuid.New(),
 			PrizeTierName: "Second Prize",
-			PrizeValue:    "₦50,000",
+			PrizeValue:    50000.0,
 			Status:        "PENDING",
 			IsRunnerUp:    true,
 			RunnerUpRank:  1,

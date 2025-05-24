@@ -34,19 +34,21 @@ type UpdatePrizeStructureInput struct {
 	ID          uuid.UUID
 	Name        string
 	Description string
-	StartDate   string // Format: YYYY-MM-DD
-	EndDate     string // Format: YYYY-MM-DD
+	StartDate   time.Time
+	EndDate     time.Time
 	Prizes      []UpdatePrizeInput
 	UpdatedBy   uuid.UUID
+	IsActive    bool
 }
 
 // UpdatePrizeInput defines the input for a prize tier in update operation
 type UpdatePrizeInput struct {
-	ID          uuid.UUID // Optional, if not provided, a new prize will be created
-	Name        string
-	Description string
-	Value       string
-	Quantity    int
+	ID                uuid.UUID // Optional, if not provided, a new prize will be created
+	Name              string
+	Description       string
+	Value             float64
+	Quantity          int
+	NumberOfRunnerUps int
 }
 
 // UpdatePrizeStructureOutput defines the output for the UpdatePrizeStructure use case
@@ -54,18 +56,23 @@ type UpdatePrizeStructureOutput struct {
 	ID          uuid.UUID
 	Name        string
 	Description string
-	StartDate   string
-	EndDate     string
+	StartDate   time.Time
+	EndDate     time.Time
 	Prizes      []UpdatePrizeOutput
+	IsActive    bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	UpdatedBy   uuid.UUID
 }
 
 // UpdatePrizeOutput defines the output for a prize tier in update operation
 type UpdatePrizeOutput struct {
-	ID          uuid.UUID
-	Name        string
-	Description string
-	Value       string
-	Quantity    int
+	ID                uuid.UUID
+	Name              string
+	Description       string
+	Value             float64
+	Quantity          int
+	NumberOfRunnerUps int
 }
 
 // UpdatePrizeStructure updates an existing prize structure
@@ -89,25 +96,17 @@ func (s *UpdatePrizeStructureService) UpdatePrizeStructure(ctx context.Context, 
 		return nil, fmt.Errorf("failed to get prize structure: %w", err)
 	}
 	
-	// Parse dates
-	startDate, err := parseUpdateDate(input.StartDate)
-	if err != nil {
-		return nil, fmt.Errorf("invalid start date: %w", err)
-	}
-	
-	endDate, err := parseUpdateDate(input.EndDate)
-	if err != nil {
-		return nil, fmt.Errorf("invalid end date: %w", err)
-	}
-	
+	// Parse dates - no longer needed as we're using time.Time directly
 	// Update prize structure
 	existingPrizeStructure.Name = input.Name
 	existingPrizeStructure.Description = input.Description
-	existingPrizeStructure.StartDate = startDate
-	existingPrizeStructure.EndDate = endDate
+	existingPrizeStructure.StartDate = input.StartDate
+	existingPrizeStructure.EndDate = input.EndDate
+	existingPrizeStructure.IsActive = input.IsActive
 	
 	// Update prizes
 	existingPrizeStructure.Prizes = make([]prize.PrizeTier, 0, len(input.Prizes))
+	// Update prize tier with NumberOfRunnerUps
 	for i, prizeInput := range input.Prizes {
 		prizeTier := prize.PrizeTier{
 			PrizeStructureID: input.ID,
@@ -117,6 +116,7 @@ func (s *UpdatePrizeStructureService) UpdatePrizeStructure(ctx context.Context, 
 			Value:            prizeInput.Value,
 			ValueNGN:         0, // Default value, can be calculated if needed
 			Quantity:         prizeInput.Quantity,
+			NumberOfRunnerUps: prizeInput.NumberOfRunnerUps,
 		}
 		
 		if prizeInput.ID == uuid.Nil {
@@ -148,15 +148,16 @@ func (s *UpdatePrizeStructureService) UpdatePrizeStructure(ctx context.Context, 
 		fmt.Printf("Failed to log audit: %v\n", err)
 	}
 	
-	// Prepare output
+	// Prepare output with NumberOfRunnerUps
 	prizeOutputs := make([]UpdatePrizeOutput, 0, len(existingPrizeStructure.Prizes))
 	for _, prizeTier := range existingPrizeStructure.Prizes {
 		prizeOutputs = append(prizeOutputs, UpdatePrizeOutput{
-			ID:          prizeTier.ID,
-			Name:        prizeTier.Name,
-			Description: prizeTier.Description,
-			Value:       prizeTier.Value,
-			Quantity:    prizeTier.Quantity,
+			ID:                prizeTier.ID,
+			Name:              prizeTier.Name,
+			Description:       prizeTier.Description,
+			Value:             prizeTier.Value,
+			Quantity:          prizeTier.Quantity,
+			NumberOfRunnerUps: prizeTier.NumberOfRunnerUps,
 		})
 	}
 	
@@ -164,9 +165,12 @@ func (s *UpdatePrizeStructureService) UpdatePrizeStructure(ctx context.Context, 
 		ID:          existingPrizeStructure.ID,
 		Name:        existingPrizeStructure.Name,
 		Description: existingPrizeStructure.Description,
-		StartDate:   input.StartDate,
-		EndDate:     input.EndDate,
+		StartDate:   existingPrizeStructure.StartDate,
+		EndDate:     existingPrizeStructure.EndDate,
 		Prizes:      prizeOutputs,
+		IsActive:    existingPrizeStructure.IsActive,
+		CreatedAt:   existingPrizeStructure.CreatedAt,
+		UpdatedAt:   existingPrizeStructure.UpdatedAt,
 	}, nil
 }
 

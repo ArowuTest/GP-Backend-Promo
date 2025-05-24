@@ -33,18 +33,20 @@ func NewCreatePrizeStructureService(
 type CreatePrizeStructureInput struct {
 	Name        string
 	Description string
-	StartDate   string // Format: YYYY-MM-DD
-	EndDate     string // Format: YYYY-MM-DD
+	StartDate   time.Time
+	EndDate     time.Time
 	Prizes      []PrizeInput
 	CreatedBy   uuid.UUID
+	IsActive    bool
 }
 
 // PrizeInput defines the input for a prize tier
 type PrizeInput struct {
-	Name        string
-	Description string
-	Value       string
-	Quantity    int
+	Name              string
+	Description       string
+	Value             float64
+	Quantity          int
+	NumberOfRunnerUps int
 }
 
 // CreatePrizeStructureOutput defines the output for the CreatePrizeStructure use case
@@ -52,18 +54,23 @@ type CreatePrizeStructureOutput struct {
 	ID          uuid.UUID
 	Name        string
 	Description string
-	StartDate   string
-	EndDate     string
+	StartDate   time.Time
+	EndDate     time.Time
 	Prizes      []CreatePrizeOutput
+	CreatedBy   uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	IsActive    bool
 }
 
 // CreatePrizeOutput defines the output for a prize tier in create operation
 type CreatePrizeOutput struct {
-	ID          uuid.UUID
-	Name        string
-	Description string
-	Value       string
-	Quantity    int
+	ID                uuid.UUID
+	Name              string
+	Description       string
+	Value             float64
+	Quantity          int
+	NumberOfRunnerUps int
 }
 
 // CreatePrizeStructure creates a new prize structure
@@ -77,40 +84,35 @@ func (s *CreatePrizeStructureService) CreatePrizeStructure(ctx context.Context, 
 		return nil, errors.New("at least one prize is required")
 	}
 	
-	// Parse dates
-	startDate, err := parseDate(input.StartDate)
-	if err != nil {
-		return nil, fmt.Errorf("invalid start date: %w", err)
-	}
-	
-	endDate, err := parseDate(input.EndDate)
-	if err != nil {
-		return nil, fmt.Errorf("invalid end date: %w", err)
-	}
-	
 	// Create prize structure
 	prizeStructureID := uuid.New()
+	now := time.Now()
+	
 	prizeStructure := &prize.PrizeStructure{
 		ID:          prizeStructureID,
 		Name:        input.Name,
 		Description: input.Description,
-		StartDate:   startDate,
-		EndDate:     endDate,
+		StartDate:   input.StartDate,
+		EndDate:     input.EndDate,
 		CreatedBy:   input.CreatedBy,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		IsActive:    input.IsActive,
 		Prizes:      make([]prize.PrizeTier, 0, len(input.Prizes)),
 	}
 	
 	// Create prizes
 	for i, prizeInput := range input.Prizes {
 		prizeItem := prize.PrizeTier{
-			ID:               uuid.New(),
-			PrizeStructureID: prizeStructureID,
-			Rank:             i + 1,
-			Name:             prizeInput.Name,
-			Description:      prizeInput.Description,
-			Value:            prizeInput.Value,
-			ValueNGN:         0, // Default value, can be calculated if needed
-			Quantity:         prizeInput.Quantity,
+			ID:                prizeStructureID,
+			PrizeStructureID:  prizeStructureID,
+			Rank:              i + 1,
+			Name:              prizeInput.Name,
+			Description:       prizeInput.Description,
+			Value:             prizeInput.Value,
+			ValueNGN:          0, // Default value, can be calculated if needed
+			Quantity:          prizeInput.Quantity,
+			NumberOfRunnerUps: prizeInput.NumberOfRunnerUps,
 		}	
 		prizeStructure.Prizes = append(prizeStructure.Prizes, prizeItem)
 	}
@@ -137,11 +139,12 @@ func (s *CreatePrizeStructureService) CreatePrizeStructure(ctx context.Context, 
 	prizeOutputs := make([]CreatePrizeOutput, 0, len(prizeStructure.Prizes))
 	for _, prizeTier := range prizeStructure.Prizes {
 		prizeOutputs = append(prizeOutputs, CreatePrizeOutput{
-			ID:          prizeTier.ID,
-			Name:        prizeTier.Name,
-			Description: prizeTier.Description,
-			Value:       prizeTier.Value,
-			Quantity:    prizeTier.Quantity,
+			ID:                prizeTier.ID,
+			Name:              prizeTier.Name,
+			Description:       prizeTier.Description,
+			Value:             prizeTier.Value,
+			Quantity:          prizeTier.Quantity,
+			NumberOfRunnerUps: prizeTier.NumberOfRunnerUps,
 		})
 	}
 	
@@ -152,10 +155,9 @@ func (s *CreatePrizeStructureService) CreatePrizeStructure(ctx context.Context, 
 		StartDate:   input.StartDate,
 		EndDate:     input.EndDate,
 		Prizes:      prizeOutputs,
+		CreatedBy:   input.CreatedBy,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		IsActive:    input.IsActive,
 	}, nil
-}
-
-// Helper function to parse date string
-func parseDate(dateStr string) (time.Time, error) {
-	return time.Parse("2006-01-02", dateStr)
 }
