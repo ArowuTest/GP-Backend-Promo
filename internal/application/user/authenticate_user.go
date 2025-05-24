@@ -28,6 +28,7 @@ func NewAuthenticateUserService(
 ) *AuthenticateUserService {
 	// Get JWT secret from environment variable or use default
 	jwtSecret := getEnvOrDefault("JWT_SECRET", "mynumba-donwin-jwt-secret-key-2025")
+	
 	return &AuthenticateUserService{
 		userRepository: userRepository,
 		auditService:   auditService,
@@ -80,14 +81,15 @@ func (s *AuthenticateUserService) AuthenticateUser(ctx context.Context, input Au
 	if input.Email == "" {
 		return nil, errors.New("email is required")
 	}
+	
 	if input.Password == "" {
 		return nil, errors.New("password is required")
 	}
-
-	// Get user by email - Changed from GetUserByEmail to GetByEmail to match interface
+	
+	// Get user by email - Using GetByEmail to match interface
 	userEntity, err := s.userRepository.GetByEmail(input.Email)
 	if err != nil {
-		// Log failed login attempt - Updated to match AuditService interface
+		// Log failed login attempt - Using string format for details parameter
 		if err := s.auditService.LogAudit(
 			"LOGIN_FAILED",
 			"User",
@@ -99,12 +101,13 @@ func (s *AuthenticateUserService) AuthenticateUser(ctx context.Context, input Au
 			// Log error but continue
 			fmt.Printf("Failed to log audit: %v\n", err)
 		}
+		
 		return nil, errors.New("invalid email or password")
 	}
-
+	
 	// Check if user is active
 	if !userEntity.IsActive {
-		// Log failed login attempt - Updated to match AuditService interface
+		// Log failed login attempt - Using string format for details parameter
 		if err := s.auditService.LogAudit(
 			"LOGIN_FAILED",
 			"User",
@@ -116,12 +119,13 @@ func (s *AuthenticateUserService) AuthenticateUser(ctx context.Context, input Au
 			// Log error but continue
 			fmt.Printf("Failed to log audit: %v\n", err)
 		}
+		
 		return nil, errors.New("user is inactive")
 	}
-
+	
 	// Check password
 	if err := bcrypt.CompareHashAndPassword([]byte(userEntity.PasswordHash), []byte(input.Password)); err != nil {
-		// Log failed login attempt - Updated to match AuditService interface
+		// Log failed login attempt - Using string format for details parameter
 		if err := s.auditService.LogAudit(
 			"LOGIN_FAILED",
 			"User",
@@ -133,36 +137,37 @@ func (s *AuthenticateUserService) AuthenticateUser(ctx context.Context, input Au
 			// Log error but continue
 			fmt.Printf("Failed to log audit: %v\n", err)
 		}
+		
 		return nil, errors.New("invalid email or password")
 	}
-
+	
 	// Generate JWT token
 	expiresAt := time.Now().Add(24 * time.Hour) // Token expires in 24 hours
-
+	
 	// Create the claims
 	claims := jwt.MapClaims{
 		"user_id":  userEntity.ID.String(),
 		"email":    userEntity.Email,
 		"username": userEntity.Username,
-		"role":     userEntity.Role, // Single role for backward compatibility
+		"role":     userEntity.Role,           // Single role for backward compatibility
 		"roles":    []string{userEntity.Role}, // Array of roles for future extensibility
-		"exp":      jwt.NewNumericDate(expiresAt).Unix(), // Updated to use jwt.NewNumericDate
-		"iat":      jwt.NewNumericDate(time.Now()).Unix(), // Updated to use jwt.NewNumericDate
-		"nbf":      jwt.NewNumericDate(time.Now()).Unix(), // Updated to use jwt.NewNumericDate
+		"exp":      jwt.NewNumericDate(expiresAt).Unix(),
+		"iat":      jwt.NewNumericDate(time.Now()).Unix(),
+		"nbf":      jwt.NewNumericDate(time.Now()).Unix(),
 		"iss":      "mynumba-donwin-api",
 		"sub":      userEntity.ID.String(),
 	}
-
+	
 	// Create the token
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
+	
 	// Sign the token with the secret key
 	tokenString, err := token.SignedString([]byte(s.jwtSecret))
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
-
-	// Log successful login - Updated to match AuditService interface
+	
+	// Log successful login - Using string format for details parameter
 	if err := s.auditService.LogAudit(
 		"LOGIN_SUCCESS",
 		"User",
@@ -174,7 +179,7 @@ func (s *AuthenticateUserService) AuthenticateUser(ctx context.Context, input Au
 		// Log error but continue
 		fmt.Printf("Failed to log audit: %v\n", err)
 	}
-
+	
 	return &AuthenticateUserOutput{
 		Token: tokenString,
 		User: UserOutput{

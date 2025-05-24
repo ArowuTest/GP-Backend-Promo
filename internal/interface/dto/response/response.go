@@ -87,15 +87,22 @@ type DrawResponse struct {
 // WinnerResponse defines the response for a winner
 type WinnerResponse struct {
 	ID            uuid.UUID `json:"id"`
+	DrawID        string    `json:"drawId"`           // Added to match frontend expectations
 	MSISDN        string    `json:"msisdn"`
 	MaskedMSISDN  string    `json:"maskedMsisdn"`
+	PrizeTierID   string    `json:"prizeTierId"`      // Added to match frontend expectations
 	PrizeName     string    `json:"prizeName"`
 	PrizeValue    string    `json:"prizeValue"`
 	PaymentStatus string    `json:"paymentStatus"`
 	PaymentDate   string    `json:"paymentDate"`
 	PaymentRef    string    `json:"paymentRef"`
+	PaymentNotes  string    `json:"paymentNotes"`     // Added to match frontend expectations
+	Status        string    `json:"status"`           // Added to match frontend expectations
 	IsRunnerUp    bool      `json:"isRunnerUp"`
+	RunnerUpRank  int       `json:"runnerUpRank"`     // Added to match frontend expectations
 	InvokedAt     string    `json:"invokedAt"`
+	CreatedAt     string    `json:"createdAt"`        // Added to match frontend expectations
+	UpdatedAt     string    `json:"updatedAt"`        // Added to match frontend expectations
 }
 
 // AuditLogResponse defines the response for an audit log
@@ -144,6 +151,14 @@ type ParticipantStatsResponse struct {
 
 // EligibilityStatsResponse defines the response for eligibility statistics
 type EligibilityStatsResponse struct {
-	TotalEligible int `json:"totalEligible"`
-	TotalEntries  int `json:"totalEntries"`
+	Date              string `json:"date,omitempty"`     // Added to match frontend expectations
+	TotalEligible     int    `json:"totalEligible"`
+	TotalEntries      int    `json:"totalEntries"`
+}
+
+// RunnerUpInvocationResult defines the response for invoking a runner-up
+type RunnerUpInvocationResult struct {
+	Message        string         `json:"message"`
+	OriginalWinner WinnerResponse `json:"originalWinner"`
+	NewWinner      WinnerResponse `json:"newWinner"`
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/ArowuTest/GP-Backend-Promo/internal/pkg/util"
 )
 
-// AuditHandler handles audit-related HTTP requests
+// AuditHandler handles HTTP requests related to audit logs
 type AuditHandler struct {
 	getAuditLogsService       *auditApp.GetAuditLogsService
 	getDataUploadAuditsService *auditApp.GetDataUploadAuditsService
@@ -42,7 +42,7 @@ func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 		})
 		return
 	}
-
+	
 	// Parse user ID if provided
 	var userID uuid.UUID
 	if req.UserID != "" {
@@ -56,11 +56,11 @@ func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 			return
 		}
 	}
-
+	
 	// Parse dates if provided
 	startDate := util.ParseTimeOrZero(req.StartDate, time.RFC3339)
 	endDate := util.ParseTimeOrZero(req.EndDate, time.RFC3339)
-
+	
 	// Prepare input with nested filters structure
 	input := auditApp.GetAuditLogsInput{
 		Page:     req.Page,
@@ -72,7 +72,7 @@ func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 			Action:    req.Action,
 		},
 	}
-
+	
 	// Get audit logs
 	output, err := h.getAuditLogsService.GetAuditLogs(c.Request.Context(), input)
 	if err != nil {
@@ -82,23 +82,34 @@ func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 		})
 		return
 	}
-
+	
 	// Prepare response with explicit type conversions at DTO boundary
 	auditLogs := make([]response.AuditLogResponse, 0, len(output.AuditLogs))
 	for _, al := range output.AuditLogs {
+		// Convert UUID to string for all ID fields
+		entityIDStr := al.EntityID
+		if _, err := uuid.Parse(al.EntityID); err == nil {
+			// If it's a valid UUID, keep it as is
+		} else if al.EntityID != "" {
+			// If it's not empty and not a UUID, keep as is
+		} else {
+			// If empty, use empty string
+			entityIDStr = ""
+		}
+		
 		auditLogs = append(auditLogs, response.AuditLogResponse{
 			ID:         al.ID.String(),
 			UserID:     al.UserID.String(),
 			Username:   al.Username,
 			Action:     al.Action,
 			EntityType: al.EntityType,
-			EntityID:   al.EntityID,
+			EntityID:   entityIDStr,
 			Summary:    al.Description,
-			Details:    "", // Set to empty string as Details doesn't exist in domain model
+			Details:    al.Details, // Include Details field from domain model if available
 			CreatedAt:  util.FormatTimeOrEmpty(al.CreatedAt, time.RFC3339),
 		})
 	}
-
+	
 	c.JSON(http.StatusOK, response.PaginatedResponse{
 		Success: true,
 		Data:    auditLogs,
@@ -119,17 +130,18 @@ func (h *AuditHandler) GetDataUploadAudits(c *gin.Context) {
 	if err != nil || page < 1 {
 		page = 1
 	}
+	
 	pageSize, err := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	if err != nil || pageSize < 1 {
 		pageSize = 10
 	}
-
+	
 	// Parse date range if provided
 	startDateStr := c.DefaultQuery("startDate", "")
 	endDateStr := c.DefaultQuery("endDate", "")
 	startDate := util.ParseTimeOrZero(startDateStr, time.RFC3339)
 	endDate := util.ParseTimeOrZero(endDateStr, time.RFC3339)
-
+	
 	// Prepare input
 	input := auditApp.GetDataUploadAuditsInput{
 		Page:      page,
@@ -137,7 +149,7 @@ func (h *AuditHandler) GetDataUploadAudits(c *gin.Context) {
 		StartDate: startDate,
 		EndDate:   endDate,
 	}
-
+	
 	// Get data upload audits
 	output, err := h.getDataUploadAuditsService.GetDataUploadAudits(c.Request.Context(), input)
 	if err != nil {
@@ -147,7 +159,7 @@ func (h *AuditHandler) GetDataUploadAudits(c *gin.Context) {
 		})
 		return
 	}
-
+	
 	// Prepare response with explicit type conversions at DTO boundary
 	dataUploadAudits := make([]response.DataUploadAuditResponse, 0, len(output.Audits))
 	for _, dua := range output.Audits {
@@ -165,7 +177,7 @@ func (h *AuditHandler) GetDataUploadAudits(c *gin.Context) {
 			OperationType:        dua.OperationType,
 		})
 	}
-
+	
 	c.JSON(http.StatusOK, response.PaginatedResponse{
 		Success: true,
 		Data:    dataUploadAudits,
