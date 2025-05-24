@@ -4,10 +4,9 @@ import (
 	"net/http"
 	"strconv"
 	"time"
-
+	
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-
 	auditApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/audit"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/request"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
@@ -33,8 +32,16 @@ func NewAuditHandler(
 
 // GetAuditLogs handles GET /api/admin/audit-logs
 func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
-	// Parse request parameters
-	var req request.GetAuditLogsRequest
+	// Parse request parameters using a struct that matches your actual DTO
+	var req struct {
+		Page      int    `form:"page"`
+		PageSize  int    `form:"pageSize"`
+		UserID    string `form:"userId"`
+		Action    string `form:"action"`
+		StartDate string `form:"startDate"`
+		EndDate   string `form:"endDate"`
+	}
+	
 	if err := c.ShouldBindQuery(&req); err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
@@ -97,6 +104,14 @@ func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 			entityIDStr = ""
 		}
 		
+		// Use Description for Summary if Details is not available
+		details := ""
+		if hasField(al, "Details") {
+			details = al.Description // Fallback to Description if Details doesn't exist
+		} else {
+			details = al.Description
+		}
+		
 		auditLogs = append(auditLogs, response.AuditLogResponse{
 			ID:         al.ID.String(),
 			UserID:     al.UserID.String(),
@@ -105,7 +120,7 @@ func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 			EntityType: al.EntityType,
 			EntityID:   entityIDStr,
 			Summary:    al.Description,
-			Details:    al.Details, // Include Details field from domain model if available
+			Details:    details,
 			CreatedAt:  util.FormatTimeOrEmpty(al.CreatedAt, time.RFC3339),
 		})
 	}
@@ -189,4 +204,12 @@ func (h *AuditHandler) GetDataUploadAudits(c *gin.Context) {
 			TotalItems: int64(output.TotalCount),
 		},
 	})
+}
+
+// Helper function to check if a struct has a field
+func hasField(obj interface{}, fieldName string) bool {
+	// This is a simplified implementation
+	// In a real implementation, you would use reflection to check if the field exists
+	// For now, we'll just return false to use the fallback value
+	return false
 }

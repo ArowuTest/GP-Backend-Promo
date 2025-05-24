@@ -4,10 +4,10 @@ import (
 	"net/http"
 	"strconv"
 	"time"
-
+	"fmt"
+	
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-
 	drawApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/draw"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/request"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
@@ -48,8 +48,25 @@ func NewDrawHandler(
 
 // GetDraws handles GET /api/admin/draws
 func (h *DrawHandler) GetDraws(c *gin.Context) {
+	// Parse pagination parameters
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+	
+	pageSize, err := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	if err != nil || pageSize < 1 {
+		pageSize = 10
+	}
+	
+	// Prepare input
+	input := drawApp.GetDrawsInput{
+		Page:     page,
+		PageSize: pageSize,
+	}
+	
 	// Get draws
-	output, err := h.getDrawsService.GetDraws(c.Request.Context())
+	output, err := h.getDrawsService.GetDraws(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
@@ -58,47 +75,31 @@ func (h *DrawHandler) GetDraws(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response with explicit type conversions at DTO boundary
+	// Prepare response
 	draws := make([]response.DrawResponse, 0, len(output.Draws))
 	for _, d := range output.Draws {
-		// Convert winners
-		winners := make([]response.WinnerResponse, 0, len(d.Winners))
-		for _, w := range d.Winners {
-			winners = append(winners, response.WinnerResponse{
-				ID:            w.ID.String(),
-				DrawID:        w.DrawID.String(),
-				MSISDN:        w.MSISDN,
-				MaskedMSISDN:  maskMSISDN(w.MSISDN),
-				PrizeTierID:   w.PrizeTierID.String(),
-				PrizeName:     w.PrizeName,
-				PrizeValue:    w.PrizeValue,
-				PaymentStatus: w.PaymentStatus,
-				PaymentDate:   util.FormatTimeOrEmpty(w.PaymentDate, time.RFC3339),
-				PaymentRef:    w.PaymentRef,
-				IsRunnerUp:    w.IsRunnerUp,
-				RunnerUpRank:  w.RunnerUpRank,
-				Status:        w.Status,
-				InvokedAt:     util.FormatTimeOrEmpty(w.InvokedAt, time.RFC3339),
-				CreatedAt:     util.FormatTimeOrEmpty(w.CreatedAt, time.RFC3339),
-			})
-		}
-		
 		draws = append(draws, response.DrawResponse{
 			ID:             d.ID.String(),
 			Name:           d.Name,
 			Description:    d.Description,
-			DrawDate:       util.FormatTimeOrEmpty(d.DrawDate, "2006-01-02"),
+			DrawDate:       util.FormatTimeOrEmpty(d.DrawDate, time.RFC3339),
 			Status:         d.Status,
-			PrizeStructure: d.PrizeStructureID.String(),
-			Winners:        winners,
+			PrizeStructure: d.PrizeStructureName,
 			CreatedAt:      util.FormatTimeOrEmpty(d.CreatedAt, time.RFC3339),
 			CreatedBy:      d.CreatedBy.String(),
 		})
 	}
 	
-	c.JSON(http.StatusOK, response.SuccessResponse{
+	c.JSON(http.StatusOK, response.PaginatedResponse{
 		Success: true,
 		Data:    draws,
+		Pagination: response.Pagination{
+			Page:       output.Page,
+			PageSize:   output.PageSize,
+			TotalRows:  int(output.TotalCount),
+			TotalPages: output.TotalPages,
+			TotalItems: int64(output.TotalCount),
+		},
 	})
 }
 
@@ -114,8 +115,13 @@ func (h *DrawHandler) GetDrawByID(c *gin.Context) {
 		return
 	}
 	
-	// Get draw by ID
-	output, err := h.getDrawByIDService.GetDrawByID(c.Request.Context(), drawID)
+	// Prepare input
+	input := drawApp.GetDrawByIDInput{
+		ID: drawID,
+	}
+	
+	// Get draw
+	output, err := h.getDrawByIDService.GetDrawByID(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
@@ -124,58 +130,7 @@ func (h *DrawHandler) GetDrawByID(c *gin.Context) {
 		return
 	}
 	
-	// Convert winners
-	winners := make([]response.WinnerResponse, 0, len(output.Draw.Winners))
-	for _, w := range output.Draw.Winners {
-		winners = append(winners, response.WinnerResponse{
-			ID:            w.ID.String(),
-			DrawID:        w.DrawID.String(),
-			MSISDN:        w.MSISDN,
-			MaskedMSISDN:  maskMSISDN(w.MSISDN),
-			PrizeTierID:   w.PrizeTierID.String(),
-			PrizeName:     w.PrizeName,
-			PrizeValue:    w.PrizeValue,
-			PaymentStatus: w.PaymentStatus,
-			PaymentDate:   util.FormatTimeOrEmpty(w.PaymentDate, time.RFC3339),
-			PaymentRef:    w.PaymentRef,
-			IsRunnerUp:    w.IsRunnerUp,
-			RunnerUpRank:  w.RunnerUpRank,
-			Status:        w.Status,
-			InvokedAt:     util.FormatTimeOrEmpty(w.InvokedAt, time.RFC3339),
-			CreatedAt:     util.FormatTimeOrEmpty(w.CreatedAt, time.RFC3339),
-		})
-	}
-	
 	// Prepare response
-	c.JSON(http.StatusOK, response.SuccessResponse{
-		Success: true,
-		Data: response.DrawResponse{
-			ID:             output.Draw.ID.String(),
-			Name:           output.Draw.Name,
-			Description:    output.Draw.Description,
-			DrawDate:       util.FormatTimeOrEmpty(output.Draw.DrawDate, "2006-01-02"),
-			Status:         output.Draw.Status,
-			PrizeStructure: output.Draw.PrizeStructureID.String(),
-			Winners:        winners,
-			CreatedAt:      util.FormatTimeOrEmpty(output.Draw.CreatedAt, time.RFC3339),
-			CreatedBy:      output.Draw.CreatedBy.String(),
-		},
-	})
-}
-
-// GetWinners handles GET /api/admin/winners
-func (h *DrawHandler) GetWinners(c *gin.Context) {
-	// Get winners
-	output, err := h.getWinnersService.GetWinners(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
-			Success: false,
-			Error:   "Failed to get winners: " + err.Error(),
-		})
-		return
-	}
-	
-	// Prepare response with explicit type conversions at DTO boundary
 	winners := make([]response.WinnerResponse, 0, len(output.Winners))
 	for _, w := range output.Winners {
 		winners = append(winners, response.WinnerResponse{
@@ -184,26 +139,35 @@ func (h *DrawHandler) GetWinners(c *gin.Context) {
 			MSISDN:        w.MSISDN,
 			MaskedMSISDN:  maskMSISDN(w.MSISDN),
 			PrizeTierID:   w.PrizeTierID.String(),
-			PrizeName:     w.PrizeName,
-			PrizeValue:    w.PrizeValue,
+			PrizeName:     w.PrizeTierName,
+			PrizeValue:    fmt.Sprintf("%.2f", w.PrizeValue),
 			PaymentStatus: w.PaymentStatus,
 			PaymentDate:   util.FormatTimeOrEmpty(w.PaymentDate, time.RFC3339),
 			PaymentRef:    w.PaymentRef,
+			Status:        w.Status,
 			IsRunnerUp:    w.IsRunnerUp,
 			RunnerUpRank:  w.RunnerUpRank,
-			Status:        w.Status,
-			InvokedAt:     util.FormatTimeOrEmpty(w.InvokedAt, time.RFC3339),
 			CreatedAt:     util.FormatTimeOrEmpty(w.CreatedAt, time.RFC3339),
 		})
 	}
 	
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
-		Data:    winners,
+		Data: response.DrawResponse{
+			ID:             output.Draw.ID.String(),
+			Name:           output.Draw.Name,
+			Description:    output.Draw.Description,
+			DrawDate:       util.FormatTimeOrEmpty(output.Draw.DrawDate, time.RFC3339),
+			Status:         output.Draw.Status,
+			PrizeStructure: output.Draw.PrizeStructureName,
+			Winners:        winners,
+			CreatedAt:      util.FormatTimeOrEmpty(output.Draw.CreatedAt, time.RFC3339),
+			CreatedBy:      output.Draw.CreatedBy.String(),
+		},
 	})
 }
 
-// ExecuteDraw handles POST /api/admin/draws/execute
+// ExecuteDraw handles POST /api/admin/draws
 func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 	var req request.ExecuteDrawRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -224,31 +188,13 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 		return
 	}
 	
-	// Parse prize structure ID
-	prizeStructureID, err := uuid.Parse(req.PrizeStructureID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
-			Success: false,
-			Error:   "Invalid prize structure ID format",
-		})
-		return
-	}
-	
-	// Parse draw date
-	drawDate, err := time.Parse("2006-01-02", req.DrawDate)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
-			Success: false,
-			Error:   "Invalid draw date format, expected YYYY-MM-DD",
-		})
-		return
-	}
-	
 	// Prepare input
 	input := drawApp.ExecuteDrawInput{
-		DrawDate:        drawDate,
-		PrizeStructureID: prizeStructureID,
-		AdminUserID:     userID.(uuid.UUID),
+		Name:            req.Name,
+		Description:     req.Description,
+		DrawDate:        req.DrawDate,
+		PrizeStructureID: req.PrizeStructureID,
+		CreatedBy:       userID.(uuid.UUID),
 	}
 	
 	// Execute draw
@@ -261,39 +207,34 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 		return
 	}
 	
-	// Convert winners
-	winners := make([]response.WinnerResponse, 0, len(output.Draw.Winners))
-	for _, w := range output.Draw.Winners {
+	// Prepare response
+	winners := make([]response.WinnerResponse, 0, len(output.Winners))
+	for _, w := range output.Winners {
 		winners = append(winners, response.WinnerResponse{
 			ID:            w.ID.String(),
 			DrawID:        w.DrawID.String(),
 			MSISDN:        w.MSISDN,
 			MaskedMSISDN:  maskMSISDN(w.MSISDN),
 			PrizeTierID:   w.PrizeTierID.String(),
-			PrizeName:     w.PrizeName,
-			PrizeValue:    w.PrizeValue,
+			PrizeName:     w.PrizeTierName,
+			PrizeValue:    fmt.Sprintf("%.2f", w.PrizeValue),
 			PaymentStatus: w.PaymentStatus,
-			PaymentDate:   util.FormatTimeOrEmpty(w.PaymentDate, time.RFC3339),
-			PaymentRef:    w.PaymentRef,
+			Status:        w.Status,
 			IsRunnerUp:    w.IsRunnerUp,
 			RunnerUpRank:  w.RunnerUpRank,
-			Status:        w.Status,
-			InvokedAt:     util.FormatTimeOrEmpty(w.InvokedAt, time.RFC3339),
 			CreatedAt:     util.FormatTimeOrEmpty(w.CreatedAt, time.RFC3339),
 		})
 	}
 	
-	// Prepare response
 	c.JSON(http.StatusCreated, response.SuccessResponse{
 		Success: true,
-		Message: "Draw executed successfully",
 		Data: response.DrawResponse{
 			ID:             output.Draw.ID.String(),
 			Name:           output.Draw.Name,
 			Description:    output.Draw.Description,
-			DrawDate:       util.FormatTimeOrEmpty(output.Draw.DrawDate, "2006-01-02"),
+			DrawDate:       util.FormatTimeOrEmpty(output.Draw.DrawDate, time.RFC3339),
 			Status:         output.Draw.Status,
-			PrizeStructure: output.Draw.PrizeStructureID.String(),
+			PrizeStructure: output.Draw.PrizeStructureName,
 			Winners:        winners,
 			CreatedAt:      util.FormatTimeOrEmpty(output.Draw.CreatedAt, time.RFC3339),
 			CreatedBy:      output.Draw.CreatedBy.String(),
@@ -301,21 +242,116 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 	})
 }
 
-// GetEligibilityStats handles GET /api/admin/draws/eligibility-stats
-func (h *DrawHandler) GetEligibilityStats(c *gin.Context) {
-	// Parse date
-	dateStr := c.DefaultQuery("date", time.Now().Format("2006-01-02"))
-	date, err := time.Parse("2006-01-02", dateStr)
+// GetWinners handles GET /api/admin/winners
+func (h *DrawHandler) GetWinners(c *gin.Context) {
+	// Parse pagination parameters
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+	
+	pageSize, err := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	if err != nil || pageSize < 1 {
+		pageSize = 10
+	}
+	
+	// Parse filter parameters
+	drawIDStr := c.DefaultQuery("drawId", "")
+	var drawID *uuid.UUID
+	if drawIDStr != "" {
+		id, err := uuid.Parse(drawIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid draw ID format",
+			})
+			return
+		}
+		drawID = &id
+	}
+	
+	msisdn := c.DefaultQuery("msisdn", "")
+	paymentStatus := c.DefaultQuery("paymentStatus", "")
+	
+	// Prepare input
+	input := drawApp.GetWinnersInput{
+		Page:          page,
+		PageSize:      pageSize,
+		DrawID:        drawID,
+		MSISDN:        msisdn,
+		PaymentStatus: paymentStatus,
+	}
+	
+	// Get winners
+	output, err := h.getWinnersService.GetWinners(c.Request.Context(), input)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid date format, expected YYYY-MM-DD",
+			Error:   "Failed to get winners: " + err.Error(),
 		})
 		return
 	}
 	
+	// Prepare response
+	winners := make([]response.WinnerResponse, 0, len(output.Winners))
+	for _, w := range output.Winners {
+		winners = append(winners, response.WinnerResponse{
+			ID:            w.ID.String(),
+			DrawID:        w.DrawID.String(),
+			MSISDN:        w.MSISDN,
+			MaskedMSISDN:  maskMSISDN(w.MSISDN),
+			PrizeTierID:   w.PrizeTierID.String(),
+			PrizeName:     w.PrizeTierName,
+			PrizeValue:    fmt.Sprintf("%.2f", w.PrizeValue),
+			PaymentStatus: w.PaymentStatus,
+			PaymentDate:   util.FormatTimeOrEmpty(w.PaymentDate, time.RFC3339),
+			PaymentRef:    w.PaymentRef,
+			Status:        w.Status,
+			IsRunnerUp:    w.IsRunnerUp,
+			RunnerUpRank:  w.RunnerUpRank,
+			CreatedAt:     util.FormatTimeOrEmpty(w.CreatedAt, time.RFC3339),
+		})
+	}
+	
+	c.JSON(http.StatusOK, response.PaginatedResponse{
+		Success: true,
+		Data:    winners,
+		Pagination: response.Pagination{
+			Page:       output.Page,
+			PageSize:   output.PageSize,
+			TotalRows:  int(output.TotalCount),
+			TotalPages: output.TotalPages,
+			TotalItems: int64(output.TotalCount),
+		},
+	})
+}
+
+// GetEligibilityStats handles GET /api/admin/draws/eligibility-stats
+func (h *DrawHandler) GetEligibilityStats(c *gin.Context) {
+	// Parse date parameter
+	dateStr := c.DefaultQuery("date", "")
+	var date time.Time
+	var err error
+	if dateStr != "" {
+		date, err = time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid date format. Expected YYYY-MM-DD",
+			})
+			return
+		}
+	} else {
+		date = time.Now()
+	}
+	
+	// Prepare input
+	input := drawApp.GetEligibilityStatsInput{
+		Date: date,
+	}
+	
 	// Get eligibility stats
-	output, err := h.getEligibilityStatsService.GetEligibilityStats(c.Request.Context(), date)
+	output, err := h.getEligibilityStatsService.GetEligibilityStats(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
@@ -329,14 +365,24 @@ func (h *DrawHandler) GetEligibilityStats(c *gin.Context) {
 		Success: true,
 		Data: response.EligibilityStatsResponse{
 			Date:          dateStr,
-			TotalEligible: output.TotalEligibleMSISDNs,
+			TotalEligible: output.TotalEligible,
 			TotalEntries:  output.TotalEntries,
 		},
 	})
 }
 
-// InvokeRunnerUp handles POST /api/admin/draws/invoke-runner-up
+// InvokeRunnerUp handles POST /api/admin/winners/:id/invoke-runner-up
 func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
+	// Parse winner ID
+	winnerID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid winner ID format",
+		})
+		return
+	}
+	
 	var req request.InvokeRunnerUpRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
@@ -347,7 +393,7 @@ func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
 	}
 	
 	// Get user ID from context
-	userIDStr, exists := c.Get("userID")
+	userID, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
 			Success: false,
@@ -356,43 +402,10 @@ func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
 		return
 	}
 	
-	// Convert userID to UUID
-	var adminUserID uuid.UUID
-	switch id := userIDStr.(type) {
-	case uuid.UUID:
-		adminUserID = id
-	case string:
-		var err error
-		adminUserID, err = uuid.Parse(id)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, response.ErrorResponse{
-				Success: false,
-				Error:   "Invalid user ID format in token",
-			})
-			return
-		}
-	default:
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
-			Success: false,
-			Error:   "Invalid user ID type in token",
-		})
-		return
-	}
-	
-	// Parse winner ID
-	winnerID, err := uuid.Parse(req.WinnerID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
-			Success: false,
-			Error:   "Invalid winner ID format",
-		})
-		return
-	}
-	
 	// Prepare input
 	input := drawApp.InvokeRunnerUpInput{
 		WinnerID:    winnerID,
-		AdminUserID: adminUserID,
+		InvokedBy:   userID.(uuid.UUID),
 		Reason:      req.Reason,
 	}
 	
@@ -413,8 +426,8 @@ func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
 		MSISDN:        output.OriginalWinner.MSISDN,
 		MaskedMSISDN:  maskMSISDN(output.OriginalWinner.MSISDN),
 		PrizeTierID:   output.OriginalWinner.PrizeTierID.String(),
-		PrizeName:     output.OriginalWinner.PrizeName,
-		PrizeValue:    output.OriginalWinner.PrizeValue,
+		PrizeName:     output.OriginalWinner.PrizeTierName,
+		PrizeValue:    fmt.Sprintf("%.2f", output.OriginalWinner.PrizeValue),
 		PaymentStatus: output.OriginalWinner.PaymentStatus,
 		Status:        output.OriginalWinner.Status,
 		IsRunnerUp:    output.OriginalWinner.IsRunnerUp,
@@ -428,8 +441,8 @@ func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
 		MSISDN:        output.NewWinner.MSISDN,
 		MaskedMSISDN:  maskMSISDN(output.NewWinner.MSISDN),
 		PrizeTierID:   output.NewWinner.PrizeTierID.String(),
-		PrizeName:     output.NewWinner.PrizeName,
-		PrizeValue:    output.NewWinner.PrizeValue,
+		PrizeName:     output.NewWinner.PrizeTierName,
+		PrizeValue:    fmt.Sprintf("%.2f", output.NewWinner.PrizeValue),
 		PaymentStatus: output.NewWinner.PaymentStatus,
 		Status:        output.NewWinner.Status,
 		IsRunnerUp:    output.NewWinner.IsRunnerUp,
@@ -505,8 +518,8 @@ func (h *DrawHandler) UpdateWinnerPaymentStatus(c *gin.Context) {
 	input := drawApp.UpdateWinnerPaymentStatusInput{
 		WinnerID:      winnerID.String(),
 		PaymentStatus: req.PaymentStatus,
-		PaymentNotes:  req.Notes,
-		Notes:         req.Notes,
+		PaymentNotes:  req.PaymentRef,
+		Notes:         req.PaymentRef,
 		UpdatedBy:     updatedBy,
 	}
 	
@@ -529,8 +542,8 @@ func (h *DrawHandler) UpdateWinnerPaymentStatus(c *gin.Context) {
 			MSISDN:        output.MSISDN,
 			MaskedMSISDN:  maskMSISDN(output.MSISDN),
 			PrizeTierID:   output.PrizeTierID.String(),
-			PrizeName:     output.PrizeName,
-			PrizeValue:    output.PrizeValue,
+			PrizeName:     output.PrizeTierName,
+			PrizeValue:    fmt.Sprintf("%.2f", output.PrizeValue),
 			PaymentStatus: output.PaymentStatus,
 			PaymentDate:   util.FormatTimeOrEmpty(output.PaymentDate, time.RFC3339),
 			PaymentRef:    output.PaymentRef,
