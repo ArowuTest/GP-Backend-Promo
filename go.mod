@@ -1,9 +1,5 @@
 module github.com/ArowuTest/GP-Backend-Promo
-
-go 1.23
-
-toolchain go1.24.2
-
+go 1.22
 require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/golang-jwt/jwt/v5 v5.0.0
@@ -15,7 +11,6 @@ require (
 	gorm.io/driver/postgres v1.5.11
 	gorm.io/gorm v1.26.1
 )
-
 require (
 	github.com/bytedance/sonic v1.10.2 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20230717121745-296ad89f973d // indirect
