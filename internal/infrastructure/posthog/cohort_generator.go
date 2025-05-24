@@ -1,4 +1,5 @@
 package posthog
+
 import (
 	"context"
 	"fmt"
@@ -6,16 +7,19 @@ import (
 	
 	"github.com/google/uuid"
 )
+
 // CohortGenerator handles the creation and management of daily cohorts
 type CohortGenerator struct {
 	client *Client
 }
+
 // NewCohortGenerator creates a new CohortGenerator
 func NewCohortGenerator(client *Client) *CohortGenerator {
 	return &CohortGenerator{
 		client: client,
 	}
 }
+
 // EnsureDailyCohort ensures a cohort exists for the specified date
 // If it doesn't exist, it creates one
 func (cg *CohortGenerator) EnsureDailyCohort(ctx context.Context, date time.Time) (string, error) {
@@ -67,6 +71,7 @@ func (cg *CohortGenerator) EnsureDailyCohort(ctx context.Context, date time.Time
 	
 	return cohortID, nil
 }
+
 // GetCohortStats retrieves statistics for a cohort
 func (cg *CohortGenerator) GetCohortStats(ctx context.Context, cohortID string) (int, int, error) {
 	// Get cohort details
@@ -95,6 +100,7 @@ func (cg *CohortGenerator) GetCohortStats(ctx context.Context, cohortID string) 
 	
 	return len(persons), totalEntries, nil
 }
+
 // CreateTestCohort creates a test cohort with sample data
 func (cg *CohortGenerator) CreateTestCohort(ctx context.Context) (string, error) {
 	// Create a test cohort

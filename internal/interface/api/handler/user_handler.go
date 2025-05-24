@@ -7,7 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	
+
 	userApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/user"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/request"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
@@ -16,27 +16,27 @@ import (
 
 // UserHandler handles user-related HTTP requests
 type UserHandler struct {
+	createUserService *userApp.CreateUserService
+	updateUserService *userApp.UpdateUserService
+	getUserByIDService *userApp.GetUserByIDService
+	listUsersService *userApp.ListUsersService
 	authenticateUserService *userApp.AuthenticateUserService
-	createUserService       *userApp.CreateUserService
-	updateUserService       *userApp.UpdateUserService
-	getUserByIDService      *userApp.GetUserService
-	listUsersService        *userApp.ListUsersService
 }
 
 // NewUserHandler creates a new UserHandler
 func NewUserHandler(
-	authenticateUserService *userApp.AuthenticateUserService,
 	createUserService *userApp.CreateUserService,
 	updateUserService *userApp.UpdateUserService,
-	getUserByIDService *userApp.GetUserService,
+	getUserByIDService *userApp.GetUserByIDService,
 	listUsersService *userApp.ListUsersService,
+	authenticateUserService *userApp.AuthenticateUserService,
 ) *UserHandler {
 	return &UserHandler{
+		createUserService: createUserService,
+		updateUserService: updateUserService,
+		getUserByIDService: getUserByIDService,
+		listUsersService: listUsersService,
 		authenticateUserService: authenticateUserService,
-		createUserService:       createUserService,
-		updateUserService:       updateUserService,
-		getUserByIDService:      getUserByIDService,
-		listUsersService:        listUsersService,
 	}
 }
 
@@ -51,11 +51,9 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// Create input with both username and email fields
 	input := userApp.AuthenticateUserInput{
-		Username: req.Username,
+		Email:    req.Email,
 		Password: req.Password,
-		Email:    req.Email, // Pass email if provided in the request
 	}
 
 	output, err := h.authenticateUserService.AuthenticateUser(c.Request.Context(), input)
@@ -67,21 +65,23 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// Return token in the nested format expected by the frontend
-	// with explicit type conversions at DTO boundary
+	// Return response with explicit type conversions at DTO boundary
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.LoginResponse{
-			Token:     output.Token,
-			ExpiresAt: util.FormatTimeOrEmpty(output.ExpiresAt, time.RFC3339),
+			Token: output.Token,
 			User: response.UserResponse{
-				ID:        output.ID.String(),
-				Username:  output.Username,
-				Email:     output.Email,
-				Role:      output.Role,
-				CreatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
-				UpdatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
+				ID:       output.User.ID.String(),
+				Username: output.User.Username,
+				Email:    output.User.Email,
+				Role:     output.User.Role,
+				IsActive: output.User.IsActive,
+				// Include additional fields for frontend compatibility
+				FullName:  output.User.Username, // Use username as fallback for fullname
+				CreatedAt: util.FormatTimeOrEmpty(output.User.CreatedAt, time.RFC3339),
+				UpdatedAt: util.FormatTimeOrEmpty(output.User.UpdatedAt, time.RFC3339),
 			},
+			Expiry: util.FormatTimeOrEmpty(output.ExpiresAt, time.RFC3339),
 		},
 	})
 }
@@ -106,10 +106,23 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// Type assertion with safety check
-	creatorID, ok := creatorIDValue.(uuid.UUID)
-	if !ok {
+	var creatorID uuid.UUID
+	switch id := creatorIDValue.(type) {
+	case uuid.UUID:
+		creatorID = id
+	case string:
+		var err error
+		creatorID, err = uuid.Parse(id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid creator user ID format",
+			})
+			return
+		}
+	default:
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
 			Error:   "Invalid creator user ID type",
@@ -118,9 +131,9 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	}
 
 	input := userApp.CreateUserInput{
+		Email:     req.Email,
 		Username:  req.Username,
 		Password:  req.Password,
-		Email:     req.Email,
 		Role:      req.Role,
 		CreatedBy: creatorID,
 	}
@@ -138,13 +151,15 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	c.JSON(http.StatusCreated, response.SuccessResponse{
 		Success: true,
 		Data: response.UserResponse{
-			ID:        output.ID.String(),
-			Username:  output.Username,
-			Email:     output.Email,
-			FullName:  req.FullName, // Use from request since it might not be in output
-			Role:      output.Role,
-			CreatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
-			UpdatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
+			ID:       output.ID.String(),
+			Username: output.Username,
+			Email:    output.Email,
+			Role:     output.Role,
+			IsActive: output.IsActive,
+			// Include additional fields for frontend compatibility
+			FullName:  req.Username, // Use username as fallback for fullname
+			CreatedAt: util.FormatTimeOrEmpty(output.CreatedAt, time.RFC3339),
+			UpdatedAt: util.FormatTimeOrEmpty(output.UpdatedAt, time.RFC3339),
 		},
 	})
 }
@@ -160,7 +175,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		})
 		return
 	}
-
+	
 	var req request.UpdateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
@@ -169,7 +184,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		})
 		return
 	}
-
+	
 	// Get updater information from context with explicit type conversion
 	updaterIDValue, exists := c.Get("userID")
 	if !exists {
@@ -181,23 +196,38 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	}
 	
 	// Type assertion with safety check
-	updaterID, ok := updaterIDValue.(uuid.UUID)
-	if !ok {
+	var updaterID uuid.UUID
+	switch id := updaterIDValue.(type) {
+	case uuid.UUID:
+		updaterID = id
+	case string:
+		var err error
+		updaterID, err = uuid.Parse(id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid updater user ID format",
+			})
+			return
+		}
+	default:
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
 			Error:   "Invalid updater user ID type",
 		})
 		return
 	}
-
+	
 	input := userApp.UpdateUserInput{
 		ID:        userID,
 		Email:     req.Email,
-		Role:      req.Role,
+		Username:  req.Username,
 		Password:  req.Password,
+		Role:      req.Role,
+		IsActive:  req.IsActive,
 		UpdatedBy: updaterID,
 	}
-
+	
 	output, err := h.updateUserService.UpdateUser(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
@@ -206,18 +236,20 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		})
 		return
 	}
-
+	
 	// Return response with explicit type conversions at DTO boundary
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.UserResponse{
-			ID:        output.ID.String(),
-			Username:  output.Username,
-			Email:     output.Email,
-			FullName:  req.FullName, // Use from request since it might not be in output
-			Role:      output.Role,
-			CreatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
-			UpdatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
+			ID:       output.ID.String(),
+			Username: output.Username,
+			Email:    output.Email,
+			Role:     output.Role,
+			IsActive: output.IsActive,
+			// Include additional fields for frontend compatibility
+			FullName:  req.Username, // Use username as fallback for fullname
+			CreatedAt: util.FormatTimeOrEmpty(output.CreatedAt, time.RFC3339),
+			UpdatedAt: util.FormatTimeOrEmpty(output.UpdatedAt, time.RFC3339),
 		},
 	})
 }
@@ -233,11 +265,11 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 		})
 		return
 	}
-
+	
 	input := userApp.GetUserInput{
 		ID: userID,
 	}
-
+	
 	output, err := h.getUserByIDService.GetUser(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusNotFound, response.ErrorResponse{
@@ -246,18 +278,20 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 		})
 		return
 	}
-
+	
 	// Return response with explicit type conversions at DTO boundary
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.UserResponse{
-			ID:        output.ID.String(),
-			Username:  output.Username,
-			Email:     output.Email,
-			FullName:  "", // Not available in output
-			Role:      output.Role,
-			CreatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
-			UpdatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
+			ID:       output.ID.String(),
+			Username: output.Username,
+			Email:    output.Email,
+			Role:     output.Role,
+			IsActive: output.IsActive,
+			// Include additional fields for frontend compatibility
+			FullName:  output.Username, // Use username as fallback for fullname
+			CreatedAt: util.FormatTimeOrEmpty(output.CreatedAt, time.RFC3339),
+			UpdatedAt: util.FormatTimeOrEmpty(output.UpdatedAt, time.RFC3339),
 		},
 	})
 }
@@ -265,23 +299,21 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 // ListUsers handles retrieving a list of users
 func (h *UserHandler) ListUsers(c *gin.Context) {
 	// Parse pagination parameters with explicit error handling
-	pageStr := c.DefaultQuery("page", "1")
-	page, err := strconv.Atoi(pageStr)
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if err != nil || page < 1 {
 		page = 1
 	}
 	
-	pageSizeStr := c.DefaultQuery("page_size", "10")
-	pageSize, err := strconv.Atoi(pageSizeStr)
+	pageSize, err := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	if err != nil || pageSize < 1 {
 		pageSize = 10
 	}
-
+	
 	input := userApp.ListUsersInput{
 		Page:     page,
 		PageSize: pageSize,
 	}
-
+	
 	output, err := h.listUsersService.ListUsers(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
@@ -290,21 +322,23 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 		})
 		return
 	}
-
+	
 	// Convert users to response format with explicit type conversions
 	users := make([]response.UserResponse, 0, len(output.Users))
 	for _, u := range output.Users {
 		users = append(users, response.UserResponse{
-			ID:        u.ID.String(),
-			Username:  u.Username,
-			Email:     u.Email,
-			FullName:  "", // Not available in output
-			Role:      u.Role,
-			CreatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
-			UpdatedAt: util.FormatTimeOrEmpty(time.Now(), time.RFC3339), // Using current time as fallback
+			ID:       u.ID.String(),
+			Username: u.Username,
+			Email:    u.Email,
+			Role:     u.Role,
+			IsActive: u.IsActive,
+			// Include additional fields for frontend compatibility
+			FullName:  u.Username, // Use username as fallback for fullname
+			CreatedAt: util.FormatTimeOrEmpty(u.CreatedAt, time.RFC3339),
+			UpdatedAt: util.FormatTimeOrEmpty(u.UpdatedAt, time.RFC3339),
 		})
 	}
-
+	
 	c.JSON(http.StatusOK, response.PaginatedResponse{
 		Success: true,
 		Data:    users,

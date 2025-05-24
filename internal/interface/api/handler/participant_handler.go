@@ -4,10 +4,10 @@ import (
 	"net/http"
 	"strconv"
 	"time"
-	
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	
+
 	participantApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/participant"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/request"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
@@ -47,18 +47,22 @@ func (h *ParticipantHandler) ListParticipants(c *gin.Context) {
 	if err != nil || page < 1 {
 		page = 1
 	}
-	
+
 	pageSize, err := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	if err != nil || pageSize < 1 {
 		pageSize = 10
 	}
-	
+
+	// Parse search query
+	search := c.DefaultQuery("search", "")
+
 	// Prepare input
 	input := participantApp.ListParticipantsInput{
 		Page:     page,
 		PageSize: pageSize,
+		Search:   search,
 	}
-	
+
 	// List participants
 	output, err := h.listParticipantsService.ListParticipants(c.Request.Context(), input)
 	if err != nil {
@@ -68,24 +72,19 @@ func (h *ParticipantHandler) ListParticipants(c *gin.Context) {
 		})
 		return
 	}
-	
-	// Prepare response
+
+	// Prepare response with explicit type conversions at DTO boundary
 	participants := make([]response.ParticipantResponse, 0, len(output.Participants))
 	for _, p := range output.Participants {
-		// Create response with fields that exist in ParticipantResponse DTO
 		participants = append(participants, response.ParticipantResponse{
-			ID:             p.ID.String(),
-			MSISDN:         p.MSISDN,
-			Points:         0,
-			RechargeAmount: p.RechargeAmount,
-			RechargeDate:   util.FormatTimeOrEmpty(p.RechargeDate, "2006-01-02"),
-			CreatedAt:      util.FormatTimeOrEmpty(p.CreatedAt, time.RFC3339),
-			// Optional fields
-			UploadID:   p.UploadID.String(),
-			UploadedAt: util.FormatTimeOrEmpty(p.CreatedAt, time.RFC3339),
+			ID:        p.ID,
+			MSISDN:    p.MSISDN,
+			Points:    p.Points,
+			CreatedAt: util.FormatTimeOrEmpty(p.CreatedAt, time.RFC3339),
+			UpdatedAt: util.FormatTimeOrEmpty(p.UpdatedAt, time.RFC3339),
 		})
 	}
-	
+
 	c.JSON(http.StatusOK, response.PaginatedResponse{
 		Success: true,
 		Data:    participants,
@@ -101,18 +100,8 @@ func (h *ParticipantHandler) ListParticipants(c *gin.Context) {
 
 // GetParticipantStats handles GET /api/admin/participants/stats
 func (h *ParticipantHandler) GetParticipantStats(c *gin.Context) {
-	// Parse date parameters if needed
-	startDate := c.DefaultQuery("start_date", "")
-	endDate := c.DefaultQuery("end_date", "")
-	
-	// Prepare input with date parameters
-	input := participantApp.GetParticipantStatsInput{
-		StartDate: startDate,
-		EndDate:   endDate,
-	}
-	
 	// Get participant stats
-	output, err := h.getParticipantStatsService.GetParticipantStats(c.Request.Context(), input)
+	output, err := h.getParticipantStatsService.GetParticipantStats(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
@@ -120,14 +109,14 @@ func (h *ParticipantHandler) GetParticipantStats(c *gin.Context) {
 		})
 		return
 	}
-	
-	// Prepare response with fields that exist in ParticipantStatsResponse DTO
+
+	// Prepare response with explicit type conversions at DTO boundary
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.ParticipantStatsResponse{
-			Date:              time.Now().Format("2006-01-02"), // Use current date as default
 			TotalParticipants: output.TotalParticipants,
 			TotalPoints:       output.TotalPoints,
+			AveragePoints:     output.AveragePoints,
 		},
 	})
 }
@@ -178,11 +167,11 @@ func (h *ParticipantHandler) ListUploadAudits(c *gin.Context) {
 			Status:         a.Status,
 			TotalRows:      a.TotalRows,
 			SuccessfulRows: a.SuccessfulRows,
-			ErrorCount:     0, // Using ErrorCount instead of ErrorRows to match DTO
+			ErrorCount:     len(errorDetails),
 			ErrorDetails:   errorDetails,
-			// Optional fields
+			// Additional fields for frontend compatibility
 			UploadedAt:    util.FormatTimeOrEmpty(a.CreatedAt, time.RFC3339),
-			TotalUploaded: a.TotalRows, // Using TotalRows as TotalUploaded
+			TotalUploaded: a.TotalRows,
 		})
 	}
 	
@@ -211,7 +200,7 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 	}
 	
 	// Get user ID from context
-	userID, exists := c.Get("userID")
+	userIDValue, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
 			Success: false,
@@ -220,18 +209,42 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 		return
 	}
 	
+	// Type assertion with safety check
+	userID, ok := userIDValue.(uuid.UUID)
+	if !ok {
+		// Try to parse as string if not UUID
+		if userIDStr, ok := userIDValue.(string); ok {
+			var err error
+			userID, err = uuid.Parse(userIDStr)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+					Success: false,
+					Error:   "Invalid user ID format in token",
+				})
+				return
+			}
+		} else {
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid user ID type in token",
+			})
+			return
+		}
+	}
+	
 	// Prepare input with fields that exist in ParticipantInput
 	participants := make([]participantApp.ParticipantInput, 0, len(req.Participants))
 	for _, p := range req.Participants {
 		participants = append(participants, participantApp.ParticipantInput{
 			MSISDN: p.MSISDN,
-			
+			Points: p.Points,
 		})
 	}
 	
 	input := participantApp.UploadParticipantsInput{
 		Participants: participants,
-		UploadedBy:   userID.(uuid.UUID),
+		UploadedBy:   userID,
+		FileName:     req.FileName,
 	}
 	
 	// Upload participants
@@ -248,13 +261,13 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.UploadResponse{
-			AuditID:           output.UploadID.String(), // Map UploadID to AuditID
+			AuditID:           output.UploadID.String(),
 			Status:            "Completed",
 			TotalRowsProcessed: output.TotalUploaded,
-			SuccessfulRows:    output.TotalUploaded,
-			ErrorCount:        0, // Using ErrorCount instead of ErrorRows
+			SuccessfulRows:    output.SuccessfulUploaded,
+			ErrorCount:        output.ErrorsEncountered,
 			ErrorDetails:      []string{},
-			DuplicatesSkipped: 0, // Default value
+			DuplicatesSkipped: output.DuplicatesSkipped,
 		},
 	})
 }
@@ -271,9 +284,43 @@ func (h *ParticipantHandler) DeleteUpload(c *gin.Context) {
 		return
 	}
 	
+	// Get user ID from context
+	userIDValue, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
+			Success: false,
+			Error:   "User not authenticated",
+		})
+		return
+	}
+	
+	// Type assertion with safety check
+	userID, ok := userIDValue.(uuid.UUID)
+	if !ok {
+		// Try to parse as string if not UUID
+		if userIDStr, ok := userIDValue.(string); ok {
+			var err error
+			userID, err = uuid.Parse(userIDStr)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+					Success: false,
+					Error:   "Invalid user ID format in token",
+				})
+				return
+			}
+		} else {
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid user ID type in token",
+			})
+			return
+		}
+	}
+	
 	// Create DeleteUploadInput struct
 	input := participantApp.DeleteUploadInput{
-		UploadID: uploadID,
+		UploadID:  uploadID,
+		DeletedBy: userID,
 	}
 	
 	// Delete upload and capture both return values
@@ -291,7 +338,7 @@ func (h *ParticipantHandler) DeleteUpload(c *gin.Context) {
 		Success: true,
 		Data: response.DeleteConfirmationResponse{
 			ID:      uploadID.String(),
-			Deleted: output.Deleted, // Use the Deleted field from output
+			Deleted: output.Deleted,
 		},
 	})
 }

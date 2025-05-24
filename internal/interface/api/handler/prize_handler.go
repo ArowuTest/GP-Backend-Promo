@@ -2,130 +2,155 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/ArowuTest/GP-Backend-Promo/internal/application/prize"
+	prizeApp "github.com/ArowuTest/GP-Backend-Promo/internal/application/prize"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/prize"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/request"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/pkg/util"
 )
 
-// PrizeHandler handles HTTP requests related to prize structures
+// PrizeHandler handles prize-related HTTP requests
 type PrizeHandler struct {
-	createPrizeStructureService *prize.CreatePrizeStructureService
-	getPrizeStructureService    *prize.GetPrizeStructureService
-	listPrizeStructuresService  *prize.ListPrizeStructuresService
-	updatePrizeStructureService *prize.UpdatePrizeStructureService
+	createPrizeStructureService *prizeApp.CreatePrizeStructureService
+	getPrizeStructureService    *prizeApp.GetPrizeStructureService
+	listPrizeStructuresService  *prizeApp.ListPrizeStructuresService
+	updatePrizeStructureService *prizeApp.UpdatePrizeStructureService
+	deletePrizeStructureService *prizeApp.DeletePrizeStructureService
 }
 
 // NewPrizeHandler creates a new PrizeHandler
 func NewPrizeHandler(
-	createPrizeStructureService *prize.CreatePrizeStructureService,
-	getPrizeStructureService *prize.GetPrizeStructureService,
-	listPrizeStructuresService *prize.ListPrizeStructuresService,
-	updatePrizeStructureService *prize.UpdatePrizeStructureService,
+	createPrizeStructureService *prizeApp.CreatePrizeStructureService,
+	getPrizeStructureService *prizeApp.GetPrizeStructureService,
+	listPrizeStructuresService *prizeApp.ListPrizeStructuresService,
+	updatePrizeStructureService *prizeApp.UpdatePrizeStructureService,
+	deletePrizeStructureService *prizeApp.DeletePrizeStructureService,
 ) *PrizeHandler {
 	return &PrizeHandler{
 		createPrizeStructureService: createPrizeStructureService,
 		getPrizeStructureService:    getPrizeStructureService,
 		listPrizeStructuresService:  listPrizeStructuresService,
 		updatePrizeStructureService: updatePrizeStructureService,
+		deletePrizeStructureService: deletePrizeStructureService,
 	}
 }
 
-// CreatePrizeStructure handles the creation of a new prize structure
+// CreatePrizeStructure handles POST /api/admin/prize-structures
 func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 	var req request.CreatePrizeStructureRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid request body",
-			Details: err.Error(),
+			Error:   "Invalid request: " + err.Error(),
 		})
 		return
 	}
 
 	// Get user ID from context
-	userID, exists := c.Get("userID")
+	userIDValue, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
 			Success: false,
-			Error:   "Unauthorized",
-			Details: "User ID not found in context",
+			Error:   "User not authenticated",
 		})
 		return
+	}
+
+	// Type assertion with safety check
+	userID, ok := userIDValue.(uuid.UUID)
+	if !ok {
+		// Try to parse as string if not UUID
+		if userIDStr, ok := userIDValue.(string); ok {
+			var err error
+			userID, err = uuid.Parse(userIDStr)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+					Success: false,
+					Error:   "Invalid user ID format in token",
+				})
+				return
+			}
+		} else {
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid user ID type in token",
+			})
+			return
+		}
 	}
 
 	// Parse dates
-	validFrom, err := time.Parse("2006-01-02", req.ValidFrom)
+	startDate, err := time.Parse("2006-01-02", req.ValidFrom)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid valid_from date",
-			Details: err.Error(),
+			Error:   "Invalid start date format. Expected YYYY-MM-DD",
 		})
 		return
 	}
 
-	var validTo time.Time
+	var endDate time.Time
 	if req.ValidTo != "" {
-		validTo, err = time.Parse("2006-01-02", req.ValidTo)
+		endDate, err = time.Parse("2006-01-02", req.ValidTo)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse{
 				Success: false,
-				Error:   "Invalid valid_to date",
-				Details: err.Error(),
+				Error:   "Invalid end date format. Expected YYYY-MM-DD",
 			})
 			return
 		}
 	}
 
 	// Convert prizes
-	prizes := make([]prize.CreatePrizeInput, len(req.Prizes))
-	for i, p := range req.Prizes {
-		prizes[i] = prize.CreatePrizeInput{
+	prizes := make([]prize.CreatePrizeInput, 0, len(req.Prizes))
+	for _, p := range req.Prizes {
+		prizes = append(prizes, prize.CreatePrizeInput{
 			Name:              p.Name,
 			Description:       p.Description,
 			Value:             p.Value,
 			Quantity:          p.Quantity,
 			NumberOfRunnerUps: p.NumberOfRunnerUps,
-		}
+		})
 	}
 
-	// Create input for service
+	// Create input
 	input := prize.CreatePrizeStructureInput{
 		Name:        req.Name,
 		Description: req.Description,
-		StartDate:   validFrom,
-		EndDate:     validTo,
+		StartDate:   startDate,
+		EndDate:     endDate,
 		Prizes:      prizes,
-		CreatedBy:   userID.(uuid.UUID),
+		CreatedBy:   userID,
+		IsActive:    req.IsActive,
 	}
 
-	// Call service
+	// Create prize structure
 	result, err := h.createPrizeStructureService.CreatePrizeStructure(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
-			Error:   "Failed to create prize structure",
-			Details: err.Error(),
+			Error:   "Failed to create prize structure: " + err.Error(),
 		})
 		return
 	}
 
 	// Convert prizes for response
-	prizesResponse := make([]response.PrizeResponse, len(result.Prizes))
-	for i, p := range result.Prizes {
-		prizesResponse[i] = response.PrizeResponse{
+	prizesResponse := make([]response.PrizeResponse, 0, len(result.Prizes))
+	for _, p := range result.Prizes {
+		prizesResponse = append(prizesResponse, response.PrizeResponse{
 			ID:                p.ID,
 			Name:              p.Name,
 			Description:       p.Description,
 			Value:             p.Value,
 			Quantity:          p.Quantity,
 			NumberOfRunnerUps: p.NumberOfRunnerUps,
-		}
+		})
 	}
 
 	// Create response
@@ -136,7 +161,7 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 		ValidFrom:   result.StartDate.Format("2006-01-02"),
 		ValidTo:     result.EndDate.Format("2006-01-02"),
 		Prizes:      prizesResponse,
-		IsActive:    true,
+		IsActive:    result.IsActive,
 	}
 
 	c.JSON(http.StatusCreated, response.SuccessResponse{
@@ -146,52 +171,48 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 	})
 }
 
-// GetPrizeStructure handles the retrieval of a prize structure by ID
+// GetPrizeStructure handles GET /api/admin/prize-structures/:id
 func (h *PrizeHandler) GetPrizeStructure(c *gin.Context) {
-	// Get prize structure ID from URL
+	// Parse prize structure ID
 	id := c.Param("id")
 	if id == "" {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid prize structure ID",
-			Details: "Prize structure ID is required",
+			Error:   "Prize structure ID is required",
 		})
 		return
 	}
 
-	// Parse UUID
 	prizeStructureID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid prize structure ID",
-			Details: err.Error(),
+			Error:   "Invalid prize structure ID format",
 		})
 		return
 	}
 
-	// Call service
+	// Get prize structure
 	result, err := h.getPrizeStructureService.GetPrizeStructure(c.Request.Context(), prizeStructureID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
-			Error:   "Failed to get prize structure",
-			Details: err.Error(),
+			Error:   "Failed to get prize structure: " + err.Error(),
 		})
 		return
 	}
 
 	// Convert prizes for response
-	prizesResponse := make([]response.PrizeResponse, len(result.Prizes))
-	for i, p := range result.Prizes {
-		prizesResponse[i] = response.PrizeResponse{
+	prizesResponse := make([]response.PrizeResponse, 0, len(result.Prizes))
+	for _, p := range result.Prizes {
+		prizesResponse = append(prizesResponse, response.PrizeResponse{
 			ID:                p.ID,
 			Name:              p.Name,
 			Description:       p.Description,
 			Value:             p.Value,
 			Quantity:          p.Quantity,
 			NumberOfRunnerUps: p.NumberOfRunnerUps,
-		}
+		})
 	}
 
 	// Create response
@@ -202,7 +223,7 @@ func (h *PrizeHandler) GetPrizeStructure(c *gin.Context) {
 		ValidFrom:   result.StartDate.Format("2006-01-02"),
 		ValidTo:     result.EndDate.Format("2006-01-02"),
 		Prizes:      prizesResponse,
-		IsActive:    true,
+		IsActive:    result.IsActive,
 	}
 
 	c.JSON(http.StatusOK, response.SuccessResponse{
@@ -212,156 +233,219 @@ func (h *PrizeHandler) GetPrizeStructure(c *gin.Context) {
 	})
 }
 
-// ListPrizeStructures handles the retrieval of all prize structures
+// ListPrizeStructures handles GET /api/admin/prize-structures
 func (h *PrizeHandler) ListPrizeStructures(c *gin.Context) {
-	// Call service
-	results, err := h.listPrizeStructuresService.ListPrizeStructures(c.Request.Context())
+	// Parse pagination parameters
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	if err != nil || pageSize < 1 {
+		pageSize = 10
+	}
+
+	// Prepare input
+	input := prizeApp.ListPrizeStructuresInput{
+		Page:     page,
+		PageSize: pageSize,
+	}
+
+	// List prize structures
+	output, err := h.listPrizeStructuresService.ListPrizeStructures(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
-			Error:   "Failed to list prize structures",
-			Details: err.Error(),
+			Error:   "Failed to list prize structures: " + err.Error(),
 		})
 		return
 	}
 
 	// Convert results for response
-	prizeStructuresResponse := make([]response.PrizeStructureResponse, len(results))
-	for i, ps := range results {
+	prizeStructuresResponse := make([]response.PrizeStructureResponse, 0, len(output.PrizeStructures))
+	for _, ps := range output.PrizeStructures {
 		// Convert prizes for response
-		prizesResponse := make([]response.PrizeResponse, len(ps.Prizes))
-		for j, p := range ps.Prizes {
-			prizesResponse[j] = response.PrizeResponse{
+		prizesResponse := make([]response.PrizeResponse, 0, len(ps.Prizes))
+		for _, p := range ps.Prizes {
+			prizesResponse = append(prizesResponse, response.PrizeResponse{
 				ID:                p.ID,
 				Name:              p.Name,
 				Description:       p.Description,
 				Value:             p.Value,
 				Quantity:          p.Quantity,
 				NumberOfRunnerUps: p.NumberOfRunnerUps,
-			}
+			})
 		}
 
-		prizeStructuresResponse[i] = response.PrizeStructureResponse{
+		prizeStructuresResponse = append(prizeStructuresResponse, response.PrizeStructureResponse{
 			ID:          ps.ID,
 			Name:        ps.Name,
 			Description: ps.Description,
 			ValidFrom:   ps.StartDate.Format("2006-01-02"),
 			ValidTo:     ps.EndDate.Format("2006-01-02"),
 			Prizes:      prizesResponse,
-			IsActive:    true,
-		}
+			IsActive:    ps.IsActive,
+		})
 	}
 
-	c.JSON(http.StatusOK, response.SuccessResponse{
+	c.JSON(http.StatusOK, response.PaginatedResponse{
 		Success: true,
-		Message: "Prize structures retrieved successfully",
 		Data:    prizeStructuresResponse,
+		Pagination: response.Pagination{
+			Page:       output.Page,
+			PageSize:   output.PageSize,
+			TotalRows:  int(output.TotalCount),
+			TotalPages: output.TotalPages,
+			TotalItems: int64(output.TotalCount),
+		},
 	})
 }
 
-// UpdatePrizeStructure handles the update of a prize structure
+// UpdatePrizeStructure handles PUT /api/admin/prize-structures/:id
 func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
-	// Get prize structure ID from URL
+	// Parse prize structure ID
 	id := c.Param("id")
 	if id == "" {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid prize structure ID",
-			Details: "Prize structure ID is required",
+			Error:   "Prize structure ID is required",
 		})
 		return
 	}
 
-	// Parse UUID
 	prizeStructureID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid prize structure ID",
-			Details: err.Error(),
+			Error:   "Invalid prize structure ID format",
 		})
 		return
 	}
 
-	// Parse request body
+	// Parse request
 	var req request.UpdatePrizeStructureRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{
 			Success: false,
-			Error:   "Invalid request body",
-			Details: err.Error(),
+			Error:   "Invalid request: " + err.Error(),
 		})
 		return
 	}
 
 	// Get user ID from context
-	userID, exists := c.Get("userID")
+	userIDValue, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
 			Success: false,
-			Error:   "Unauthorized",
-			Details: "User ID not found in context",
+			Error:   "User not authenticated",
 		})
 		return
 	}
 
+	// Type assertion with safety check
+	userID, ok := userIDValue.(uuid.UUID)
+	if !ok {
+		// Try to parse as string if not UUID
+		if userIDStr, ok := userIDValue.(string); ok {
+			var err error
+			userID, err = uuid.Parse(userIDStr)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+					Success: false,
+					Error:   "Invalid user ID format in token",
+				})
+				return
+			}
+		} else {
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid user ID type in token",
+			})
+			return
+		}
+	}
+
+	// Parse dates
+	startDate, err := time.Parse("2006-01-02", req.ValidFrom)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid start date format. Expected YYYY-MM-DD",
+		})
+		return
+	}
+
+	var endDate time.Time
+	if req.ValidTo != "" {
+		endDate, err = time.Parse("2006-01-02", req.ValidTo)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid end date format. Expected YYYY-MM-DD",
+			})
+			return
+		}
+	}
+
 	// Convert prizes
-	prizes := make([]prize.UpdatePrizeInput, len(req.Prizes))
-	for i, p := range req.Prizes {
+	prizes := make([]prize.UpdatePrizeInput, 0, len(req.Prizes))
+	for _, p := range req.Prizes {
 		var prizeID uuid.UUID
 		if p.ID != "" {
 			prizeID, err = uuid.Parse(p.ID)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, response.ErrorResponse{
 					Success: false,
-					Error:   "Invalid prize ID",
-					Details: err.Error(),
+					Error:   "Invalid prize ID format",
 				})
 				return
 			}
 		}
 
-		prizes[i] = prize.UpdatePrizeInput{
-			ID:          prizeID,
-			Name:        p.Name,
-			Description: p.Description,
-			Value:       p.Value,
-			Quantity:    p.Quantity,
-		}
+		prizes = append(prizes, prize.UpdatePrizeInput{
+			ID:                prizeID,
+			Name:              p.Name,
+			Description:       p.Description,
+			Value:             p.Value,
+			Quantity:          p.Quantity,
+			NumberOfRunnerUps: p.NumberOfRunnerUps,
+		})
 	}
 
-	// Create input for service
+	// Create input
 	input := prize.UpdatePrizeStructureInput{
 		ID:          prizeStructureID,
 		Name:        req.Name,
 		Description: req.Description,
-		StartDate:   req.ValidFrom,
-		EndDate:     req.ValidTo,
+		StartDate:   startDate,
+		EndDate:     endDate,
 		Prizes:      prizes,
-		UpdatedBy:   userID.(uuid.UUID),
+		UpdatedBy:   userID,
+		IsActive:    req.IsActive,
 	}
 
-	// Call service
+	// Update prize structure
 	result, err := h.updatePrizeStructureService.UpdatePrizeStructure(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
-			Error:   "Failed to update prize structure",
-			Details: err.Error(),
+			Error:   "Failed to update prize structure: " + err.Error(),
 		})
 		return
 	}
 
 	// Convert prizes for response
-	prizesResponse := make([]response.PrizeResponse, len(result.Prizes))
-	for i, p := range result.Prizes {
-		prizesResponse[i] = response.PrizeResponse{
-			ID:          p.ID,
-			Name:        p.Name,
-			Description: p.Description,
-			Value:       p.Value,
-			Quantity:    p.Quantity,
-		}
+	prizesResponse := make([]response.PrizeResponse, 0, len(result.Prizes))
+	for _, p := range result.Prizes {
+		prizesResponse = append(prizesResponse, response.PrizeResponse{
+			ID:                p.ID,
+			Name:              p.Name,
+			Description:       p.Description,
+			Value:             p.Value,
+			Quantity:          p.Quantity,
+			NumberOfRunnerUps: p.NumberOfRunnerUps,
+		})
 	}
 
 	// Create response
@@ -369,15 +453,95 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 		ID:          result.ID,
 		Name:        result.Name,
 		Description: result.Description,
-		ValidFrom:   result.StartDate,
-		ValidTo:     result.EndDate,
+		ValidFrom:   startDate.Format("2006-01-02"),
+		ValidTo:     endDate.Format("2006-01-02"),
 		Prizes:      prizesResponse,
-		IsActive:    true,
+		IsActive:    result.IsActive,
 	}
 
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Message: "Prize structure updated successfully",
 		Data:    resp,
+	})
+}
+
+// DeletePrizeStructure handles DELETE /api/admin/prize-structures/:id
+func (h *PrizeHandler) DeletePrizeStructure(c *gin.Context) {
+	// Parse prize structure ID
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Prize structure ID is required",
+		})
+		return
+	}
+
+	prizeStructureID, err := uuid.Parse(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid prize structure ID format",
+		})
+		return
+	}
+
+	// Get user ID from context
+	userIDValue, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
+			Success: false,
+			Error:   "User not authenticated",
+		})
+		return
+	}
+
+	// Type assertion with safety check
+	userID, ok := userIDValue.(uuid.UUID)
+	if !ok {
+		// Try to parse as string if not UUID
+		if userIDStr, ok := userIDValue.(string); ok {
+			var err error
+			userID, err = uuid.Parse(userIDStr)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+					Success: false,
+					Error:   "Invalid user ID format in token",
+				})
+				return
+			}
+		} else {
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid user ID type in token",
+			})
+			return
+		}
+	}
+
+	// Create input
+	input := prize.DeletePrizeStructureInput{
+		ID:        prizeStructureID,
+		DeletedBy: userID,
+	}
+
+	// Delete prize structure
+	err = h.deletePrizeStructureService.DeletePrizeStructure(c.Request.Context(), input)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Success: false,
+			Error:   "Failed to delete prize structure: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, response.SuccessResponse{
+		Success: true,
+		Message: "Prize structure deleted successfully",
+		Data: response.DeleteConfirmationResponse{
+			ID:      prizeStructureID.String(),
+			Deleted: true,
+		},
 	})
 }
