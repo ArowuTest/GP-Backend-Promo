@@ -74,16 +74,21 @@ type WinnerResponse struct {
 
 // RunnerUpResponse represents a runner-up invocation response
 type RunnerUpResponse struct {
-	Message         string        `json:"message"`
+	Message         string         `json:"message"`
 	OriginalWinner  WinnerResponse `json:"forfeited_winner"`
 	NewWinner       WinnerResponse `json:"promoted_runner_up"`
 }
+
+// RunnerUpInvocationResult represents a runner-up invocation result
+// This is an alias for RunnerUpResponse to maintain backward compatibility
+type RunnerUpInvocationResult = RunnerUpResponse
 
 // EligibilityStatsResponse represents eligibility statistics response
 type EligibilityStatsResponse struct {
 	Date                 string `json:"date,omitempty"`
 	TotalEligibleMSISDNs int    `json:"totalEligibleMSISDNs"`
 	TotalEntries         int    `json:"totalEntries"`
+	TotalEligible        int    `json:"totalEligible,omitempty"` // Alias for TotalEligibleMSISDNs for backward compatibility
 }
 
 // PrizeStructureResponse represents a prize structure response
@@ -201,6 +206,7 @@ type UserResponse struct {
 	FullName  string `json:"fullName"`
 	Email     string `json:"email"`
 	Role      string `json:"role"`
+	IsActive  bool   `json:"isActive"`
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
 }
