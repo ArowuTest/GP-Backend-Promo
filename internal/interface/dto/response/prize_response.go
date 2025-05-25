@@ -26,9 +26,9 @@ type PrizeTierResponse struct {
 	UpdatedAt         time.Time `json:"updated_at,omitempty"`
 }
 
-// PrizeResponse is an alias for PrizeTierResponse to maintain compatibility
+// REMOVED: PrizeResponse is an alias for PrizeTierResponse to maintain compatibility
 // This resolves the type mismatch in the handler
-type PrizeResponse = PrizeTierResponse
+// type PrizeResponse = PrizeTierResponse
 
 // PrizeTierDetailResponse represents a detailed view of a prize tier
 // This is complementary to PrizeTierResponse
