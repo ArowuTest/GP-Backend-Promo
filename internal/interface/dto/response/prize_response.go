@@ -1,13 +1,11 @@
 package response
 
-import (
-	"time"
-
-	"github.com/google/uuid"
-)
-
 // This file contains prize-related response types
 // Some types are complementary to avoid duplication with response.go
+
+import (
+	"time"
+)
 
 // PrizeTierResponse represents a prize tier response
 // This is used by the handler and must match the expected structure
