@@ -1,79 +1,53 @@
 package response
 
-import (
-	"time"
+// This file contains additional prize-related response types
+// that complement the main response.go definitions
 
-	"github.com/google/uuid"
-)
-
-// PrizeStructureResponse represents a prize structure response
-type PrizeStructureResponse struct {
-	ID          string              `json:"id"`
-	Name        string              `json:"name"`
-	Description string              `json:"description"`
-	IsActive    bool                `json:"is_active"`
-	ValidFrom   time.Time           `json:"valid_from"`
-	ValidTo     *time.Time          `json:"valid_to"`
-	Prizes      []PrizeTierResponse `json:"prizes"`
-	CreatedAt   time.Time           `json:"created_at"`
-	UpdatedAt   time.Time           `json:"updated_at"`
+// PrizeTierDetailResponse represents a detailed prize tier response
+// with additional fields for admin views
+type PrizeTierDetailResponse struct {
+	ID                string `json:"id,omitempty"`
+	Name              string `json:"name"`
+	PrizeType         string `json:"prizeType"`
+	Value             string `json:"value"`
+	ValueNGN          int    `json:"valueNGN,omitempty"`
+	CurrencyCode      string `json:"currencyCode,omitempty"`
+	Quantity          int    `json:"quantity"`
+	Order             int    `json:"order"`
+	NumberOfRunnerUps int    `json:"numberOfRunnerUps"`
+	Description       string `json:"description,omitempty"`
+	CreatedAt         string `json:"createdAt,omitempty"`
+	UpdatedAt         string `json:"updatedAt,omitempty"`
 }
 
-// PrizeTierResponse represents a prize tier response
-type PrizeTierResponse struct {
-	ID                string    `json:"id"`
-	PrizeStructureID  string    `json:"prize_structure_id"`
-	Rank              int       `json:"rank"`
-	Name              string    `json:"name"`
-	Description       string    `json:"description"`
-	Value             float64   `json:"value"`
-	CurrencyCode      string    `json:"currency_code"` // Added currency code field
-	ValueNGN          float64   `json:"value_ngn"`
-	Quantity          int       `json:"quantity"`
-	NumberOfRunnerUps int       `json:"number_of_runner_ups"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+// PrizeStructureDetailResponse represents a detailed prize structure response
+// with additional fields for admin views
+type PrizeStructureDetailResponse struct {
+	ID             string                  `json:"id"`
+	Name           string                  `json:"name"`
+	Description    string                  `json:"description"`
+	IsActive       bool                    `json:"isActive"`
+	ValidFrom      string                  `json:"validFrom"`
+	ValidTo        string                  `json:"validTo,omitempty"`
+	ApplicableDays []string                `json:"applicableDays,omitempty"`
+	DayType        string                  `json:"dayType,omitempty"`
+	Prizes         []PrizeTierDetailResponse `json:"prizes"`
+	CreatedAt      string                  `json:"createdAt,omitempty"`
+	UpdatedAt      string                  `json:"updatedAt,omitempty"`
+	CreatedBy      string                  `json:"createdBy,omitempty"`
+	UpdatedBy      string                  `json:"updatedBy,omitempty"`
 }
 
-// CreatePrizeStructureRequest represents a request to create a prize structure
-type CreatePrizeStructureRequest struct {
-	Name        string                     `json:"name" binding:"required"`
-	Description string                     `json:"description"`
-	IsActive    bool                       `json:"is_active"`
-	ValidFrom   time.Time                  `json:"valid_from" binding:"required"`
-	ValidTo     *time.Time                 `json:"valid_to"`
-	Prizes      []CreatePrizeTierRequest   `json:"prizes" binding:"required,dive"`
-}
-
-// CreatePrizeTierRequest represents a request to create a prize tier
-type CreatePrizeTierRequest struct {
-	Rank              int     `json:"rank" binding:"required"`
-	Name              string  `json:"name" binding:"required"`
-	Description       string  `json:"description"`
-	Value             float64 `json:"value" binding:"required"`
-	CurrencyCode      string  `json:"currency_code" binding:"required"` // Added currency code field
-	Quantity          int     `json:"quantity" binding:"required"`
-	NumberOfRunnerUps int     `json:"number_of_runner_ups"`
-}
-
-// UpdatePrizeStructureRequest represents a request to update a prize structure
-type UpdatePrizeStructureRequest struct {
-	Name        string                     `json:"name" binding:"required"`
-	Description string                     `json:"description"`
-	IsActive    bool                       `json:"is_active"`
-	ValidFrom   time.Time                  `json:"valid_from" binding:"required"`
-	ValidTo     *time.Time                 `json:"valid_to"`
-	Prizes      []UpdatePrizeTierRequest   `json:"prizes" binding:"required,dive"`
-}
-
-// UpdatePrizeTierRequest represents a request to update a prize tier
-type UpdatePrizeTierRequest struct {
-	ID                string  `json:"id"`
-	Rank              int     `json:"rank" binding:"required"`
-	Name              string  `json:"name" binding:"required"`
-	Description       string  `json:"description"`
-	Value             float64 `json:"value" binding:"required"`
-	CurrencyCode      string  `json:"currency_code" binding:"required"` // Added currency code field
-	Quantity          int     `json:"quantity" binding:"required"`
-	NumberOfRunnerUps int     `json:"number_of_runner_ups"`
+// PrizeStructureSummaryResponse represents a summarized prize structure response
+// for list views
+type PrizeStructureSummaryResponse struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	IsActive    bool   `json:"isActive"`
+	ValidFrom   string `json:"validFrom"`
+	ValidTo     string `json:"validTo,omitempty"`
+	DayType     string `json:"dayType,omitempty"`
+	PrizeCount  int    `json:"prizeCount"`
+	CreatedAt   string `json:"createdAt,omitempty"`
 }
