@@ -33,6 +33,8 @@ type Prize struct {
 	Description       string
 	Value             float64
 	CurrencyCode      string // Added currency code field
+	Rank              int    // Added Rank field for contract alignment
+	ValueNGN          float64 // Added ValueNGN field for contract alignment
 	Quantity          int
 	NumberOfRunnerUps int
 	CreatedAt         time.Time

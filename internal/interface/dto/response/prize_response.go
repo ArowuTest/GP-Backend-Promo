@@ -10,21 +10,25 @@ import (
 // PrizeTierResponse represents a prize tier response
 // This is used by the handler and must match the expected structure
 type PrizeTierResponse struct {
-	ID                string `json:"id,omitempty"`
-	PrizeStructureID  string `json:"prize_structure_id,omitempty"`
-	Rank              int    `json:"rank"`
-	Name              string `json:"name"`
-	PrizeType         string `json:"prizeType"`
-	Description       string `json:"description,omitempty"`
-	Value             float64 `json:"value"`
-	CurrencyCode      string `json:"currency_code"`
-	ValueNGN          float64 `json:"value_ngn,omitempty"`
-	Quantity          int    `json:"quantity"`
-	Order             int    `json:"order"`
-	NumberOfRunnerUps int    `json:"numberOfRunnerUps"`
+	ID                string    `json:"id,omitempty"`
+	PrizeStructureID  string    `json:"prize_structure_id,omitempty"`
+	Rank              int       `json:"rank"`
+	Name              string    `json:"name"`
+	PrizeType         string    `json:"prizeType"`
+	Description       string    `json:"description,omitempty"`
+	Value             float64   `json:"value"`
+	CurrencyCode      string    `json:"currency_code"`
+	ValueNGN          float64   `json:"value_ngn,omitempty"`
+	Quantity          int       `json:"quantity"`
+	Order             int       `json:"order"`
+	NumberOfRunnerUps int       `json:"numberOfRunnerUps"`
 	CreatedAt         time.Time `json:"created_at,omitempty"`
 	UpdatedAt         time.Time `json:"updated_at,omitempty"`
 }
+
+// PrizeResponse is an alias for PrizeTierResponse to maintain compatibility
+// This resolves the type mismatch in the handler
+type PrizeResponse = PrizeTierResponse
 
 // PrizeTierDetailResponse represents a detailed view of a prize tier
 // This is complementary to PrizeTierResponse
@@ -72,12 +76,12 @@ type PrizeStructureSummaryResponse struct {
 // CreatePrizeStructureRequest represents a request to create a prize structure
 // This is used by the handler and must be preserved
 type CreatePrizeStructureRequest struct {
-	Name        string                     `json:"name" binding:"required"`
-	Description string                     `json:"description"`
-	IsActive    bool                       `json:"is_active"`
-	ValidFrom   time.Time                  `json:"valid_from" binding:"required"`
-	ValidTo     *time.Time                 `json:"valid_to"`
-	Prizes      []CreatePrizeTierRequest   `json:"prizes" binding:"required,dive"`
+	Name        string                  `json:"name" binding:"required"`
+	Description string                  `json:"description"`
+	IsActive    bool                    `json:"is_active"`
+	ValidFrom   time.Time               `json:"valid_from" binding:"required"`
+	ValidTo     *time.Time              `json:"valid_to"`
+	Prizes      []CreatePrizeTierRequest `json:"prizes" binding:"required,dive"`
 }
 
 // CreatePrizeTierRequest represents a request to create a prize tier
@@ -95,12 +99,12 @@ type CreatePrizeTierRequest struct {
 // UpdatePrizeStructureRequest represents a request to update a prize structure
 // This is used by the handler and must be preserved
 type UpdatePrizeStructureRequest struct {
-	Name        string                     `json:"name" binding:"required"`
-	Description string                     `json:"description"`
-	IsActive    bool                       `json:"is_active"`
-	ValidFrom   time.Time                  `json:"valid_from" binding:"required"`
-	ValidTo     *time.Time                 `json:"valid_to"`
-	Prizes      []UpdatePrizeTierRequest   `json:"prizes" binding:"required,dive"`
+	Name        string                  `json:"name" binding:"required"`
+	Description string                  `json:"description"`
+	IsActive    bool                    `json:"is_active"`
+	ValidFrom   time.Time               `json:"valid_from" binding:"required"`
+	ValidTo     *time.Time              `json:"valid_to"`
+	Prizes      []UpdatePrizeTierRequest `json:"prizes" binding:"required,dive"`
 }
 
 // UpdatePrizeTierRequest represents a request to update a prize tier
