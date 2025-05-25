@@ -8,6 +8,7 @@ import (
 type SuccessResponse struct {
 	Success bool        `json:"success"`
 	Data    interface{} `json:"data"`
+	Message string      `json:"message,omitempty"`
 }
 
 // ErrorResponse represents a generic error response
@@ -56,8 +57,10 @@ type WinnerResponse struct {
 	ID            string `json:"id"`
 	DrawID        string `json:"drawID,omitempty"`
 	MSISDN        string `json:"msisdn"`
+	MaskedMSISDN  string `json:"maskedMSISDN,omitempty"`
 	PrizeTierID   string `json:"prizeTierID"`
 	PrizeTierName string `json:"prizeTierName,omitempty"`
+	PrizeName     string `json:"prizeName,omitempty"`
 	PrizeValue    string `json:"prizeValue,omitempty"`
 	Status        string `json:"status"`
 	PaymentStatus string `json:"paymentStatus,omitempty"`
@@ -96,13 +99,17 @@ type PrizeStructureResponse struct {
 	Prizes         []PrizeTierResponse   `json:"prizes"`
 	CreatedAt      string                `json:"createdAt,omitempty"`
 	UpdatedAt      string                `json:"updatedAt,omitempty"`
+	CreatedBy      string                `json:"createdBy,omitempty"`
+	UpdatedBy      string                `json:"updatedBy,omitempty"`
 }
 
 // PrizeTierResponse represents a prize tier response
 type PrizeTierResponse struct {
 	ID                string  `json:"id,omitempty"`
+	PrizeStructureID  string  `json:"prize_structure_id,omitempty"`
 	Name              string  `json:"name"`
 	PrizeType         string  `json:"prizeType"`
+	Description       string  `json:"description,omitempty"`
 	Value             string  `json:"value"`
 	ValueNGN          int     `json:"valueNGN,omitempty"`
 	CurrencyCode      string  `json:"currency_code,omitempty"`
@@ -160,16 +167,18 @@ type UploadAuditResponse struct {
 // DataUploadAuditResponse represents a data upload audit response for reports
 type DataUploadAuditResponse struct {
 	ID                  string `json:"id"`
-	UploadedBy          string `json:"uploadedBy"`
-	UploadedAt          string `json:"uploadedAt"`
+	UploadedBy          string `json:"uploadedByUserId,omitempty"`
+	UploadedAt          string `json:"uploadTimestamp,omitempty"`
 	FileName            string `json:"fileName,omitempty"`
-	TotalUploaded       int    `json:"totalUploaded"`
+	TotalUploaded       int    `json:"recordCount,omitempty"`
 	SuccessfullyImported int   `json:"successfullyImported,omitempty"`
+	SuccessfulRows      int    `json:"successfulRows,omitempty"`
 	DuplicatesSkipped   int    `json:"duplicatesSkipped,omitempty"`
 	ErrorsEncountered   int    `json:"errorsEncountered,omitempty"`
+	ErrorCount          int    `json:"errorCount,omitempty"`
 	OperationType       string `json:"operationType,omitempty"`
 	Status              string `json:"status"`
-	Details             string `json:"details,omitempty"`
+	Details             string `json:"notes,omitempty"`
 }
 
 // AuditLogResponse represents an audit log response
@@ -245,11 +254,16 @@ type PrizeStructureDetailResponse struct {
 type PrizeStructureSummaryResponse struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
 	StartDate   time.Time `json:"start_date"`
 	EndDate     time.Time `json:"end_date"`
 	IsActive    bool      `json:"is_active"`
 	DayType     string    `json:"day_type"`
 	TotalPrizes int       `json:"total_prizes"`
+	PrizeCount  int       `json:"prizeCount,omitempty"`
+	ValidFrom   string    `json:"validFrom,omitempty"`
+	ValidTo     string    `json:"validTo,omitempty"`
+	CreatedAt   string    `json:"createdAt,omitempty"`
 }
 
 // CreatePrizeStructureRequest represents the request to create a new prize structure
@@ -259,8 +273,11 @@ type CreatePrizeStructureRequest struct {
 	StartDate   time.Time               `json:"start_date" binding:"required"`
 	EndDate     time.Time               `json:"end_date" binding:"required"`
 	IsActive    bool                    `json:"is_active"`
+	ValidFrom   time.Time               `json:"valid_from" binding:"required"`
+	ValidTo     *time.Time              `json:"valid_to"`
 	DayType     string                  `json:"day_type" binding:"required,oneof=weekday weekend all"`
 	PrizeTiers  []PrizeTierCreateRequest `json:"prize_tiers" binding:"required,dive"`
+	Prizes      []CreatePrizeTierRequest `json:"prizes" binding:"required,dive"`
 }
 
 // PrizeTierCreateRequest represents the request to create a new prize tier
@@ -273,6 +290,17 @@ type PrizeTierCreateRequest struct {
 	NumberOfRunnerUps int     `json:"number_of_runner_ups" binding:"gte=0"`
 }
 
+// CreatePrizeTierRequest represents a request to create a prize tier
+type CreatePrizeTierRequest struct {
+	Rank              int     `json:"rank" binding:"required"`
+	Name              string  `json:"name" binding:"required"`
+	Description       string  `json:"description"`
+	Value             float64 `json:"value" binding:"required"`
+	CurrencyCode      string  `json:"currency_code" binding:"required"` 
+	Quantity          int     `json:"quantity" binding:"required"`
+	NumberOfRunnerUps int     `json:"number_of_runner_ups"`
+}
+
 // PrizeStructureUpdateRequest represents the request to update an existing prize structure
 type PrizeStructureUpdateRequest struct {
 	Name        string                  `json:"name"`
@@ -280,8 +308,11 @@ type PrizeStructureUpdateRequest struct {
 	StartDate   time.Time               `json:"start_date"`
 	EndDate     time.Time               `json:"end_date"`
 	IsActive    bool                    `json:"is_active"`
+	ValidFrom   time.Time               `json:"valid_from" binding:"required"`
+	ValidTo     *time.Time              `json:"valid_to"`
 	DayType     string                  `json:"day_type" binding:"omitempty,oneof=weekday weekend all"`
 	PrizeTiers  []PrizeTierUpdateRequest `json:"prize_tiers" binding:"omitempty,dive"`
+	Prizes      []UpdatePrizeTierRequest `json:"prizes" binding:"required,dive"`
 }
 
 // PrizeTierUpdateRequest represents the request to update an existing prize tier
@@ -295,9 +326,33 @@ type PrizeTierUpdateRequest struct {
 	NumberOfRunnerUps int     `json:"number_of_runner_ups" binding:"omitempty,gte=0"`
 }
 
+// UpdatePrizeTierRequest represents a request to update a prize tier
+type UpdatePrizeTierRequest struct {
+	ID                string  `json:"id"`
+	Rank              int     `json:"rank" binding:"required"`
+	Name              string  `json:"name" binding:"required"`
+	Description       string  `json:"description"`
+	Value             float64 `json:"value" binding:"required"`
+	CurrencyCode      string  `json:"currency_code" binding:"required"` 
+	Quantity          int     `json:"quantity" binding:"required"`
+	NumberOfRunnerUps int     `json:"number_of_runner_ups"`
+}
+
 // DeleteConfirmationResponse represents a response for delete operations
 type DeleteConfirmationResponse struct {
 	ID      string `json:"id"`
 	Deleted bool   `json:"deleted"`
 	Message string `json:"message,omitempty"`
+}
+
+// PrizeStructureCreateRequest represents the request to create a new prize structure
+// This is a complementary type with strategic field naming
+type PrizeStructureCreateRequest struct {
+	Name        string                  `json:"name" binding:"required"`
+	Description string                  `json:"description"`
+	StartDate   time.Time               `json:"start_date" binding:"required"`
+	EndDate     time.Time               `json:"end_date" binding:"required"`
+	IsActive    bool                    `json:"is_active"`
+	DayType     string                  `json:"day_type" binding:"required,oneof=weekday weekend all"`
+	PrizeTiers  []PrizeTierCreateRequest `json:"prize_tiers" binding:"required,dive"`
 }
