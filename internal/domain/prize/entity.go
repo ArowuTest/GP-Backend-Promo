@@ -31,7 +31,8 @@ type Prize struct {
 	PrizeStructureID  uuid.UUID
 	Name              string
 	Description       string
-	Value             float64 // Changed from string to float64 for consistency
+	Value             float64
+	CurrencyCode      string // Added currency code field
 	Quantity          int
 	NumberOfRunnerUps int
 	CreatedAt         time.Time
@@ -45,7 +46,8 @@ type PrizeTier struct {
 	Rank              int
 	Name              string
 	Description       string
-	Value             float64 // Changed from string to float64 for consistency
+	Value             float64
+	CurrencyCode      string // Added currency code field
 	ValueNGN          float64
 	Quantity          int
 	NumberOfRunnerUps int
@@ -80,6 +82,7 @@ type CreatePrizeInput struct {
 	Name              string
 	Description       string
 	Value             float64
+	CurrencyCode      string // Added currency code field
 	Quantity          int
 	NumberOfRunnerUps int
 }
@@ -168,6 +171,10 @@ func ValidatePrize(p *Prize) error {
 		return errors.New("prize quantity must be positive")
 	}
 	
+	if p.CurrencyCode == "" {
+		return errors.New("currency code cannot be empty")
+	}
+	
 	return nil
 }
 
@@ -179,6 +186,10 @@ func ValidatePrizeTier(pt *PrizeTier) error {
 	
 	if pt.Quantity < 1 {
 		return errors.New("prize tier quantity must be positive")
+	}
+	
+	if pt.CurrencyCode == "" {
+		return errors.New("currency code cannot be empty")
 	}
 	
 	return nil

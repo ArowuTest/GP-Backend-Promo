@@ -45,6 +45,7 @@ type PrizeTierModel struct {
 	Name             string
 	Description      string
 	Value            float64
+	CurrencyCode     string    `gorm:"default:'NGN'"` // Added currency code field with default
 	ValueNGN         float64
 	Quantity         int
 	CreatedAt        time.Time
@@ -58,6 +59,7 @@ type PrizeModel struct {
 	Name             string
 	Description      string
 	Value            float64
+	CurrencyCode     string    `gorm:"default:'NGN'"` // Added currency code field with default
 	Quantity         int
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
@@ -121,6 +123,7 @@ func toPrizeTierModel(pt *prizeDomain.PrizeTier) *PrizeTierModel {
 		Name:             pt.Name,
 		Description:      pt.Description,
 		Value:            pt.Value,
+		CurrencyCode:     pt.CurrencyCode, // Added currency code field
 		ValueNGN:         pt.ValueNGN,
 		Quantity:         pt.Quantity,
 		CreatedAt:        pt.CreatedAt,
@@ -147,6 +150,7 @@ func (m *PrizeTierModel) toDomain() (*prizeDomain.PrizeTier, error) {
 		Name:             m.Name,
 		Description:      m.Description,
 		Value:            m.Value,
+		CurrencyCode:     m.CurrencyCode, // Added currency code field
 		ValueNGN:         m.ValueNGN,
 		Quantity:         m.Quantity,
 		CreatedAt:        m.CreatedAt,
@@ -162,6 +166,7 @@ func toPrizeModel(p *prizeDomain.Prize) *PrizeModel {
 		Name:             p.Name,
 		Description:      p.Description,
 		Value:            p.Value,
+		CurrencyCode:     p.CurrencyCode, // Added currency code field
 		Quantity:         p.Quantity,
 		CreatedAt:        p.CreatedAt,
 		UpdatedAt:        p.UpdatedAt,
@@ -186,6 +191,7 @@ func (m *PrizeModel) toDomain() (*prizeDomain.Prize, error) {
 		Name:             m.Name,
 		Description:      m.Description,
 		Value:            m.Value,
+		CurrencyCode:     m.CurrencyCode, // Added currency code field
 		Quantity:         m.Quantity,
 		CreatedAt:        m.CreatedAt,
 		UpdatedAt:        m.UpdatedAt,
