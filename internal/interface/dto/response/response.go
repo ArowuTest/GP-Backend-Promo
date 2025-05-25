@@ -2,6 +2,7 @@ package response
 
 import (
 	"github.com/google/uuid"
+	"time"
 )
 
 // SuccessResponse defines a standard success response
@@ -36,23 +37,34 @@ type PaginatedResponse struct {
 
 // PrizeStructureResponse defines the response for a prize structure
 type PrizeStructureResponse struct {
-	ID          uuid.UUID       `json:"id"`
+	ID          string          `json:"id"`
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	ValidFrom   string          `json:"validFrom"` // Format: YYYY-MM-DD
 	ValidTo     string          `json:"validTo"`   // Format: YYYY-MM-DD
 	Prizes      []PrizeResponse `json:"prizes"`
 	IsActive    bool            `json:"isActive"`
+	CreatedAt   string          `json:"createdAt,omitempty"`
+	UpdatedAt   string          `json:"updatedAt,omitempty"`
 }
 
 // PrizeResponse defines the response for a prize tier
+// Updated to include all fields used by the handler
 type PrizeResponse struct {
-	ID                uuid.UUID `json:"id"`
-	Name              string    `json:"name"`
-	Description       string    `json:"description"`
-	Value             string    `json:"value"`
-	Quantity          int       `json:"quantity"`
-	NumberOfRunnerUps int       `json:"numberOfRunnerUps"`
+	ID               string    `json:"id"`
+	PrizeStructureID string    `json:"prize_structure_id,omitempty"`
+	Rank             int       `json:"rank"`
+	Name             string    `json:"name"`
+	PrizeType        string    `json:"prizeType"`
+	Description      string    `json:"description,omitempty"`
+	Value            float64   `json:"value"`
+	CurrencyCode     string    `json:"currency_code"`
+	ValueNGN         float64   `json:"value_ngn,omitempty"`
+	Quantity         int       `json:"quantity"`
+	Order            int       `json:"order"`
+	NumberOfRunnerUps int      `json:"numberOfRunnerUps"`
+	CreatedAt        time.Time `json:"created_at,omitempty"`
+	UpdatedAt        time.Time `json:"updated_at,omitempty"`
 }
 
 // UserResponseBase defines the base response for a user (used internally)
@@ -73,15 +85,15 @@ type LoginResponse struct {
 
 // DrawResponse defines the response for a draw
 type DrawResponse struct {
-	ID             uuid.UUID        `json:"id"`
-	Name           string           `json:"name"`
-	Description    string           `json:"description"`
-	DrawDate       string           `json:"drawDate"`
-	Status         string           `json:"status"`
-	PrizeStructure string           `json:"prizeStructure"`
-	Winners        []WinnerResponse `json:"winners"`
-	CreatedAt      string           `json:"createdAt"`
-	CreatedBy      string           `json:"createdBy"`
+	ID            uuid.UUID        `json:"id"`
+	Name          string           `json:"name"`
+	Description   string           `json:"description"`
+	DrawDate      string           `json:"drawDate"`
+	Status        string           `json:"status"`
+	PrizeStructure string          `json:"prizeStructure"`
+	Winners       []WinnerResponse `json:"winners"`
+	CreatedAt     string           `json:"createdAt"`
+	CreatedBy     string           `json:"createdBy"`
 }
 
 // WinnerResponse defines the response for a winner
@@ -151,14 +163,25 @@ type ParticipantStatsResponse struct {
 
 // EligibilityStatsResponse defines the response for eligibility statistics
 type EligibilityStatsResponse struct {
-	Date              string `json:"date,omitempty"`     // Added to match frontend expectations
-	TotalEligible     int    `json:"totalEligible"`
-	TotalEntries      int    `json:"totalEntries"`
+	Date          string `json:"date,omitempty"` // Added to match frontend expectations
+	TotalEligible int    `json:"totalEligible"`
+	TotalEntries  int    `json:"totalEntries"`
 }
 
 // RunnerUpInvocationResult defines the response for invoking a runner-up
 type RunnerUpInvocationResult struct {
-	Message        string         `json:"message"`
+	Message        string        `json:"message"`
 	OriginalWinner WinnerResponse `json:"originalWinner"`
 	NewWinner      WinnerResponse `json:"newWinner"`
+}
+
+// UserResponse defines the response for a user
+type UserResponse struct {
+	ID        string `json:"id"`
+	Username  string `json:"username"`
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+	IsActive  bool   `json:"isActive"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
 }
