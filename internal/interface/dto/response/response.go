@@ -36,12 +36,16 @@ type Pagination struct {
 // DrawResponse represents a draw response
 type DrawResponse struct {
 	ID                   string           `json:"id"`
+	Name                 string           `json:"name,omitempty"`
+	Description          string           `json:"description,omitempty"`
 	DrawDate             string           `json:"drawDate"`
 	PrizeStructureID     string           `json:"prizeStructureID"`
+	PrizeStructure       interface{}      `json:"prizeStructure,omitempty"`
 	Status               string           `json:"status"`
 	TotalEligibleMSISDNs int              `json:"totalEligibleMSISDNs"`
 	TotalEntries         int              `json:"totalEntries"`
 	ExecutedByAdminID    string           `json:"executedByAdminID"`
+	CreatedBy            string           `json:"createdBy,omitempty"`
 	Winners              []WinnerResponse `json:"winners,omitempty"`
 	CreatedAt            string           `json:"createdAt"`
 	UpdatedAt            string           `json:"updatedAt,omitempty"`
@@ -155,12 +159,17 @@ type UploadAuditResponse struct {
 
 // DataUploadAuditResponse represents a data upload audit response for reports
 type DataUploadAuditResponse struct {
-	ID            string `json:"id"`
-	UploadedBy    string `json:"uploadedBy"`
-	UploadedAt    string `json:"uploadedAt"`
-	TotalUploaded int    `json:"totalUploaded"`
-	Status        string `json:"status"`
-	Details       string `json:"details,omitempty"`
+	ID                  string `json:"id"`
+	UploadedBy          string `json:"uploadedBy"`
+	UploadedAt          string `json:"uploadedAt"`
+	FileName            string `json:"fileName,omitempty"`
+	TotalUploaded       int    `json:"totalUploaded"`
+	SuccessfullyImported int   `json:"successfullyImported,omitempty"`
+	DuplicatesSkipped   int    `json:"duplicatesSkipped,omitempty"`
+	ErrorsEncountered   int    `json:"errorsEncountered,omitempty"`
+	OperationType       string `json:"operationType,omitempty"`
+	Status              string `json:"status"`
+	Details             string `json:"details,omitempty"`
 }
 
 // AuditLogResponse represents an audit log response
@@ -284,4 +293,11 @@ type PrizeTierUpdateRequest struct {
 	CurrencyCode      string  `json:"currency_code"`
 	Quantity          int     `json:"quantity" binding:"omitempty,gt=0"`
 	NumberOfRunnerUps int     `json:"number_of_runner_ups" binding:"omitempty,gte=0"`
+}
+
+// DeleteConfirmationResponse represents a response for delete operations
+type DeleteConfirmationResponse struct {
+	ID      string `json:"id"`
+	Deleted bool   `json:"deleted"`
+	Message string `json:"message,omitempty"`
 }
