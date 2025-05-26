@@ -16,23 +16,23 @@ import (
 // ParticipantHandler handles participant-related HTTP requests
 type ParticipantHandler struct {
 	uploadParticipantsService *participantApp.UploadParticipantsService
-	getParticipantService     *participantApp.GetParticipantService
 	listParticipantsService   *participantApp.ListParticipantsService
 	getParticipantStatsService *participantApp.GetParticipantStatsService
+	listUploadAuditsService   *participantApp.ListUploadAuditsService
 }
 
 // NewParticipantHandler creates a new ParticipantHandler
 func NewParticipantHandler(
 	uploadParticipantsService *participantApp.UploadParticipantsService,
-	getParticipantService *participantApp.GetParticipantService,
 	listParticipantsService *participantApp.ListParticipantsService,
 	getParticipantStatsService *participantApp.GetParticipantStatsService,
+	listUploadAuditsService *participantApp.ListUploadAuditsService,
 ) *ParticipantHandler {
 	return &ParticipantHandler{
 		uploadParticipantsService: uploadParticipantsService,
-		getParticipantService:     getParticipantService,
 		listParticipantsService:   listParticipantsService,
 		getParticipantStatsService: getParticipantStatsService,
+		listUploadAuditsService:   listUploadAuditsService,
 	}
 }
 
@@ -92,49 +92,6 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 	})
 }
 
-// GetParticipant handles GET /api/admin/participants/:id
-func (h *ParticipantHandler) GetParticipant(c *gin.Context) {
-	// Parse participant ID
-	participantID, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
-			Success: false,
-			Error:   "Invalid participant ID format",
-		})
-		return
-	}
-	
-	// Prepare input
-	input := participantApp.GetParticipantInput{
-		ID: participantID,
-	}
-	
-	// Get participant
-	output, err := h.getParticipantService.GetParticipant(c.Request.Context(), input)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
-			Success: false,
-			Error:   "Failed to get participant: " + err.Error(),
-		})
-		return
-	}
-	
-	c.JSON(http.StatusOK, response.SuccessResponse{
-		Success: true,
-		Data: response.ParticipantResponse{
-			ID:             output.ID.String(),
-			MSISDN:         output.MSISDN,
-			Points:         output.Points,
-			RechargeAmount: output.RechargeAmount,
-			RechargeDate:   output.RechargeDate,
-			CreatedAt:      output.CreatedAt.Format("2006-01-02 15:04:05"),
-			UpdatedAt:      output.UpdatedAt.Format("2006-01-02 15:04:05"),
-			UploadID:       output.UploadID.String(),
-			UploadedAt:     output.UploadedAt.Format("2006-01-02 15:04:05"),
-		},
-	})
-}
-
 // ListParticipants handles GET /api/admin/participants
 func (h *ParticipantHandler) ListParticipants(c *gin.Context) {
 	// Parse pagination parameters
@@ -172,7 +129,7 @@ func (h *ParticipantHandler) ListParticipants(c *gin.Context) {
 			MSISDN:         p.MSISDN,
 			Points:         p.Points,
 			RechargeAmount: p.RechargeAmount,
-			RechargeDate:   p.RechargeDate,
+			RechargeDate:   p.RechargeDate.Format("2006-01-02"),
 			CreatedAt:      p.CreatedAt.Format("2006-01-02 15:04:05"),
 			UpdatedAt:      p.UpdatedAt.Format("2006-01-02 15:04:05"),
 			UploadID:       p.UploadID.String(),
@@ -186,7 +143,7 @@ func (h *ParticipantHandler) ListParticipants(c *gin.Context) {
 		Pagination: response.Pagination{
 			Page:       output.Page,
 			PageSize:   output.PageSize,
-			TotalRows:  int(output.TotalCount),
+			TotalRows:  output.TotalCount,
 			TotalPages: output.TotalPages,
 			TotalItems: int64(output.TotalCount),
 		},
@@ -220,6 +177,63 @@ func (h *ParticipantHandler) GetParticipantStats(c *gin.Context) {
 			TotalParticipants: output.TotalParticipants,
 			TotalPoints:       output.TotalPoints,
 			AveragePoints:     float64(output.TotalPoints) / float64(output.TotalParticipants),
+		},
+	})
+}
+
+// ListUploadAudits handles GET /api/admin/participants/uploads
+func (h *ParticipantHandler) ListUploadAudits(c *gin.Context) {
+	// Parse pagination parameters
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+	
+	pageSize, err := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	if err != nil || pageSize < 1 {
+		pageSize = 10
+	}
+	
+	// Prepare input
+	input := participantApp.ListUploadAuditsInput{
+		Page:     page,
+		PageSize: pageSize,
+	}
+	
+	// List upload audits
+	output, err := h.listUploadAuditsService.ListUploadAudits(c.Request.Context(), input)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Success: false,
+			Error:   "Failed to list upload audits: " + err.Error(),
+		})
+		return
+	}
+	
+	// Prepare response
+	audits := make([]response.DataUploadAuditResponse, 0, len(output.Audits))
+	for _, a := range output.Audits {
+		audits = append(audits, response.DataUploadAuditResponse{
+			ID:                  a.ID.String(),
+			UploadedBy:          a.UploadedBy,
+			UploadedByUserId:    a.UploadedByUserID.String(),
+			UploadedAt:          a.UploadedAt.Format("2006-01-02 15:04:05"),
+			TotalUploaded:       a.TotalUploaded,
+			Status:              a.Status,
+			SuccessfullyImported: a.SuccessfulRows,
+			ErrorsEncountered:   a.ErrorCount,
+		})
+	}
+	
+	c.JSON(http.StatusOK, response.PaginatedResponse{
+		Success: true,
+		Data:    audits,
+		Pagination: response.Pagination{
+			Page:       output.Page,
+			PageSize:   output.PageSize,
+			TotalRows:  output.TotalCount,
+			TotalPages: output.TotalPages,
+			TotalItems: int64(output.TotalCount),
 		},
 	})
 }
