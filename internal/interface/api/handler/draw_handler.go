@@ -294,35 +294,23 @@ func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response
+	// Prepare response - ONLY using fields that exist in RunnerUpWinnerOutput
 	originalWinner := response.WinnerResponse{
-		ID:            output.OriginalWinner.ID.String(),
-		DrawID:        output.OriginalWinner.DrawID.String(),
-		MSISDN:        output.OriginalWinner.MSISDN,
-		MaskedMSISDN:  maskMSISDN(output.OriginalWinner.MSISDN),
-		PrizeTierID:   output.OriginalWinner.PrizeTierID.String(),
-		PrizeTierName: output.OriginalWinner.PrizeTierName,
-		PrizeValue:    strconv.FormatFloat(output.OriginalWinner.PrizeValue, 'f', 2, 64),
-		Status:        output.OriginalWinner.Status,
-		IsRunnerUp:    output.OriginalWinner.IsRunnerUp,
-		RunnerUpRank:  output.OriginalWinner.RunnerUpRank,
-		CreatedAt:     output.OriginalWinner.CreatedAt.Format("2006-01-02 15:04:05"),
-		UpdatedAt:     output.OriginalWinner.UpdatedAt.Format("2006-01-02 15:04:05"),
+		ID:          output.OriginalWinner.ID.String(),
+		MSISDN:      output.OriginalWinner.MSISDN,
+		MaskedMSISDN: maskMSISDN(output.OriginalWinner.MSISDN),
+		PrizeTierID: output.OriginalWinner.PrizeTierID.String(),
+		PrizeValue:  strconv.FormatFloat(output.OriginalWinner.PrizeValue, 'f', 2, 64),
+		Status:      output.OriginalWinner.Status,
 	}
 	
 	newWinner := response.WinnerResponse{
-		ID:            output.NewWinner.ID.String(),
-		DrawID:        output.NewWinner.DrawID.String(),
-		MSISDN:        output.NewWinner.MSISDN,
-		MaskedMSISDN:  maskMSISDN(output.NewWinner.MSISDN),
-		PrizeTierID:   output.NewWinner.PrizeTierID.String(),
-		PrizeTierName: output.NewWinner.PrizeTierName,
-		PrizeValue:    strconv.FormatFloat(output.NewWinner.PrizeValue, 'f', 2, 64),
-		Status:        output.NewWinner.Status,
-		IsRunnerUp:    output.NewWinner.IsRunnerUp,
-		RunnerUpRank:  output.NewWinner.RunnerUpRank,
-		CreatedAt:     output.NewWinner.CreatedAt.Format("2006-01-02 15:04:05"),
-		UpdatedAt:     output.NewWinner.UpdatedAt.Format("2006-01-02 15:04:05"),
+		ID:          output.NewWinner.ID.String(),
+		MSISDN:      output.NewWinner.MSISDN,
+		MaskedMSISDN: maskMSISDN(output.NewWinner.MSISDN),
+		PrizeTierID: output.NewWinner.PrizeTierID.String(),
+		PrizeValue:  strconv.FormatFloat(output.NewWinner.PrizeValue, 'f', 2, 64),
+		Status:      output.NewWinner.Status,
 	}
 	
 	c.JSON(http.StatusOK, response.SuccessResponse{
