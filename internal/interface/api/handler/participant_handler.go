@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"encoding/base64"
+	"encoding/csv"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 	
 	"github.com/gin-gonic/gin"
@@ -16,7 +19,6 @@ import (
 // ParticipantHandler handles participant-related HTTP requests
 type ParticipantHandler struct {
 	uploadParticipantsService *participantApp.UploadParticipantsService
-	getParticipantService     *participantApp.GetParticipantService
 	listParticipantsService   *participantApp.ListParticipantsService
 	getParticipantStatsService *participantApp.GetParticipantStatsService
 }
@@ -24,13 +26,11 @@ type ParticipantHandler struct {
 // NewParticipantHandler creates a new ParticipantHandler
 func NewParticipantHandler(
 	uploadParticipantsService *participantApp.UploadParticipantsService,
-	getParticipantService *participantApp.GetParticipantService,
 	listParticipantsService *participantApp.ListParticipantsService,
 	getParticipantStatsService *participantApp.GetParticipantStatsService,
 ) *ParticipantHandler {
 	return &ParticipantHandler{
 		uploadParticipantsService: uploadParticipantsService,
-		getParticipantService:     getParticipantService,
 		listParticipantsService:   listParticipantsService,
 		getParticipantStatsService: getParticipantStatsService,
 	}
@@ -57,13 +57,48 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 		return
 	}
 	
+	// Parse CSV data
+	csvData, err := base64.StdEncoding.DecodeString(req.Data)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid CSV data: " + err.Error(),
+		})
+		return
+	}
+	
+	// Parse CSV
+	reader := csv.NewReader(strings.NewReader(string(csvData)))
+	records, err := reader.ReadAll()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Failed to parse CSV: " + err.Error(),
+		})
+		return
+	}
+	
+	// Skip header row
+	if len(records) > 0 {
+		records = records[1:]
+	}
+	
 	// Prepare input
-	participants := make([]participantApp.ParticipantInput, 0, len(req.Data))
-	for _, p := range req.Data {
+	participants := make([]participantApp.ParticipantInput, 0, len(records))
+	for _, record := range records {
+		if len(record) < 3 {
+			continue
+		}
+		
+		rechargeAmount, err := strconv.ParseFloat(record[1], 64)
+		if err != nil {
+			continue
+		}
+		
 		participants = append(participants, participantApp.ParticipantInput{
-			MSISDN:         p.MSISDN,
-			RechargeAmount: p.RechargeAmount,
-			RechargeDate:   p.RechargeDate,
+			MSISDN:         record[0],
+			RechargeAmount: rechargeAmount,
+			RechargeDate:   record[2],
 		})
 	}
 	
@@ -89,48 +124,6 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 			TotalUploaded: output.TotalUploaded,
 			UploadID:      output.UploadID.String(),
 			UploadedAt:    output.UploadDate.Format("2006-01-02 15:04:05"),
-		},
-	})
-}
-
-// GetParticipant handles GET /api/admin/participants/:id
-func (h *ParticipantHandler) GetParticipant(c *gin.Context) {
-	// Parse participant ID
-	participantID, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
-			Success: false,
-			Error:   "Invalid participant ID format",
-		})
-		return
-	}
-	
-	// Prepare input
-	input := participantApp.GetParticipantInput{
-		ID: participantID,
-	}
-	
-	// Get participant
-	output, err := h.getParticipantService.GetParticipant(c.Request.Context(), input)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
-			Success: false,
-			Error:   "Failed to get participant: " + err.Error(),
-		})
-		return
-	}
-	
-	c.JSON(http.StatusOK, response.SuccessResponse{
-		Success: true,
-		Data: response.ParticipantResponse{
-			ID:             output.ID.String(),
-			MSISDN:         output.MSISDN,
-			Points:         output.Points,
-			RechargeAmount: output.RechargeAmount,
-			RechargeDate:   output.RechargeDate.Format("2006-01-02"),
-			CreatedAt:      output.CreatedAt.Format("2006-01-02 15:04:05"),
-			UpdatedAt:      output.UpdatedAt.Format("2006-01-02 15:04:05"),
-			UploadID:       output.UploadID.String(),
 		},
 	})
 }
@@ -195,11 +188,13 @@ func (h *ParticipantHandler) ListParticipants(c *gin.Context) {
 // GetParticipantStats handles GET /api/admin/participants/stats
 func (h *ParticipantHandler) GetParticipantStats(c *gin.Context) {
 	// Parse date parameter
-	date := c.DefaultQuery("date", time.Now().Format("2006-01-02"))
+	startDate := c.DefaultQuery("startDate", time.Now().Format("2006-01-02"))
+	endDate := c.DefaultQuery("endDate", time.Now().Format("2006-01-02"))
 	
 	// Prepare input
 	input := participantApp.GetParticipantStatsInput{
-		Date: date,
+		StartDate: startDate,
+		EndDate:   endDate,
 	}
 	
 	// Get participant stats
@@ -255,10 +250,10 @@ func (h *ParticipantHandler) ListUploadAudits(c *gin.Context) {
 			UploadDate:     a.UploadDate.Format("2006-01-02 15:04:05"),
 			FileName:       a.FileName,
 			Status:         a.Status,
-			TotalRows:      a.TotalRows,
-			SuccessfulRows: a.SuccessfulRows,
-			ErrorCount:     a.ErrorCount,
-			ErrorDetails:   a.ErrorDetails,
+			TotalRows:      a.RecordCount,
+			SuccessfulRows: a.RecordCount,
+			ErrorCount:     0,
+			ErrorDetails:   a.ErrorMessage,
 		})
 	}
 	
