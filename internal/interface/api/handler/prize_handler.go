@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -570,9 +569,9 @@ func (h *PrizeHandler) DeletePrizeStructure(c *gin.Context) {
 	}
 
 	// Create input for application layer
-	input := prize.DeletePrizeStructureInput{
-		ID:        prizeStructureID,
-		DeletedBy: userID,
+	input := prizeApp.DeletePrizeStructureInput{
+            ID:        prizeStructureID,
+            DeletedBy: userID,
 	}
 
 	// Delete prize structure
