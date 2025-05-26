@@ -70,6 +70,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 		Success: true,
 		Data: response.LoginResponse{
 			Token: output.Token,
+			ExpiresAt: util.FormatTimeOrEmpty(output.ExpiresAt, time.RFC3339),
 			User: response.UserResponse{
 				ID:       output.User.ID.String(),
 				Username: output.User.Username,
@@ -81,7 +82,6 @@ func (h *UserHandler) Login(c *gin.Context) {
 				CreatedAt: time.Now().Format(time.RFC3339), // Default since field is missing
 				UpdatedAt: time.Now().Format(time.RFC3339), // Default since field is missing
 			},
-			Expiry: util.FormatTimeOrEmpty(output.ExpiresAt, time.RFC3339),
 		},
 	})
 }

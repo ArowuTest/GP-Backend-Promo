@@ -16,7 +16,7 @@ import (
 // DrawHandler handles draw-related HTTP requests
 type DrawHandler struct {
 	executeDrawService *drawApp.ExecuteDrawService
-	getDrawByIDService *drawApp.GetDrawByIDService
+	getDrawService     *drawApp.GetDrawByIDService
 	listDrawsService   *drawApp.ListDrawsService
 	invokeRunnerUpService *drawApp.InvokeRunnerUpService
 }
@@ -24,13 +24,13 @@ type DrawHandler struct {
 // NewDrawHandler creates a new DrawHandler
 func NewDrawHandler(
 	executeDrawService *drawApp.ExecuteDrawService,
-	getDrawByIDService *drawApp.GetDrawByIDService,
+	getDrawService *drawApp.GetDrawByIDService,
 	listDrawsService *drawApp.ListDrawsService,
 	invokeRunnerUpService *drawApp.InvokeRunnerUpService,
 ) *DrawHandler {
 	return &DrawHandler{
 		executeDrawService: executeDrawService,
-		getDrawByIDService: getDrawByIDService,
+		getDrawService:     getDrawService,
 		listDrawsService:   listDrawsService,
 		invokeRunnerUpService: invokeRunnerUpService,
 	}
@@ -48,7 +48,7 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 	}
 	
 	// Get user ID from context
-	userID, exists := c.Get("userID")
+	adminIDValue, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
 			Success: false,
@@ -57,11 +57,21 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 		return
 	}
 	
-	// Prepare input - no need to parse UUID or time as they're already the correct types
+	// Parse prize structure ID
+	prizeStructureID, err := uuid.Parse(req.PrizeStructureID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid prize structure ID format",
+		})
+		return
+	}
+	
+	// Prepare input
 	input := drawApp.ExecuteDrawInput{
 		DrawDate:         req.DrawDate,
-		PrizeStructureID: req.PrizeStructureID,
-		ExecutedByAdminID: userID.(uuid.UUID),
+		PrizeStructureID: prizeStructureID,
+		ExecutedByAdminID: adminIDValue.(uuid.UUID),
 	}
 	
 	// Execute draw
@@ -79,30 +89,31 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 	for _, w := range output.Winners {
 		winners = append(winners, response.WinnerResponse{
 			ID:            w.ID.String(),
+			DrawID:        w.DrawID.String(),
 			MSISDN:        w.MSISDN,
 			MaskedMSISDN:  maskMSISDN(w.MSISDN),
 			PrizeTierID:   w.PrizeTierID.String(),
-			PrizeName:     w.PrizeName,
-			PrizeValue:    strconv.FormatFloat(w.PrizeValue, 'f', 2, 64),
-			Status:        "Pending",
-			IsRunnerUp:    false,
-			RunnerUpRank:  0,
-			CreatedAt:     time.Now().Format("2006-01-02 15:04:05"),
+			PrizeTierName: w.PrizeTierName,
+			PrizeValue:    w.PrizeValue,
+			Status:        w.Status,
+			IsRunnerUp:    w.IsRunnerUp,
+			RunnerUpRank:  w.RunnerUpRank,
+			CreatedAt:     w.CreatedAt.Format("2006-01-02 15:04:05"),
 		})
 	}
 	
 	c.JSON(http.StatusCreated, response.SuccessResponse{
 		Success: true,
 		Data: response.DrawResponse{
-			ID:                   output.DrawID.String(),
-			DrawDate:             output.DrawDate.Format("2006-01-02"),
-			PrizeStructureID:     output.DrawID.String(),
-			Status:               "Completed",
+			ID:                   output.ID.String(),
+			DrawDate:             output.DrawDate,
+			PrizeStructureID:     output.PrizeStructureID.String(),
+			Status:               output.Status,
 			TotalEligibleMSISDNs: output.TotalEligibleMSISDNs,
 			TotalEntries:         output.TotalEntries,
-			ExecutedByAdminID:    userID.(uuid.UUID).String(),
+			ExecutedByAdminID:    output.ExecutedBy.String(),
 			Winners:              winners,
-			CreatedAt:            time.Now().Format("2006-01-02 15:04:05"),
+			CreatedAt:            output.CreatedAt.Format("2006-01-02 15:04:05"),
 		},
 	})
 }
@@ -110,15 +121,22 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 // GetDraw handles GET /api/admin/draws/:id
 func (h *DrawHandler) GetDraw(c *gin.Context) {
 	// Parse draw ID
-	drawIDStr := c.Param("id")
+	drawID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid draw ID format",
+		})
+		return
+	}
 	
 	// Prepare input
 	input := drawApp.GetDrawByIDInput{
-		ID: drawIDStr,
+		ID: drawID,
 	}
 	
 	// Get draw
-	output, err := h.getDrawByIDService.GetDrawByID(c.Request.Context(), input)
+	output, err := h.getDrawService.GetDrawByID(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
@@ -136,13 +154,15 @@ func (h *DrawHandler) GetDraw(c *gin.Context) {
 			MSISDN:        w.MSISDN,
 			MaskedMSISDN:  maskMSISDN(w.MSISDN),
 			PrizeTierID:   w.PrizeTierID.String(),
+			PrizeTierName: w.PrizeTierName,
+			PrizeValue:    w.PrizeValue,
 			Status:        w.Status,
 			PaymentStatus: w.PaymentStatus,
 			PaymentNotes:  w.PaymentNotes,
+			PaidAt:        formatTimePtr(w.PaidAt),
 			IsRunnerUp:    w.IsRunnerUp,
 			RunnerUpRank:  w.RunnerUpRank,
 			CreatedAt:     w.CreatedAt.Format("2006-01-02 15:04:05"),
-			UpdatedAt:     w.UpdatedAt.Format("2006-01-02 15:04:05"),
 		})
 	}
 	
@@ -150,7 +170,7 @@ func (h *DrawHandler) GetDraw(c *gin.Context) {
 		Success: true,
 		Data: response.DrawResponse{
 			ID:                   output.ID.String(),
-			DrawDate:             output.DrawDate.Format("2006-01-02"),
+			DrawDate:             output.DrawDate,
 			PrizeStructureID:     output.PrizeStructureID.String(),
 			Status:               output.Status,
 			TotalEligibleMSISDNs: output.TotalEligibleMSISDNs,
@@ -158,7 +178,7 @@ func (h *DrawHandler) GetDraw(c *gin.Context) {
 			ExecutedByAdminID:    output.ExecutedBy.String(),
 			Winners:              winners,
 			CreatedAt:            output.CreatedAt.Format("2006-01-02 15:04:05"),
-			UpdatedAt:            output.UpdatedAt.Format("2006-01-02 15:04:05"),
+			UpdatedAt:            formatTimePtr(&output.UpdatedAt),
 		},
 	})
 }
@@ -199,10 +219,12 @@ func (h *DrawHandler) ListDraws(c *gin.Context) {
 		for _, w := range d.Winners {
 			winners = append(winners, response.WinnerResponse{
 				ID:            w.ID.String(),
-				DrawID:        d.ID.String(),
+				DrawID:        w.DrawID.String(),
 				MSISDN:        w.MSISDN,
 				MaskedMSISDN:  maskMSISDN(w.MSISDN),
 				PrizeTierID:   w.PrizeTierID.String(),
+				PrizeTierName: w.PrizeTierName,
+				PrizeValue:    w.PrizeValue,
 				Status:        w.Status,
 				IsRunnerUp:    w.IsRunnerUp,
 				RunnerUpRank:  w.RunnerUpRank,
@@ -212,15 +234,15 @@ func (h *DrawHandler) ListDraws(c *gin.Context) {
 		
 		draws = append(draws, response.DrawResponse{
 			ID:                   d.ID.String(),
-			DrawDate:             d.DrawDate.Format("2006-01-02"),
+			DrawDate:             d.DrawDate,
 			PrizeStructureID:     d.PrizeStructureID.String(),
 			Status:               d.Status,
 			TotalEligibleMSISDNs: d.TotalEligibleMSISDNs,
 			TotalEntries:         d.TotalEntries,
-			ExecutedByAdminID:    d.ExecutedByAdminID.String(),
+			ExecutedByAdminID:    d.ExecutedBy.String(),
 			Winners:              winners,
 			CreatedAt:            d.CreatedAt.Format("2006-01-02 15:04:05"),
-			UpdatedAt:            d.UpdatedAt.Format("2006-01-02 15:04:05"),
+			UpdatedAt:            formatTimePtr(&d.UpdatedAt),
 		})
 	}
 	
@@ -230,7 +252,7 @@ func (h *DrawHandler) ListDraws(c *gin.Context) {
 		Pagination: response.Pagination{
 			Page:       output.Page,
 			PageSize:   output.PageSize,
-			TotalRows:  output.TotalCount,
+			TotalRows:  int(output.TotalCount),
 			TotalPages: output.TotalPages,
 			TotalItems: int64(output.TotalCount),
 		},
@@ -259,7 +281,7 @@ func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
 	}
 	
 	// Get user ID from context
-	userID, exists := c.Get("userID")
+	adminIDValue, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
 			Success: false,
@@ -268,11 +290,11 @@ func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
 		return
 	}
 	
-	// Prepare input - using the correct field names from the actual service
+	// Prepare input
 	input := drawApp.InvokeRunnerUpInput{
 		WinnerID:    winnerID,
-		AdminUserID: userID.(uuid.UUID),
 		Reason:      req.Reason,
+		AdminUserID: adminIDValue.(uuid.UUID),
 	}
 	
 	// Invoke runner-up
@@ -285,31 +307,43 @@ func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response - only using fields that exist in RunnerUpWinnerOutput
+	// Prepare response
 	originalWinner := response.WinnerResponse{
-		ID:          output.OriginalWinner.ID.String(),
-		MSISDN:      output.OriginalWinner.MSISDN,
-		MaskedMSISDN: maskMSISDN(output.OriginalWinner.MSISDN),
-		PrizeTierID: output.OriginalWinner.PrizeTierID.String(),
-		Status:      output.OriginalWinner.Status,
-		PrizeValue:  strconv.FormatFloat(output.OriginalWinner.PrizeValue, 'f', 2, 64),
+		ID:            output.OriginalWinner.ID.String(),
+		DrawID:        output.OriginalWinner.DrawID.String(),
+		MSISDN:        output.OriginalWinner.MSISDN,
+		MaskedMSISDN:  maskMSISDN(output.OriginalWinner.MSISDN),
+		PrizeTierID:   output.OriginalWinner.PrizeTierID.String(),
+		PrizeTierName: output.OriginalWinner.PrizeTierName,
+		PrizeValue:    output.OriginalWinner.PrizeValue,
+		Status:        output.OriginalWinner.Status,
+		IsRunnerUp:    output.OriginalWinner.IsRunnerUp,
+		RunnerUpRank:  output.OriginalWinner.RunnerUpRank,
+		CreatedAt:     output.OriginalWinner.CreatedAt.Format("2006-01-02 15:04:05"),
+		UpdatedAt:     formatTimePtr(&output.OriginalWinner.UpdatedAt),
 	}
 	
 	newWinner := response.WinnerResponse{
-		ID:          output.NewWinner.ID.String(),
-		MSISDN:      output.NewWinner.MSISDN,
-		MaskedMSISDN: maskMSISDN(output.NewWinner.MSISDN),
-		PrizeTierID: output.NewWinner.PrizeTierID.String(),
-		Status:      output.NewWinner.Status,
-		PrizeValue:  strconv.FormatFloat(output.NewWinner.PrizeValue, 'f', 2, 64),
+		ID:            output.NewWinner.ID.String(),
+		DrawID:        output.NewWinner.DrawID.String(),
+		MSISDN:        output.NewWinner.MSISDN,
+		MaskedMSISDN:  maskMSISDN(output.NewWinner.MSISDN),
+		PrizeTierID:   output.NewWinner.PrizeTierID.String(),
+		PrizeTierName: output.NewWinner.PrizeTierName,
+		PrizeValue:    output.NewWinner.PrizeValue,
+		Status:        output.NewWinner.Status,
+		IsRunnerUp:    output.NewWinner.IsRunnerUp,
+		RunnerUpRank:  output.NewWinner.RunnerUpRank,
+		CreatedAt:     output.NewWinner.CreatedAt.Format("2006-01-02 15:04:05"),
+		UpdatedAt:     formatTimePtr(&output.NewWinner.UpdatedAt),
 	}
 	
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.RunnerUpResponse{
-			Message:         "Runner-up successfully invoked",
-			OriginalWinner:  originalWinner,
-			NewWinner:       newWinner,
+			Message:        "Runner-up successfully invoked",
+			OriginalWinner: originalWinner,
+			NewWinner:      newWinner,
 		},
 	})
 }
@@ -335,8 +369,8 @@ func (h *DrawHandler) UpdateWinnerPaymentStatus(c *gin.Context) {
 		return
 	}
 	
-	// Get user ID from context
-	userID, exists := c.Get("userID")
+	// Get admin ID from context - not using this variable to avoid unused variable error
+	_, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, response.ErrorResponse{
 			Success: false,
@@ -354,7 +388,7 @@ func (h *DrawHandler) UpdateWinnerPaymentStatus(c *gin.Context) {
 			ID:            winnerID.String(),
 			Status:        "CLAIMED",
 			PaymentStatus: req.PaymentStatus,
-			PaymentNotes:  req.PaymentRef,
+			PaymentNotes:  req.Notes,
 			PaidAt:        time.Now().Format("2006-01-02 15:04:05"),
 			UpdatedAt:     time.Now().Format("2006-01-02 15:04:05"),
 		},

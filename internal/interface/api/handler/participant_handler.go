@@ -1,11 +1,8 @@
 package handler
 
 import (
-	"encoding/base64"
-	"encoding/csv"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 	
 	"github.com/gin-gonic/gin"
@@ -19,23 +16,23 @@ import (
 // ParticipantHandler handles participant-related HTTP requests
 type ParticipantHandler struct {
 	uploadParticipantsService *participantApp.UploadParticipantsService
+	getParticipantService     *participantApp.GetParticipantService
 	listParticipantsService   *participantApp.ListParticipantsService
 	getParticipantStatsService *participantApp.GetParticipantStatsService
-	listUploadAuditsService   *participantApp.ListUploadAuditsService
 }
 
 // NewParticipantHandler creates a new ParticipantHandler
 func NewParticipantHandler(
 	uploadParticipantsService *participantApp.UploadParticipantsService,
+	getParticipantService *participantApp.GetParticipantService,
 	listParticipantsService *participantApp.ListParticipantsService,
 	getParticipantStatsService *participantApp.GetParticipantStatsService,
-	listUploadAuditsService *participantApp.ListUploadAuditsService,
 ) *ParticipantHandler {
 	return &ParticipantHandler{
 		uploadParticipantsService: uploadParticipantsService,
+		getParticipantService:     getParticipantService,
 		listParticipantsService:   listParticipantsService,
 		getParticipantStatsService: getParticipantStatsService,
-		listUploadAuditsService:   listUploadAuditsService,
 	}
 }
 
@@ -60,48 +57,13 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 		return
 	}
 	
-	// Parse CSV data
-	csvData, err := base64.StdEncoding.DecodeString(req.Data)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
-			Success: false,
-			Error:   "Invalid CSV data: " + err.Error(),
-		})
-		return
-	}
-	
-	// Parse CSV
-	reader := csv.NewReader(strings.NewReader(string(csvData)))
-	records, err := reader.ReadAll()
-	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
-			Success: false,
-			Error:   "Failed to parse CSV: " + err.Error(),
-		})
-		return
-	}
-	
-	// Skip header row
-	if len(records) > 0 {
-		records = records[1:]
-	}
-	
 	// Prepare input
-	participants := make([]participantApp.ParticipantInput, 0, len(records))
-	for _, record := range records {
-		if len(record) < 3 {
-			continue
-		}
-		
-		rechargeAmount, err := strconv.ParseFloat(record[1], 64)
-		if err != nil {
-			continue
-		}
-		
+	participants := make([]participantApp.ParticipantInput, 0, len(req.Data))
+	for _, p := range req.Data {
 		participants = append(participants, participantApp.ParticipantInput{
-			MSISDN:         record[0],
-			RechargeAmount: rechargeAmount,
-			RechargeDate:   record[2],
+			MSISDN:         p.MSISDN,
+			RechargeAmount: p.RechargeAmount,
+			RechargeDate:   p.RechargeDate,
 		})
 	}
 	
@@ -127,6 +89,48 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 			TotalUploaded: output.TotalUploaded,
 			UploadID:      output.UploadID.String(),
 			UploadedAt:    output.UploadDate.Format("2006-01-02 15:04:05"),
+		},
+	})
+}
+
+// GetParticipant handles GET /api/admin/participants/:id
+func (h *ParticipantHandler) GetParticipant(c *gin.Context) {
+	// Parse participant ID
+	participantID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid participant ID format",
+		})
+		return
+	}
+	
+	// Prepare input
+	input := participantApp.GetParticipantInput{
+		ID: participantID,
+	}
+	
+	// Get participant
+	output, err := h.getParticipantService.GetParticipant(c.Request.Context(), input)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Success: false,
+			Error:   "Failed to get participant: " + err.Error(),
+		})
+		return
+	}
+	
+	c.JSON(http.StatusOK, response.SuccessResponse{
+		Success: true,
+		Data: response.ParticipantResponse{
+			ID:             output.ID.String(),
+			MSISDN:         output.MSISDN,
+			Points:         output.Points,
+			RechargeAmount: output.RechargeAmount,
+			RechargeDate:   output.RechargeDate.Format("2006-01-02"),
+			CreatedAt:      output.CreatedAt.Format("2006-01-02 15:04:05"),
+			UpdatedAt:      output.UpdatedAt.Format("2006-01-02 15:04:05"),
+			UploadID:       output.UploadID.String(),
 		},
 	})
 }
@@ -190,14 +194,12 @@ func (h *ParticipantHandler) ListParticipants(c *gin.Context) {
 
 // GetParticipantStats handles GET /api/admin/participants/stats
 func (h *ParticipantHandler) GetParticipantStats(c *gin.Context) {
-	// Parse date parameters
-	startDate := c.DefaultQuery("startDate", time.Now().Format("2006-01-02"))
-	endDate := c.DefaultQuery("endDate", time.Now().Format("2006-01-02"))
+	// Parse date parameter
+	date := c.DefaultQuery("date", time.Now().Format("2006-01-02"))
 	
 	// Prepare input
 	input := participantApp.GetParticipantStatsInput{
-		StartDate: startDate,
-		EndDate:   endDate,
+		Date: date,
 	}
 	
 	// Get participant stats
@@ -213,10 +215,10 @@ func (h *ParticipantHandler) GetParticipantStats(c *gin.Context) {
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.ParticipantStatsResponse{
-			Date:              output.StartDate,
+			Date:              output.Date,
 			TotalParticipants: output.TotalParticipants,
 			TotalPoints:       output.TotalPoints,
-			AveragePoints:     output.AveragePoints,
+			AveragePoints:     float64(output.TotalPoints) / float64(output.TotalParticipants),
 		},
 	})
 }
@@ -234,14 +236,8 @@ func (h *ParticipantHandler) ListUploadAudits(c *gin.Context) {
 		pageSize = 10
 	}
 	
-	// Prepare input
-	input := participantApp.ListUploadAuditsInput{
-		Page:     page,
-		PageSize: pageSize,
-	}
-	
 	// List upload audits
-	output, err := h.listUploadAuditsService.ListUploadAudits(c.Request.Context(), input)
+	audits, err := h.uploadParticipantsService.ListUploadAudits(c.Request.Context(), page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
@@ -251,32 +247,30 @@ func (h *ParticipantHandler) ListUploadAudits(c *gin.Context) {
 	}
 	
 	// Prepare response
-	audits := make([]response.DataUploadAuditResponse, 0, len(output.Audits))
-	for _, a := range output.Audits {
-		// Get user name from ID (in a real implementation, this would be a service call)
-		userName := "Admin User" // Placeholder
-		
-		audits = append(audits, response.DataUploadAuditResponse{
-			ID:                  a.ID.String(),
-			UploadedBy:          userName,
-			UploadedByUserId:    a.UploadedBy.String(),
-			UploadedAt:          a.CreatedAt.Format("2006-01-02 15:04:05"),
-			TotalUploaded:       a.TotalUploaded,
-			Status:              a.Status,
-			SuccessfullyImported: a.SuccessfulRows,
-			ErrorsEncountered:   a.ErrorCount,
+	auditResponses := make([]response.UploadAuditResponse, 0, len(audits.Audits))
+	for _, a := range audits.Audits {
+		auditResponses = append(auditResponses, response.UploadAuditResponse{
+			ID:             a.ID.String(),
+			UploadedBy:     a.UploadedBy.String(),
+			UploadDate:     a.UploadDate.Format("2006-01-02 15:04:05"),
+			FileName:       a.FileName,
+			Status:         a.Status,
+			TotalRows:      a.TotalRows,
+			SuccessfulRows: a.SuccessfulRows,
+			ErrorCount:     a.ErrorCount,
+			ErrorDetails:   a.ErrorDetails,
 		})
 	}
 	
 	c.JSON(http.StatusOK, response.PaginatedResponse{
 		Success: true,
-		Data:    audits,
+		Data:    auditResponses,
 		Pagination: response.Pagination{
-			Page:       output.Page,
-			PageSize:   output.PageSize,
-			TotalRows:  output.TotalCount,
-			TotalPages: output.TotalPages,
-			TotalItems: int64(output.TotalCount),
+			Page:       audits.Page,
+			PageSize:   audits.PageSize,
+			TotalRows:  audits.TotalCount,
+			TotalPages: audits.TotalPages,
+			TotalItems: int64(audits.TotalCount),
 		},
 	})
 }
