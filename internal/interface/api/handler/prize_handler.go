@@ -13,6 +13,7 @@ import (
 	"github.com/ArowuTest/GP-Backend-Promo/internal/domain/prize"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/request"
 	"github.com/ArowuTest/GP-Backend-Promo/internal/interface/dto/response"
+	"github.com/ArowuTest/GP-Backend-Promo/internal/pkg/util"
 )
 
 // PrizeHandler handles prize-related HTTP requests
@@ -110,8 +111,8 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 	// Convert prizes
 	prizes := make([]prize.CreatePrizeInput, 0, len(req.Prizes))
 	for _, p := range req.Prizes {
-		// Convert string value to float64
-		value, err := strconv.ParseFloat(p.Value, 64)
+		// Parse the currency string to float64 using the utility
+		value, err := util.ParseCurrency(p.Value)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse{
 				Success: false,
@@ -168,7 +169,7 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 			ID:                p.ID,
 			Name:              p.Name,
 			Description:       p.Description,
-			Value:             fmt.Sprintf("%.2f", p.Value), // Convert float64 to string
+			Value:             util.FormatCurrency(p.Value, "N"), // Format as currency string
 			Quantity:          p.Quantity,
 			NumberOfRunnerUps: p.NumberOfRunnerUps,
 		})
@@ -235,7 +236,7 @@ func (h *PrizeHandler) GetPrizeStructure(c *gin.Context) {
 			ID:                p.ID,
 			Name:              p.Name,
 			Description:       p.Description,
-			Value:             fmt.Sprintf("%.2f", p.Value), // Convert float64 to string
+			Value:             util.FormatCurrency(p.Value, "N"), // Format as currency string
 			Quantity:          p.Quantity,
 			NumberOfRunnerUps: p.NumberOfRunnerUps,
 		})
@@ -298,7 +299,7 @@ func (h *PrizeHandler) ListPrizeStructures(c *gin.Context) {
 				ID:                p.ID,
 				Name:              p.Name,
 				Description:       p.Description,
-				Value:             fmt.Sprintf("%.2f", p.Value), // Convert float64 to string
+				Value:             util.FormatCurrency(p.Value, "N"), // Format as currency string
 				Quantity:          p.Quantity,
 				NumberOfRunnerUps: p.NumberOfRunnerUps,
 			})
@@ -429,8 +430,8 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 			}
 		}
 		
-		// Convert string value to float64
-		value, err := strconv.ParseFloat(p.Value, 64)
+		// Parse the currency string to float64 using the utility
+		value, err := util.ParseCurrency(p.Value)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse{
 				Success: false,
@@ -490,7 +491,7 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 			ID:                p.ID,
 			Name:              p.Name,
 			Description:       p.Description,
-			Value:             fmt.Sprintf("%.2f", p.Value), // Convert float64 to string
+			Value:             util.FormatCurrency(p.Value, "N"), // Format as currency string
 			Quantity:          p.Quantity,
 			NumberOfRunnerUps: p.NumberOfRunnerUps,
 		})
@@ -569,13 +570,13 @@ func (h *PrizeHandler) DeletePrizeStructure(c *gin.Context) {
 	}
 
 	// Create input for application layer
-	appInput := prizeApp.DeletePrizeStructureInput{
+	input := prize.DeletePrizeStructureInput{
 		ID:        prizeStructureID,
 		DeletedBy: userID,
 	}
 
 	// Delete prize structure
-	err = h.deletePrizeStructureService.DeletePrizeStructure(c.Request.Context(), appInput)
+	err = h.deletePrizeStructureService.DeletePrizeStructure(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Success: false,
@@ -584,6 +585,7 @@ func (h *PrizeHandler) DeletePrizeStructure(c *gin.Context) {
 		return
 	}
 
+	// Create response
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Message: "Prize structure deleted successfully",
