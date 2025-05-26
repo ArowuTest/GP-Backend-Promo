@@ -60,27 +60,55 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 	// Prepare input
 	prizes := make([]prizeApp.PrizeInput, 0, len(req.Prizes))
 	for _, prize := range req.Prizes {
+		// Convert string value to float64
+		prizeValue, err := strconv.ParseFloat(prize.Value, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid prize value: " + err.Error(),
+			})
+			return
+		}
+		
 		prizes = append(prizes, prizeApp.PrizeInput{
-			Name:        prize.Name,
-			Description: prize.Name, // Using name as description
-			Value:       prize.Value,
-			Quantity:    prize.Quantity,
+			Name:              prize.Name,
+			Description:       prize.Description,
+			Value:             prizeValue,
+			Quantity:          prize.Quantity,
+			NumberOfRunnerUps: prize.NumberOfRunnerUps,
 		})
 	}
 	
-	// Handle optional ValidTo field
-	endDate := ""
-	if req.ValidTo != nil {
-		endDate = *req.ValidTo
+	// Parse dates
+	startDate, err := time.Parse("2006-01-02", req.ValidFrom)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid start date format: " + err.Error(),
+		})
+		return
+	}
+	
+	var endDate time.Time
+	if req.ValidTo != "" {
+		endDate, err = time.Parse("2006-01-02", req.ValidTo)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid end date format: " + err.Error(),
+			})
+			return
+		}
 	}
 	
 	input := prizeApp.CreatePrizeStructureInput{
 		Name:        req.Name,
 		Description: req.Description,
-		StartDate:   req.ValidFrom,
+		StartDate:   startDate,
 		EndDate:     endDate,
 		Prizes:      prizes,
 		CreatedBy:   userID.(uuid.UUID),
+		IsActive:    req.IsActive,
 	}
 	
 	// Create prize structure
@@ -100,10 +128,10 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 			ID:                prize.ID.String(),
 			Name:              prize.Name,
 			PrizeType:         "Cash", // Default type
-			Value:             prize.Value,
+			Value:             strconv.FormatFloat(prize.Value, 'f', 2, 64),
 			Quantity:          prize.Quantity,
 			Order:             1, // Default order
-			NumberOfRunnerUps: 1, // Default number of runner ups
+			NumberOfRunnerUps: prize.NumberOfRunnerUps,
 		})
 	}
 	
@@ -113,13 +141,13 @@ func (h *PrizeHandler) CreatePrizeStructure(c *gin.Context) {
 			ID:             output.ID.String(),
 			Name:           output.Name,
 			Description:    output.Description,
-			IsActive:       true, // Default to active
-			ValidFrom:      output.StartDate,
-			ValidTo:        output.EndDate,
+			IsActive:       output.IsActive,
+			ValidFrom:      output.StartDate.Format("2006-01-02"),
+			ValidTo:        output.EndDate.Format("2006-01-02"),
 			ApplicableDays: []string{}, // Empty applicable days
 			Prizes:         prizeTiers,
-			CreatedAt:      time.Now().Format("2006-01-02 15:04:05"),
-			UpdatedAt:      time.Now().Format("2006-01-02 15:04:05"),
+			CreatedAt:      output.CreatedAt.Format("2006-01-02 15:04:05"),
+			UpdatedAt:      output.UpdatedAt.Format("2006-01-02 15:04:05"),
 		},
 	})
 }
@@ -158,10 +186,10 @@ func (h *PrizeHandler) GetPrizeStructure(c *gin.Context) {
 			ID:                prize.ID.String(),
 			Name:              prize.Name,
 			PrizeType:         "Cash", // Default type
-			Value:             prize.Value,
+			Value:             strconv.FormatFloat(prize.Value, 'f', 2, 64),
 			Quantity:          prize.Quantity,
 			Order:             1, // Default order
-			NumberOfRunnerUps: 1, // Default number of runner ups
+			NumberOfRunnerUps: prize.NumberOfRunnerUps,
 		})
 	}
 	
@@ -176,8 +204,8 @@ func (h *PrizeHandler) GetPrizeStructure(c *gin.Context) {
 			ValidTo:        output.EndDate.Format("2006-01-02"),
 			ApplicableDays: []string{}, // Empty applicable days
 			Prizes:         prizeTiers,
-			CreatedAt:      time.Now().Format("2006-01-02 15:04:05"),
-			UpdatedAt:      time.Now().Format("2006-01-02 15:04:05"),
+			CreatedAt:      output.CreatedAt.Format("2006-01-02 15:04:05"),
+			UpdatedAt:      output.UpdatedAt.Format("2006-01-02 15:04:05"),
 		},
 	})
 }
@@ -220,10 +248,10 @@ func (h *PrizeHandler) ListPrizeStructures(c *gin.Context) {
 				ID:                prize.ID.String(),
 				Name:              prize.Name,
 				PrizeType:         "Cash", // Default type
-				Value:             prize.Value,
+				Value:             strconv.FormatFloat(prize.Value, 'f', 2, 64),
 				Quantity:          prize.Quantity,
 				Order:             1, // Default order
-				NumberOfRunnerUps: 1, // Default number of runner ups
+				NumberOfRunnerUps: prize.NumberOfRunnerUps,
 			})
 		}
 		
@@ -231,13 +259,13 @@ func (h *PrizeHandler) ListPrizeStructures(c *gin.Context) {
 			ID:             ps.ID.String(),
 			Name:           ps.Name,
 			Description:    ps.Description,
-			IsActive:       true, // Default to active
+			IsActive:       ps.IsActive,
 			ValidFrom:      ps.StartDate.Format("2006-01-02"),
 			ValidTo:        ps.EndDate.Format("2006-01-02"),
 			ApplicableDays: []string{}, // Empty applicable days
 			Prizes:         prizeTiers,
-			CreatedAt:      time.Now().Format("2006-01-02 15:04:05"),
-			UpdatedAt:      time.Now().Format("2006-01-02 15:04:05"),
+			CreatedAt:      ps.CreatedAt.Format("2006-01-02 15:04:05"),
+			UpdatedAt:      ps.UpdatedAt.Format("2006-01-02 15:04:05"),
 		})
 	}
 	
@@ -289,29 +317,58 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 	updatePrizes := make([]prizeApp.UpdatePrizeInput, 0, len(req.Prizes))
 	for _, prize := range req.Prizes {
 		prizeID, _ := uuid.Parse(prize.ID) // Ignore error, will be uuid.Nil if empty
+		
+		// Convert string value to float64
+		prizeValue, err := strconv.ParseFloat(prize.Value, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid prize value: " + err.Error(),
+			})
+			return
+		}
+		
 		updatePrizes = append(updatePrizes, prizeApp.UpdatePrizeInput{
-			ID:          prizeID,
-			Name:        prize.Name,
-			Description: prize.Name, // Using name as description
-			Value:       prize.Value,
-			Quantity:    prize.Quantity,
+			ID:                prizeID,
+			Name:              prize.Name,
+			Description:       prize.Description,
+			Value:             prizeValue,
+			Quantity:          prize.Quantity,
+			NumberOfRunnerUps: prize.NumberOfRunnerUps,
 		})
 	}
 	
-	// Handle optional ValidTo field
-	endDate := ""
-	if req.ValidTo != nil {
-		endDate = *req.ValidTo
+	// Parse dates
+	startDate, err := time.Parse("2006-01-02", req.ValidFrom)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid start date format: " + err.Error(),
+		})
+		return
+	}
+	
+	var endDate time.Time
+	if req.ValidTo != "" {
+		endDate, err = time.Parse("2006-01-02", req.ValidTo)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Success: false,
+				Error:   "Invalid end date format: " + err.Error(),
+			})
+			return
+		}
 	}
 	
 	input := prizeApp.UpdatePrizeStructureInput{
 		ID:          prizeStructureID,
 		Name:        req.Name,
 		Description: req.Description,
-		StartDate:   req.ValidFrom,
+		StartDate:   startDate,
 		EndDate:     endDate,
 		Prizes:      updatePrizes,
 		UpdatedBy:   userID.(uuid.UUID),
+		IsActive:    req.IsActive,
 	}
 	
 	// Update prize structure
@@ -331,10 +388,10 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 			ID:                prize.ID.String(),
 			Name:              prize.Name,
 			PrizeType:         "Cash", // Default type
-			Value:             prize.Value,
+			Value:             strconv.FormatFloat(prize.Value, 'f', 2, 64),
 			Quantity:          prize.Quantity,
 			Order:             1, // Default order
-			NumberOfRunnerUps: 1, // Default number of runner ups
+			NumberOfRunnerUps: prize.NumberOfRunnerUps,
 		})
 	}
 	
@@ -344,13 +401,13 @@ func (h *PrizeHandler) UpdatePrizeStructure(c *gin.Context) {
 			ID:             output.ID.String(),
 			Name:           output.Name,
 			Description:    output.Description,
-			IsActive:       true, // Default to active
-			ValidFrom:      output.StartDate,
-			ValidTo:        output.EndDate,
+			IsActive:       output.IsActive,
+			ValidFrom:      output.StartDate.Format("2006-01-02"),
+			ValidTo:        output.EndDate.Format("2006-01-02"),
 			ApplicableDays: []string{}, // Empty applicable days
 			Prizes:         prizeTiers,
-			CreatedAt:      time.Now().Format("2006-01-02 15:04:05"),
-			UpdatedAt:      time.Now().Format("2006-01-02 15:04:05"),
+			CreatedAt:      output.CreatedAt.Format("2006-01-02 15:04:05"),
+			UpdatedAt:      output.UpdatedAt.Format("2006-01-02 15:04:05"),
 		},
 	})
 }
