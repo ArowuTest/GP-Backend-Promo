@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"encoding/base64"
+	"encoding/csv"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 	
 	"github.com/gin-gonic/gin"
@@ -57,19 +60,55 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 		return
 	}
 	
+	// Parse CSV data
+	csvData, err := base64.StdEncoding.DecodeString(req.Data)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Invalid CSV data: " + err.Error(),
+		})
+		return
+	}
+	
+	// Parse CSV
+	reader := csv.NewReader(strings.NewReader(string(csvData)))
+	records, err := reader.ReadAll()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Success: false,
+			Error:   "Failed to parse CSV: " + err.Error(),
+		})
+		return
+	}
+	
+	// Skip header row
+	if len(records) > 0 {
+		records = records[1:]
+	}
+	
 	// Prepare input
-	participants := make([]participantApp.ParticipantInput, 0, len(req.Participants))
-	for _, p := range req.Participants {
+	participants := make([]participantApp.ParticipantInput, 0, len(records))
+	for _, record := range records {
+		if len(record) < 3 {
+			continue
+		}
+		
+		rechargeAmount, err := strconv.ParseFloat(record[1], 64)
+		if err != nil {
+			continue
+		}
+		
 		participants = append(participants, participantApp.ParticipantInput{
-			MSISDN:         p.MSISDN,
-			RechargeAmount: p.RechargeAmount,
-			RechargeDate:   p.RechargeDate,
+			MSISDN:         record[0],
+			RechargeAmount: rechargeAmount,
+			RechargeDate:   record[2],
 		})
 	}
 	
 	input := participantApp.UploadParticipantsInput{
 		Participants: participants,
 		UploadedBy:   userID.(uuid.UUID),
+		FileName:     req.FileName,
 	}
 	
 	// Upload participants
@@ -87,7 +126,7 @@ func (h *ParticipantHandler) UploadParticipants(c *gin.Context) {
 		Data: response.UploadParticipantsResponse{
 			TotalUploaded: output.TotalUploaded,
 			UploadID:      output.UploadID.String(),
-			UploadedAt:    output.UploadedAt.Format("2006-01-02 15:04:05"),
+			UploadedAt:    output.UploadDate.Format("2006-01-02 15:04:05"),
 		},
 	})
 }
@@ -133,7 +172,6 @@ func (h *ParticipantHandler) ListParticipants(c *gin.Context) {
 			CreatedAt:      p.CreatedAt.Format("2006-01-02 15:04:05"),
 			UpdatedAt:      p.UpdatedAt.Format("2006-01-02 15:04:05"),
 			UploadID:       p.UploadID.String(),
-			UploadedAt:     p.UploadedAt.Format("2006-01-02 15:04:05"),
 		})
 	}
 	
@@ -152,12 +190,14 @@ func (h *ParticipantHandler) ListParticipants(c *gin.Context) {
 
 // GetParticipantStats handles GET /api/admin/participants/stats
 func (h *ParticipantHandler) GetParticipantStats(c *gin.Context) {
-	// Parse date parameter
-	date := c.DefaultQuery("date", time.Now().Format("2006-01-02"))
+	// Parse date parameters
+	startDate := c.DefaultQuery("startDate", time.Now().Format("2006-01-02"))
+	endDate := c.DefaultQuery("endDate", time.Now().Format("2006-01-02"))
 	
 	// Prepare input
 	input := participantApp.GetParticipantStatsInput{
-		Date: date,
+		StartDate: startDate,
+		EndDate:   endDate,
 	}
 	
 	// Get participant stats
@@ -173,10 +213,10 @@ func (h *ParticipantHandler) GetParticipantStats(c *gin.Context) {
 	c.JSON(http.StatusOK, response.SuccessResponse{
 		Success: true,
 		Data: response.ParticipantStatsResponse{
-			Date:              output.Date,
+			Date:              output.StartDate,
 			TotalParticipants: output.TotalParticipants,
 			TotalPoints:       output.TotalPoints,
-			AveragePoints:     float64(output.TotalPoints) / float64(output.TotalParticipants),
+			AveragePoints:     output.AveragePoints,
 		},
 	})
 }
@@ -213,11 +253,14 @@ func (h *ParticipantHandler) ListUploadAudits(c *gin.Context) {
 	// Prepare response
 	audits := make([]response.DataUploadAuditResponse, 0, len(output.Audits))
 	for _, a := range output.Audits {
+		// Get user name from ID (in a real implementation, this would be a service call)
+		userName := "Admin User" // Placeholder
+		
 		audits = append(audits, response.DataUploadAuditResponse{
 			ID:                  a.ID.String(),
-			UploadedBy:          a.UploadedBy,
-			UploadedByUserId:    a.UploadedByUserID.String(),
-			UploadedAt:          a.UploadedAt.Format("2006-01-02 15:04:05"),
+			UploadedBy:          userName,
+			UploadedByUserId:    a.UploadedBy.String(),
+			UploadedAt:          a.CreatedAt.Format("2006-01-02 15:04:05"),
 			TotalUploaded:       a.TotalUploaded,
 			Status:              a.Status,
 			SuccessfullyImported: a.SuccessfulRows,
