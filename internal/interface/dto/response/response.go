@@ -1,9 +1,5 @@
 package response
 
-import (
-	"time"
-)
-
 // SuccessResponse represents a generic success response
 type SuccessResponse struct {
 	Success bool        `json:"success"`
