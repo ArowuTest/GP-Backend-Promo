@@ -57,30 +57,10 @@ func (h *DrawHandler) ExecuteDraw(c *gin.Context) {
 		return
 	}
 	
-	// Parse prize structure ID
-	prizeStructureID, err := uuid.Parse(req.PrizeStructureID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
-			Success: false,
-			Error:   "Invalid prize structure ID format",
-		})
-		return
-	}
-	
-	// Parse draw date
-	drawDate, err := time.Parse("2006-01-02", req.DrawDate)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{
-			Success: false,
-			Error:   "Invalid draw date format, expected YYYY-MM-DD",
-		})
-		return
-	}
-	
-	// Prepare input
+	// Prepare input - no need to parse UUID or time as they're already the correct types
 	input := drawApp.ExecuteDrawInput{
-		DrawDate:         drawDate,
-		PrizeStructureID: prizeStructureID,
+		DrawDate:         req.DrawDate,
+		PrizeStructureID: req.PrizeStructureID,
 		ExecutedByAdminID: userID.(uuid.UUID),
 	}
 	
@@ -288,11 +268,11 @@ func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
 		return
 	}
 	
-	// Prepare input
+	// Prepare input - using the correct field names from the actual service
 	input := drawApp.InvokeRunnerUpInput{
-		WinnerID:  winnerID,
-		Reason:    req.Reason,
-		InvokedBy: userID.(uuid.UUID),
+		WinnerID:    winnerID,
+		AdminUserID: userID.(uuid.UUID),
+		Reason:      req.Reason,
 	}
 	
 	// Invoke runner-up
@@ -305,31 +285,23 @@ func (h *DrawHandler) InvokeRunnerUp(c *gin.Context) {
 		return
 	}
 	
-	// Prepare response
+	// Prepare response - only using fields that exist in RunnerUpWinnerOutput
 	originalWinner := response.WinnerResponse{
-		ID:            output.OriginalWinner.ID.String(),
-		DrawID:        output.OriginalWinner.DrawID.String(),
-		MSISDN:        output.OriginalWinner.MSISDN,
-		MaskedMSISDN:  maskMSISDN(output.OriginalWinner.MSISDN),
-		PrizeTierID:   output.OriginalWinner.PrizeTierID.String(),
-		Status:        output.OriginalWinner.Status,
-		IsRunnerUp:    output.OriginalWinner.IsRunnerUp,
-		RunnerUpRank:  output.OriginalWinner.RunnerUpRank,
-		CreatedAt:     output.OriginalWinner.CreatedAt.Format("2006-01-02 15:04:05"),
-		UpdatedAt:     output.OriginalWinner.UpdatedAt.Format("2006-01-02 15:04:05"),
+		ID:          output.OriginalWinner.ID.String(),
+		MSISDN:      output.OriginalWinner.MSISDN,
+		MaskedMSISDN: maskMSISDN(output.OriginalWinner.MSISDN),
+		PrizeTierID: output.OriginalWinner.PrizeTierID.String(),
+		Status:      output.OriginalWinner.Status,
+		PrizeValue:  strconv.FormatFloat(output.OriginalWinner.PrizeValue, 'f', 2, 64),
 	}
 	
 	newWinner := response.WinnerResponse{
-		ID:            output.NewWinner.ID.String(),
-		DrawID:        output.NewWinner.DrawID.String(),
-		MSISDN:        output.NewWinner.MSISDN,
-		MaskedMSISDN:  maskMSISDN(output.NewWinner.MSISDN),
-		PrizeTierID:   output.NewWinner.PrizeTierID.String(),
-		Status:        output.NewWinner.Status,
-		IsRunnerUp:    output.NewWinner.IsRunnerUp,
-		RunnerUpRank:  output.NewWinner.RunnerUpRank,
-		CreatedAt:     output.NewWinner.CreatedAt.Format("2006-01-02 15:04:05"),
-		UpdatedAt:     output.NewWinner.UpdatedAt.Format("2006-01-02 15:04:05"),
+		ID:          output.NewWinner.ID.String(),
+		MSISDN:      output.NewWinner.MSISDN,
+		MaskedMSISDN: maskMSISDN(output.NewWinner.MSISDN),
+		PrizeTierID: output.NewWinner.PrizeTierID.String(),
+		Status:      output.NewWinner.Status,
+		PrizeValue:  strconv.FormatFloat(output.NewWinner.PrizeValue, 'f', 2, 64),
 	}
 	
 	c.JSON(http.StatusOK, response.SuccessResponse{
@@ -382,7 +354,7 @@ func (h *DrawHandler) UpdateWinnerPaymentStatus(c *gin.Context) {
 			ID:            winnerID.String(),
 			Status:        "CLAIMED",
 			PaymentStatus: req.PaymentStatus,
-			PaymentNotes:  req.Notes,
+			PaymentNotes:  req.PaymentRef,
 			PaidAt:        time.Now().Format("2006-01-02 15:04:05"),
 			UpdatedAt:     time.Now().Format("2006-01-02 15:04:05"),
 		},
